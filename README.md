@@ -272,8 +272,6 @@ Harness adapters live in `internal/harness/`. Each implements a small interface 
 
 Tests run offline against a fake harness and a fixture repo. `make test` needs no network, no GitHub, and no agent installed.
 
-See [DESIGN.md](DESIGN.md) for package layout and the port interfaces.
-
 ---
 
 ## License

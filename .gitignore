@@ -1,0 +1,14 @@
+# build output
+/bin/
+/romp
+
+# go
+*.test
+*.out
+coverage.*
+
+# os
+.DS_Store
+
+# romp local machine config
+.romp/local.toml
