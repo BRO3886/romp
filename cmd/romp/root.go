@@ -14,6 +14,11 @@ import (
 	"github.com/BRO3886/romp/internal/runner"
 )
 
+// Temporary Go-specific default. Verify must become an explicit per-repo
+// contract (romp.toml [verify]); remove this fallback once config lands and
+// refuse to run without it.
+const defaultVerify = "go test ./... -count=1"
+
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "romp",
@@ -21,44 +26,53 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newRunCmd())
+	root.AddCommand(newRunCmd(execRun))
 	return root
 }
 
-func newRunCmd() *cobra.Command {
+// runFunc is the seam between flag parsing and the job itself, so tests can
+// inspect the assembled Runner without touching git, gh, or the harness.
+type runFunc func(ctx context.Context, r *runner.Runner, issue int) error
+
+func newRunCmd(run runFunc) *cobra.Command {
+	var (
+		issue  int
+		verify string
+	)
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run one issue now",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			issue, err := cmd.Flags().GetInt("issue")
+			r, err := newRunner(verify)
 			if err != nil {
 				return err
 			}
-			return runIssue(cmd.Context(), issue)
+			return run(cmd.Context(), r, issue)
 		},
 	}
-	cmd.Flags().IntP("issue", "i", 0, "issue number to run")
+	cmd.Flags().IntVarP(&issue, "issue", "i", 0, "issue number to run")
+	cmd.Flags().StringVar(&verify, "verify", defaultVerify, "command that must pass in the worktree before a PR is opened")
 	cmd.MarkFlagRequired("issue")
 	return cmd
 }
 
-func runIssue(ctx context.Context, issue int) error {
+func newRunner(verify string) (*runner.Runner, error) {
 	root, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("working directory: %w", err)
+		return nil, fmt.Errorf("working directory: %w", err)
 	}
 
-	r := &runner.Runner{
+	return &runner.Runner{
 		Harness: harness.Claude{},
 		Git:     &git.Repo{Root: root},
 		GH:      &gh.Client{},
-		Prompt: &prompt.Renderer{Template: prompt.Default()},
-		// Temporary Go-specific default. Verify must become an explicit
-		// per-repo contract (romp.toml [verify]); remove this fallback once
-		// config lands and refuse to run without it.
-		Verify: "go test ./... -count=1",
-		Stderr: os.Stderr,
-	}
+		Prompt:  &prompt.Renderer{Template: prompt.Default()},
+		Verify:  verify,
+		Stderr:  os.Stderr,
+	}, nil
+}
+
+func execRun(ctx context.Context, r *runner.Runner, issue int) error {
 	return r.Run(ctx, issue)
 }
