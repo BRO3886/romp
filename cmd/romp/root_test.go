@@ -63,11 +63,12 @@ func TestRunCmdFlags(t *testing.T) {
 
 func TestRunCmdVerifyDefaults(t *testing.T) {
 	var (
+		gotOverrides config.Overrides
 		gotVerify    string
 		gotVerifySet bool
 	)
-	factory := func(_ context.Context, _ config.Overrides, verifyFlag string, verifySet bool) (*runner.Runner, error) {
-		gotVerify, gotVerifySet = verifyFlag, verifySet
+	factory := func(_ context.Context, o config.Overrides, verifyFlag string, verifySet bool) (*runner.Runner, error) {
+		gotOverrides, gotVerify, gotVerifySet = o, verifyFlag, verifySet
 		return &runner.Runner{}, nil
 	}
 	run := func(_ context.Context, _ *runner.Runner, _ int) error { return nil }
@@ -82,6 +83,9 @@ func TestRunCmdVerifyDefaults(t *testing.T) {
 	}
 	if gotVerify != "" {
 		t.Errorf("verifyFlag = %q, want empty", gotVerify)
+	}
+	if gotOverrides.Effort != "" {
+		t.Errorf("overrides.Effort = %q, want empty when --effort is absent", gotOverrides.Effort)
 	}
 }
 

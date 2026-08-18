@@ -80,6 +80,20 @@ func TestLoadOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadOmitsEffortOverride(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "width = 2\n[harness]\nmodel = \"sonnet\"\n")
+
+	cfg, err := Load(root, Overrides{Width: 9, Model: "opus-flag"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Harness.Effort != "high" {
+		t.Errorf("Harness.Effort = %q, want high (default survives an unset override)", cfg.Harness.Effort)
+	}
+}
+
 func TestLoadRejectsUnknownHarness(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := t.TempDir()
