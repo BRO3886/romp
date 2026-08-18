@@ -13,14 +13,16 @@ import (
 // means "use the built-in default", which makes layering additive: a later
 // file overrides only the fields it actually sets.
 type Config struct {
-	Label   string  `toml:"label"`
-	Base    string  `toml:"base"`
-	Width   int     `toml:"width"`
-	Timeout string  `toml:"timeout"`
-	Verify  Verify  `toml:"verify"`
-	Scope   Scope   `toml:"scope"`
-	Harness Harness `toml:"harness"`
-	Prompt  Prompt  `toml:"prompt"`
+	Label        string  `toml:"label"`
+	ClaimedLabel string  `toml:"claimed_label"`
+	BlockedLabel string  `toml:"blocked_label"`
+	Base         string  `toml:"base"`
+	Width        int     `toml:"width"`
+	Timeout      string  `toml:"timeout"`
+	Verify       Verify  `toml:"verify"`
+	Scope        Scope   `toml:"scope"`
+	Harness      Harness `toml:"harness"`
+	Prompt       Prompt  `toml:"prompt"`
 }
 
 // Verify holds the commands romp re-runs itself before opening a PR.
@@ -53,10 +55,12 @@ type Prompt struct {
 // contributes a value.
 func Defaults() Config {
 	return Config{
-		Label:   "romp",
-		Width:   3,
-		Timeout: "25m",
-		Harness: Harness{Default: "claude"},
+		Label:        "romp",
+		ClaimedLabel: "romp:claimed",
+		BlockedLabel: "romp:blocked",
+		Width:        3,
+		Timeout:      "25m",
+		Harness:      Harness{Default: "claude"},
 	}
 }
 
@@ -115,6 +119,12 @@ func apply(dst *Config, path string) error {
 func overlay(dst *Config, src *Config) {
 	if src.Label != "" {
 		dst.Label = src.Label
+	}
+	if src.ClaimedLabel != "" {
+		dst.ClaimedLabel = src.ClaimedLabel
+	}
+	if src.BlockedLabel != "" {
+		dst.BlockedLabel = src.BlockedLabel
 	}
 	if src.Base != "" {
 		dst.Base = src.Base

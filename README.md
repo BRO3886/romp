@@ -61,7 +61,7 @@ watching label "romp" every 60s
 19:22:44  #17 → PR #482 https://github.com/your-org/your-project/pull/482
 
 19:31:05  assigned issue #23 to agent  [job 7c02]
-19:38:19  #23 blocked: acceptance criteria contradict each other → needs-scoping
+19:38:19  #23 blocked: acceptance criteria contradict each other → romp:blocked
 ```
 
 Stop with Ctrl-C. Running jobs finish; no new ones start. `Ctrl-C` twice kills
@@ -128,10 +128,12 @@ Every job gets its own worktree, its own branch, and its own log file. Jobs run 
 Config is per repo. `romp init` writes `romp.toml` at the repo root:
 
 ```toml
-label   = "romp"                     # trigger label
-base    = "main"                     # default: repo default branch
-width   = 3                          # concurrent jobs in this repo
-timeout = "25m"
+label          = "romp"               # trigger label
+claimed_label  = "romp:claimed"       # marked while a job runs
+blocked_label  = "romp:blocked"       # marked when the issue is under-scoped
+base           = "main"               # default: repo default branch
+width          = 3                    # concurrent jobs in this repo
+timeout        = "25m"
 
 [verify]
 build = "go build ./..."
@@ -223,7 +225,7 @@ architecture notes, where the test fixtures live. `romp` passes it as a
 - The files or area expected to change
 - What is explicitly out of scope
 
-If the agent finds the issue ambiguous or contradictory, it stops without writing code, and `romp` relabels the issue `needs-scoping` and posts the specific gap as a comment. That signal is the point. An under-scoped issue produces a plausible PR that solves the wrong problem, which costs more than no PR at all.
+If the agent finds the issue ambiguous or contradictory, it stops without writing code, and `romp` relabels the issue `romp:blocked` and posts the specific gap as a comment. That signal is the point. An under-scoped issue produces a plausible PR that solves the wrong problem, which costs more than no PR at all.
 
 ---
 
@@ -232,7 +234,7 @@ If the agent finds the issue ambiguous or contradictory, it stops without writin
 | Outcome | What you get |
 |---|---|
 | **done** | PR opened, label removed, worktree removed |
-| **blocked** | No PR. Issue relabelled `needs-scoping`, gap posted as a comment |
+| **blocked** | No PR. Issue relabelled `romp:blocked`, gap posted as a comment |
 | **no-changes** | Agent exited clean but produced no commits. No PR, job failed |
 | **red** | Agent finished, `test_cmd` failed on the independent re-run. No PR, worktree kept |
 | **timeout** | Job exceeded `timeout`. Killed, worktree kept for inspection |

@@ -40,3 +40,12 @@ func TestBlockedComment(t *testing.T) {
 		t.Errorf("blockedComment = %q", c)
 	}
 }
+
+func TestBlockedLabel(t *testing.T) {
+	if got := (&Runner{}).blockedLabel(); got != "romp:blocked" {
+		t.Errorf("blockedLabel() default = %q, want romp:blocked", got)
+	}
+	if got := (&Runner{BlockedLabel: "custom"}).blockedLabel(); got != "custom" {
+		t.Errorf("blockedLabel() = %q, want custom", got)
+	}
+}

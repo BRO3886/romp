@@ -20,20 +20,30 @@ import (
 
 // Runner wires the ports together for a single one-shot job.
 type Runner struct {
-	Harness   harness.Harness
-	Git       *git.Repo
-	GH        *gh.Client
-	Prompt    *prompt.Renderer
-	Verify    []string
-	Model     string
-	Base      string
-	Timeout   time.Duration
-	Protected []string
-	Stderr    io.Writer
+	Harness      harness.Harness
+	Git          *git.Repo
+	GH           *gh.Client
+	Prompt       *prompt.Renderer
+	Verify       []string
+	Model        string
+	Base         string
+	Timeout      time.Duration
+	Protected    []string
+	BlockedLabel string
+	Stderr       io.Writer
 }
 
 func (r *Runner) logf(format string, a ...any) {
 	fmt.Fprintf(r.Stderr, format+"\n", a...)
+}
+
+// blockedLabel returns the configured blocked label, falling back to the
+// default when unset so a hand-built Runner still relabels correctly.
+func (r *Runner) blockedLabel() string {
+	if r.BlockedLabel != "" {
+		return r.BlockedLabel
+	}
+	return defaultBlockedLabel
 }
 
 // Run executes the full pipeline for one issue and opens a PR on success.
@@ -119,8 +129,8 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		if err := r.GH.Comment(ctx, repo, issueNum, blockedComment(gap)); err != nil {
 			return fmt.Errorf("posting blocked comment: %w", err)
 		}
-		if err := r.GH.AddLabel(ctx, repo, issueNum, blockedLabel); err != nil {
-			return fmt.Errorf("relabelling %s: %w", blockedLabel, err)
+		if err := r.GH.AddLabel(ctx, repo, issueNum, r.blockedLabel()); err != nil {
+			return fmt.Errorf("relabelling %s: %w", r.blockedLabel(), err)
 		}
 		if err := r.Git.RemoveWorktree(ctx, dir); err != nil {
 			r.logf("warning: cleanup worktree: %v", err)

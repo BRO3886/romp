@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	blockedFile  = ".romp/blocked.md"
-	blockedLabel = "needs-scoping"
+	blockedFile         = ".romp/blocked.md"
+	defaultBlockedLabel = "romp:blocked"
 )
 
 // ErrBlocked is returned when the agent stopped because the issue is

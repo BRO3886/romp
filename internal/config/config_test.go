@@ -8,8 +8,9 @@ import (
 
 func TestDefaults(t *testing.T) {
 	cfg := Defaults()
-	if cfg.Label != "romp" || cfg.Width != 3 || cfg.Timeout != "25m" || cfg.Harness.Default != "claude" {
-		t.Fatalf("Defaults() = %+v, want label=romp width=3 timeout=25m harness.default=claude", cfg)
+	if cfg.Label != "romp" || cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" ||
+		cfg.Width != 3 || cfg.Timeout != "25m" || cfg.Harness.Default != "claude" {
+		t.Fatalf("Defaults() = %+v", cfg)
 	}
 }
 
@@ -69,6 +70,23 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.Harness.Model != "opus-flag" {
 		t.Errorf("Harness.Model = %q, want opus-flag (flag wins)", cfg.Harness.Model)
+	}
+}
+
+func TestLoadLabelOverrides(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "claimed_label = \"team-claimed\"\nblocked_label = \"team-blocked\"\n")
+
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ClaimedLabel != "team-claimed" {
+		t.Errorf("ClaimedLabel = %q, want team-claimed", cfg.ClaimedLabel)
+	}
+	if cfg.BlockedLabel != "team-blocked" {
+		t.Errorf("BlockedLabel = %q, want team-blocked", cfg.BlockedLabel)
 	}
 }
 

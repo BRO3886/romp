@@ -59,10 +59,13 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	}
 	ownerName := owner + "/" + name
 
-	if err := (&gh.Client{}).CreateLabel(ctx, ownerName, cfg.Label); err != nil {
-		return fmt.Errorf("creating label %q: %w", cfg.Label, err)
+	client := &gh.Client{}
+	for _, label := range []string{cfg.Label, cfg.ClaimedLabel, cfg.BlockedLabel} {
+		if err := client.CreateLabel(ctx, ownerName, label); err != nil {
+			return fmt.Errorf("creating label %q: %w", label, err)
+		}
+		cmd.Printf("label %q ready on %s\n", label, ownerName)
 	}
-	cmd.Printf("label %q ready on %s\n", cfg.Label, ownerName)
 
 	if err := ensureGitignore(root); err != nil {
 		return err
@@ -74,9 +77,11 @@ func runInit(cmd *cobra.Command, _ []string) error {
 func seedConfig(build, test, lang string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s project\n", lang)
-	b.WriteString("label   = \"romp\"\n")
-	b.WriteString("width   = 3\n")
-	b.WriteString("timeout = \"25m\"\n\n")
+	b.WriteString("label          = \"romp\"\n")
+	b.WriteString("claimed_label  = \"romp:claimed\"\n")
+	b.WriteString("blocked_label  = \"romp:blocked\"\n")
+	b.WriteString("width          = 3\n")
+	b.WriteString("timeout        = \"25m\"\n\n")
 	b.WriteString("[verify]\n")
 	if build != "" {
 		fmt.Fprintf(&b, "build = %q\n", build)

@@ -15,6 +15,8 @@ func TestSeedConfig(t *testing.T) {
 		`build = "go build ./..."`,
 		`test  = "go test ./... -count=1"`,
 		`default = "claude"`,
+		`claimed_label  = "romp:claimed"`,
+		`blocked_label  = "romp:blocked"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("seedConfig missing %q:\n%s", want, got)
@@ -32,6 +34,9 @@ func TestSeedConfig(t *testing.T) {
 	}
 	if cfg.Verify.Build != "go build ./..." || cfg.Verify.Test != "go test ./... -count=1" {
 		t.Errorf("round-trip verify = %+v", cfg.Verify)
+	}
+	if cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" {
+		t.Errorf("round-trip labels = %q / %q", cfg.ClaimedLabel, cfg.BlockedLabel)
 	}
 }
 

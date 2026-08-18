@@ -13,7 +13,7 @@ The terminal state of a job: done, blocked, no-changes, red, timeout, rate-limit
 _Avoid_: status, result
 
 **Blocked**:
-An outcome where the agent stops without writing code because the issue is ambiguous, contradictory, or under-scoped; romp relabels the issue `needs-scoping` and posts the specific gap.
+An outcome where the agent stops without writing code because the issue is ambiguous, contradictory, or under-scoped; romp relabels the issue `romp:blocked` and posts the specific gap.
 _Avoid_: failed, rejected
 
 ## Agent interface
@@ -47,3 +47,11 @@ _Avoid_: romp label, work label
 **Width**:
 The maximum number of jobs running concurrently in a repo.
 _Avoid_: parallelism, concurrency
+
+**Claim**:
+Taking ownership of a labelled issue: atomically inserting a job row, then adding the claim label so no other watcher works it.
+_Avoid_: assign, reserve, lock
+
+**Claim label**:
+A GitHub label (`romp:claimed` by default, configurable as `claimed_label`) marking an issue as taken by a running job; the poll excludes it.
+_Avoid_: in-progress label, status label
