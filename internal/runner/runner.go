@@ -90,6 +90,14 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		r.logf("%s", res.Output)
 	}
 
+	pr, err := readPR(dir, issue.Title, issueNum)
+	if err != nil {
+		return err
+	}
+	if err := removePRArtifact(dir); err != nil {
+		return err
+	}
+
 	changed, err := r.Git.HasChanges(ctx, dir, "origin/"+base)
 	if err != nil {
 		return err
@@ -98,7 +106,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		return fmt.Errorf("no-changes: agent made no changes in %s", dir)
 	}
 
-	if err := r.Git.CommitAll(ctx, dir, fmt.Sprintf("%s (#%d)", issue.Title, issueNum)); err != nil {
+	if err := r.Git.CommitAll(ctx, dir, pr.Commit); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
 
@@ -111,7 +119,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		return fmt.Errorf("push: %w", err)
 	}
 
-	url, err := r.GH.CreatePR(ctx, repo, issue.Title, "Closes #"+fmt.Sprint(issueNum), branch, base)
+	url, err := r.GH.CreatePR(ctx, repo, pr.Title, withCloses(pr.Body, issueNum), branch, base)
 	if err != nil {
 		return err
 	}

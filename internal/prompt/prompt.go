@@ -64,5 +64,16 @@ CONSTRAINTS:
 - Do not run ` + "`git commit`" + `, ` + "`git push`" + `, or ` + "`git worktree`" + ` commands; romp handles those.
 {{if .Protected}}Protected paths (do not touch): {{.Protected}}{{end}}
 
+REPORT: before you stop, write your pull request to the file .romp/pull-request.md in the worktree root, in this exact shape:
+
+---
+title: <concise PR title>
+commit: <conventional commit subject>
+---
+
+<PR description>
+
+The commit subject must follow conventional commits: a type prefix (feat, fix, refactor, docs, test, chore) followed by a short description. The description must tell a reviewer what changed and why. If the change is substantial (multiple files, a new abstraction, an architectural decision), include one or more mermaid diagrams (flowchart or sequence) to explain it. For a small change, a few sentences are enough and no diagram is needed.
+
 If the issue is ambiguous, contradictory, or under-specified, stop without writing code and explain exactly what is missing or contradictory.
 `

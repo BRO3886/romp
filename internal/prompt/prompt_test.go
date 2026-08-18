@@ -30,6 +30,10 @@ func TestRenderFillsPlaceholders(t *testing.T) {
 		"go test ./... -count=1",
 		"PROVE IT",
 		"CONSTRAINTS",
+		"REPORT",
+		".romp/pull-request.md",
+		"mermaid",
+		"conventional commit",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered prompt missing %q", want)
