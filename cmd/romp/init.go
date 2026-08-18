@@ -60,11 +60,11 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	ownerName := owner + "/" + name
 
 	client := &gh.Client{}
-	for _, label := range []string{cfg.Label, cfg.ClaimedLabel, cfg.BlockedLabel} {
-		if err := client.CreateLabel(ctx, ownerName, label); err != nil {
-			return fmt.Errorf("creating label %q: %w", label, err)
+	for _, l := range initLabels(cfg) {
+		if err := client.CreateLabel(ctx, ownerName, l.name, l.desc); err != nil {
+			return fmt.Errorf("creating label %q: %w", l.name, err)
 		}
-		cmd.Printf("label %q ready on %s\n", label, ownerName)
+		cmd.Printf("label %q ready on %s\n", l.name, ownerName)
 	}
 
 	if err := ensureGitignore(root); err != nil {
@@ -89,6 +89,19 @@ func seedConfig(build, test, lang string) string {
 	fmt.Fprintf(&b, "test  = %q\n\n", test)
 	b.WriteString("[harness]\ndefault = \"codex\"\n")
 	return b.String()
+}
+
+type repoLabel struct {
+	name string
+	desc string
+}
+
+func initLabels(cfg *config.Config) []repoLabel {
+	return []repoLabel{
+		{cfg.Label, "romp will pick this up and open a pull request"},
+		{cfg.ClaimedLabel, "a romp job is working this issue"},
+		{cfg.BlockedLabel, "romp stopped; the issue is under-scoped"},
+	}
 }
 
 // ensureGitignore appends .romp/local.toml to the repo's .gitignore when it

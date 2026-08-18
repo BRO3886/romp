@@ -206,11 +206,23 @@ func (c *Client) RemoveLabel(ctx context.Context, repo string, number int, label
 }
 
 // CreateLabel ensures a label exists on a repo. An existing label is treated
-// as success so init is idempotent.
-func (c *Client) CreateLabel(ctx context.Context, repo, label string) error {
-	_, err := c.run(ctx, "label", "create", label, "--repo", repo)
-	if err != nil && !strings.Contains(err.Error(), "already exists") {
+// as success so init is idempotent; a description is applied on create and
+// updated via edit so a re-run does not change the color.
+func (c *Client) CreateLabel(ctx context.Context, repo, label, description string) error {
+	args := []string{"label", "create", label, "--repo", repo}
+	if description != "" {
+		args = append(args, "--description", description)
+	}
+	_, err := c.run(ctx, args...)
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(err.Error(), "already exists") {
 		return err
 	}
-	return nil
+	if description == "" {
+		return nil
+	}
+	_, err = c.run(ctx, "label", "edit", label, "--repo", repo, "--description", description)
+	return err
 }

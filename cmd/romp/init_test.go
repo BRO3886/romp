@@ -50,6 +50,32 @@ func TestSeedConfigNoBuild(t *testing.T) {
 	}
 }
 
+func TestInitLabels(t *testing.T) {
+	cfg := config.Defaults()
+	got := initLabels(&cfg)
+	if len(got) != 3 {
+		t.Fatalf("initLabels = %d labels, want 3", len(got))
+	}
+	if got[0].name != "romp" || got[0].desc == "" {
+		t.Errorf("trigger = %+v, want named romp with a description", got[0])
+	}
+	if got[1].name != "romp:claimed" || got[1].desc == "" {
+		t.Errorf("claimed = %+v, want named romp:claimed with a description", got[1])
+	}
+	if got[2].name != "romp:blocked" || got[2].desc == "" {
+		t.Errorf("blocked = %+v, want named romp:blocked with a description", got[2])
+	}
+
+	cfg.Label, cfg.ClaimedLabel, cfg.BlockedLabel = "work", "taken", "stuck"
+	got = initLabels(&cfg)
+	if got[0].name != "work" || got[1].name != "taken" || got[2].name != "stuck" {
+		t.Errorf("custom names = %q %q %q", got[0].name, got[1].name, got[2].name)
+	}
+	if got[0].desc == "" || got[1].desc == "" || got[2].desc == "" {
+		t.Errorf("custom labels missing descriptions: %+v", got)
+	}
+}
+
 func TestEnsureGitignore(t *testing.T) {
 	t.Run("creates", func(t *testing.T) {
 		root := t.TempDir()
