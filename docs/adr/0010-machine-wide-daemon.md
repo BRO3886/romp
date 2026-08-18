@@ -2,20 +2,33 @@
 
 Status: accepted
 
-The README and ADR 0009 described one `romp watch` process per repo, each with its own Unix socket and a one-shot JSON cancel verb. That shape cannot enforce a machine-wide limit: each process has its own width semaphore, so N repos at width M become N×M harness processes and the machine OOMs. A supervisor of hidden per-repo children has the same bug unless a second protocol exists.
+## Context
 
-The daemon is the watcher. One launchd user agent polls every repo in the registry, claims work, and is the parent of every harness child (claude/codex). `romp watch` is a client verb: it enrolls the current repo and returns. The CLI, a menu bar app, and a desktop app are interchangeable HTTP clients of one Unix socket at `~/.local/state/romp/romp.sock`. Users never own a watch process. The backend does not import UI; ship clients as vertical slices against the same protocol.
+The README and ADR 0009 described one `romp watch` process per repo, each with its own Unix socket and a one-shot JSON cancel verb. That shape cannot enforce a machine-wide limit: each process has its own width semaphore, so N repos at width M become N×M harness processes and the machine OOMs. A supervisor of hidden per-repo children has the same bug. The end state is a login-session runtime that a CLI, a menu bar, and a desktop app can all talk to, without the user owning a watch process.
 
-The first slice includes the user agent. `romp daemon install` writes the plist (`RunAtLoad`, `KeepAlive`) and kickstarts it once. The process binds the socket itself; this is not launchd socket activation. If the socket is down, clients `launchctl kickstart` the existing agent — they do not spawn a detached `romp` and they do not rewrite the plist. `romp daemon --foreground` is the debug path and must fail if the socket is already owned.
+launchd does not load an interactive shell, so it does not see Homebrew or `~/.local/bin`. romp finds `git`, `gh`, and the harness with `exec.LookPath` on `PATH`. A doctor run in the terminal will pass on a machine where the daemon then fails with `claude CLI not found`.
 
-Admission is macOS memory pressure, not a job count and not free RAM. Claim only when pressure is normal, and at most one new job per poll tick so the brake gets a vote. Warning or critical: stop claiming, do not kill running jobs. There is no TOML field and no user override. Width still bounds one repo. A registered repo with no labelled issues is a poll loop and does not consume a job slot.
+## Decision
 
-A registry row is one GitHub origin bound to one absolute path. Origin is the identity (the same key as `UNIQUE(repo, issue)`). Path is a required attribute. Enrolling a second checkout of an origin already in the registry is an error. A vanished path keeps the row; the daemon skips that origin until a client rebinds it. Unwatch removes the origin from the registry immediately and stops new claims; in-flight jobs drain. Cancel is how a single job is killed.
+The daemon is the watcher. One launchd user agent polls every repo in the registry, claims work, and is the parent of every harness child. `romp watch` enrolls the current repo and returns. The CLI, a menu bar, and a desktop app are HTTP clients of one Unix socket at `~/.local/state/romp/romp.sock`. The backend does not import UI.
 
-Live control goes through the socket: watch, unwatch, status, cancel, logs. The wire is HTTP+JSON so a menu bar does not grow a custom codec; `logs -f` is a streaming response. If the daemon is down, the CLI asks launchd to start it and then sends the request. A wedged daemon makes status fail rather than return stale "running" rows.
+`romp daemon install` writes the user-agent plist (`RunAtLoad`, `KeepAlive`) and kickstarts it. The process binds the socket itself. Clients never spawn a detached daemon and never rewrite the plist; if the socket is down they `launchctl kickstart` the existing agent, and if the agent is not installed they error. `romp daemon --foreground` fails if the socket is already owned.
 
-`gc`, `doctor`, and `history` are a CLI allowlist, not a general "skip the socket" privilege. They exist to work when the daemon is dead: gc reclaims debris, doctor checks the machine, history reads the append-only outcomes table. They may open `romp.db`. They must not write claims. gc still refuses to delete a worktree that has an in-flight job row.
+Install resolves `romp`, `git`, `gh`, and the harness with the installing shell's `LookPath`. The plist `Program` is the absolute path to `romp`. `EnvironmentVariables.PATH` is the unique parent directories of those binaries, plus `/usr/bin:/bin` — not a dump of the interactive `PATH`. Re-run install after a binary moves. `romp doctor` must ask the running daemon what *it* can resolve; a CLI-only doctor is not sufficient.
 
-This supersedes ADR 0009 (per-repo socket, cancel-only, logs as files) and the README's "start one watch per repo" model. Claim semantics (ADR 0005), the shared SQLite file (ADR 0008), and `romp run -i N` as a foreground bypass (ADR 0006) are unchanged. launchd's PATH must find `gh`, `git`, and the harness; an interactive-shell-only install is a bug.
+Admission is macOS memory pressure, not a job count and not free RAM. Claim only when pressure is normal, and at most one new job per poll tick. Warning or critical: stop claiming, do not kill running jobs. No TOML field, no user override. Width still bounds one repo.
 
-v0 shipped the ADR 0009 per-repo socket and the `cancel`/`logs` commands as an interim; the daemon replaces the socket and moves every client verb behind it.
+A registry row is one GitHub origin bound to one absolute path. Origin is the identity. Path is required. A second checkout of an origin already in the registry is an error. A vanished path keeps the row; the daemon skips that origin until a client rebinds it. Unwatch removes the origin and stops new claims; in-flight jobs drain.
+
+Live control goes through the socket: watch, unwatch, status, cancel, logs. The wire is HTTP+JSON. `gc`, `doctor`, and `history` are a closed CLI allowlist and may open `romp.db`; they must not write claims. `romp run -i N` stays a foreground bypass (ADR 0006).
+
+This supersedes ADR 0009. Claim semantics (ADR 0005) and the shared SQLite file (ADR 0008) are unchanged.
+
+## Consequences
+
+- One panic stops every repo. Acceptable because the poll loop is thin, the memory hog is the harness child, and launchd restarts the agent.
+- First-run has one extra command (`romp daemon install`). That is the real service, not a rehearsal for a later plist.
+- A quiet 64GB machine ramps one job per poll tick. That is the cost of no job-count knob.
+- Two readers of `romp.db` exist (the daemon, and the gc/doctor/history allowlist). Adding a command to that list is a decision. The menu bar never opens the db.
+- A harness installed only inside nvm, or moved after install, is invisible until install is re-run. Dumping the full interactive PATH was rejected because those entries rot.
+- The ADR 0009 per-repo cancel socket is an interim on main; the daemon replaces it, it does not sit beside it.
