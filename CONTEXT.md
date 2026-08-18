@@ -52,13 +52,39 @@ _Avoid_: romp label, work label
 The maximum number of jobs running concurrently in a repo.
 _Avoid_: parallelism, concurrency
 
+**Admission**:
+Whether the daemon may claim another job. Refused when the machine is under memory pressure.
+_Avoid_: cap, slot, machine limit, free RAM
+
 **Claim**:
-Taking ownership of a labelled issue: atomically inserting a job row, then adding the claim label so no other watcher works it.
+Taking ownership of a labelled issue: atomically inserting a job row, then adding the claim label so no other machine works it.
 _Avoid_: assign, reserve, lock
 
 **Claim label**:
 A GitHub label (`romp:claimed` by default, configurable as `claimed_label`) marking an issue as taken by a running job; the poll excludes it.
 _Avoid_: in-progress label, status label
+
+## Runtime
+
+**Daemon**:
+The single machine-wide process that watches every registered repo and owns every in-flight job.
+_Avoid_: supervisor, watcher process, instance
+
+**Registry**:
+The set of GitHub origins the daemon is watching. Each origin is bound to exactly one local path.
+_Avoid_: watch list, project list
+
+**Watch**:
+Enrolling a repo in the registry so the daemon polls it for work.
+_Avoid_: run a watcher, start a process
+
+**Unwatch**:
+Removing an origin from the registry. In-flight jobs drain; no new claims start.
+_Avoid_: stop, remove, disable
+
+**Client**:
+A process that talks to the daemon over the socket. The CLI, a menu bar app, and a desktop app are all clients. They do not read the job table themselves.
+_Avoid_: frontend, UI, instance
 
 ## Observability
 

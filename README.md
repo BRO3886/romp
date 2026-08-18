@@ -79,14 +79,16 @@ All commands operate on the repo containing your current directory.
 | `romp watch` | Poll for labelled issues and work them. Foreground. |
 | `romp run -i N` | Run one issue now. Ignores the label. |
 | `romp status` | Jobs in this repo. `--all` for every running instance. |
-| `romp cancel <id>` | Kill a running job and free its slot. |
-| `romp logs <id> [-f]` | Show or follow a job's log. |
+| `romp cancel <issue>` | Kill a running job and abandon it (removes both labels, cleans up). |
+| `romp logs <codename> [-f]` | Show or follow a job's log. |
 | `romp gc` | Remove stale worktrees and prune old job history (dry-run, then `--apply`). |
 | `romp doctor` | Check `gh` auth, harness login, git version, config validity. |
 
-`status`, `cancel`, and `logs` reach the watcher over a Unix socket at
-`$XDG_RUNTIME_DIR/romp/<owner>-<repo>.sock`. They work without a watcher running
-too — they fall back to reading the job table directly.
+`romp cancel <issue>` reaches the running watcher over a Unix socket at
+`$XDG_RUNTIME_DIR/romp/<owner>-<repo>.sock`, falling back to the state dir when
+`XDG_RUNTIME_DIR` is unset (the macOS default). It needs a live watcher — there
+is nothing to cancel otherwise. `romp logs` reads the per-job log files
+directly, so it works with or without a watcher.
 
 Run `romp doctor` first. It catches the three things that break every new setup:
 `gh` not authenticated, the agent CLI not logged in, and git older than 2.35.
@@ -245,10 +247,14 @@ If the agent finds the issue ambiguous or contradictory, it stops without writin
 | **no-changes** | Agent exited clean but produced no commits. No PR, job failed |
 | **red** | Agent finished, `test_cmd` failed on the independent re-run. No PR, worktree kept |
 | **timeout** | Job exceeded `timeout`. Killed, worktree kept for inspection |
+| **cancelled** | You cancelled it. Agent killed, worktree and branch removed, claim and trigger labels removed |
 | **rate-limited** | Requeued with backoff, up to 3 attempts |
 
 Failed jobs keep their worktree so you can inspect it. `romp gc` removes them,
 and prunes finished-job history older than `history_days` (default 30).
+
+`romp cancel` is an abandon, not a retry: the issue loses its trigger label
+too, so the next poll does not pick it up again. Re-label the issue to work it.
 
 ---
 

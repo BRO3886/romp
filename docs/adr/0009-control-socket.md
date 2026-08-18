@@ -1,6 +1,7 @@
 # Control socket: cancel over a Unix socket; logs tail files
 
-Status: accepted
+Status: superseded by ADR 0010. Implemented in v0 as the interim shape: one
+per-repo socket, `romp cancel` and `romp logs` commands.
 
 ## Context
 
@@ -17,4 +18,4 @@ Cancel is an abandon, not a restart: it kills the agent, records a new `cancelle
 - The socket serves one verb, so the protocol is a one-shot JSON request/response with no framing or persistent connections.
 - A stale socket file left by a crashed watcher is handled by connecting first and unlinking only when nothing answers, so a live watcher is never clobbered.
 - `romp cancel` fails with a clear error when no watcher is running, unlike `logs`, which works file-side.
-- Re-claim after cancel is gated solely by the label removal: the `romp-N` branch / open-PR dedupe described in ADR 0003 is not implemented in v0, and the runner force-removes stale worktrees on re-add, so the label is the entire re-claim gate.
+- Re-claim after cancel is gated by the label removal: the reconcile check (ADR 0003) catches an issue whose open PR survived the cancel, and the runner force-removes stale worktrees on re-add, so a cancelled issue is not re-run unless a human re-labels it.
