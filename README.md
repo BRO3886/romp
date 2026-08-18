@@ -209,8 +209,8 @@ per repo; each gets its own socket and its own job table under
 Failing tests are not a stopping condition. The agent fixes and re-runs.
 
 Override the template at `.romp/prompt.md`, in the repo. Placeholders:
-`{{ISSUE}}` `{{TITLE}}` `{{BODY}}` `{{REPO}}` `{{BRANCH}}` `{{BASE}}` `{{URL}}`
-`{{VERIFY}}` `{{PROTECTED}}`.
+`{{.Issue}}` `{{.Title}}` `{{.Body}}` `{{.Repo}}` `{{.Branch}}` `{{.Base}}` `{{.URL}}`
+`{{.Verify}}` `{{.Protected}}` `{{.Ignore}}` `{{.Brief}}`.
 
 Put anything too long for a goal condition in `.romp/DESIGN.md` — repo idioms,
 architecture notes, where the test fixtures live. `romp` passes it as a

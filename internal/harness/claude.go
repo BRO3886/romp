@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strconv"
 )
 
 // Claude drives the Claude Code CLI (claude) in non-interactive print mode.
@@ -34,6 +35,9 @@ func claudeArgs(req Request, extra []string) []string {
 	}
 	if req.Effort != "" {
 		args = append(args, "--effort", req.Effort)
+	}
+	if req.MaxTurns > 0 {
+		args = append(args, "--max-turns", strconv.Itoa(req.MaxTurns))
 	}
 	args = append(args, extra...)
 	args = append(args, req.Prompt)

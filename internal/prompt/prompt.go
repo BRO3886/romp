@@ -17,6 +17,8 @@ type Data struct {
 	URL       string
 	Verify    string
 	Protected string
+	Ignore    string
+	Brief     string
 }
 
 // Renderer renders a goal contract from a text/template string.
@@ -44,6 +46,7 @@ func Default() string { return defaultTemplate }
 const defaultTemplate = `You are an autonomous coding agent fixing an issue in {{.Repo}}.
 
 Work in the git worktree you are already in. The branch is {{.Branch}}, based on {{.Base}}.
+{{if .Brief}}READ FIRST: read {{.Brief}} in this worktree before touching any code, and follow it.{{end}}
 
 Issue #{{.Issue}}: {{.Title}}
 {{.URL}}
@@ -63,6 +66,7 @@ CONSTRAINTS:
 - Do not change files outside the scope of this issue.
 - Do not run ` + "`git commit`" + `, ` + "`git push`" + `, or ` + "`git worktree`" + ` commands; romp handles those.
 {{if .Protected}}Protected paths (do not touch): {{.Protected}}{{end}}
+{{if .Ignore}}Ignored paths (do not read): {{.Ignore}}{{end}}
 
 REPORT: before you stop, write your pull request to the file .romp/pull-request.md in the worktree root, in this exact shape:
 

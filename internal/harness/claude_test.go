@@ -31,4 +31,16 @@ func TestClaudeArgs(t *testing.T) {
 	if !reflect.DeepEqual(both, want) {
 		t.Errorf("model and effort = %v, want %v", both, want)
 	}
+
+	withTurns := claudeArgs(Request{Prompt: "hello", MaxTurns: 30}, nil)
+	want = append(append([]string{}, base...), "--max-turns", "30", "hello")
+	if !reflect.DeepEqual(withTurns, want) {
+		t.Errorf("with max turns = %v, want %v", withTurns, want)
+	}
+
+	noTurns := claudeArgs(Request{Prompt: "hello"}, nil)
+	want = append(append([]string{}, base...), "hello")
+	if !reflect.DeepEqual(noTurns, want) {
+		t.Errorf("zero max turns = %v, want %v (no --max-turns flag)", noTurns, want)
+	}
 }

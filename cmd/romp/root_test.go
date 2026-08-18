@@ -2,9 +2,14 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/BRO3886/romp/internal/config"
+	"github.com/BRO3886/romp/internal/harness"
+	"github.com/BRO3886/romp/internal/prompt"
 	"github.com/BRO3886/romp/internal/runner"
 )
 
@@ -113,5 +118,85 @@ func TestBuildHarness(t *testing.T) {
 	}
 	if _, err := buildHarness("bogus"); err == nil {
 		t.Error("buildHarness(bogus) = nil error, want unknown-harness")
+	}
+}
+
+func TestLoadTemplate(t *testing.T) {
+	root := t.TempDir()
+
+	got, err := loadTemplate(root, "")
+	if err != nil {
+		t.Fatalf("loadTemplate default: %v", err)
+	}
+	if got != prompt.Default() {
+		t.Error("loadTemplate default = custom text, want prompt.Default()")
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "custom.md"), []byte("CUSTOM {{.Issue}}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = loadTemplate(root, "custom.md")
+	if err != nil {
+		t.Fatalf("loadTemplate custom: %v", err)
+	}
+	if got != "CUSTOM {{.Issue}}" {
+		t.Errorf("loadTemplate custom = %q", got)
+	}
+
+	if _, err := loadTemplate(root, "missing.md"); err == nil {
+		t.Error("loadTemplate missing = nil error, want error")
+	}
+}
+
+func TestResolveBrief(t *testing.T) {
+	root := t.TempDir()
+
+	if got, err := resolveBrief(root, ""); err != nil || got != "" {
+		t.Errorf("resolveBrief empty = %q, %v", got, err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "DESIGN.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveBrief(root, "DESIGN.md")
+	if err != nil || got != "DESIGN.md" {
+		t.Errorf("resolveBrief = %q, %v", got, err)
+	}
+
+	if _, err := resolveBrief(root, "nope.md"); err == nil {
+		t.Error("resolveBrief missing = nil error, want error")
+	}
+}
+
+func TestBuildRunnerWiresConfig(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "prompt.md"), []byte("custom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "DESIGN.md"), []byte("brief"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Defaults()
+	cfg.Harness.MaxTurns = 7
+	cfg.Scope.Ignore = []string{"vendor/**"}
+	cfg.Prompt.Template = "prompt.md"
+	cfg.Prompt.Brief = "DESIGN.md"
+
+	r, err := buildRunner(root, &cfg, []string{"go test ./..."}, harness.Claude{}, time.Minute)
+	if err != nil {
+		t.Fatalf("buildRunner: %v", err)
+	}
+	if r.MaxTurns != 7 {
+		t.Errorf("MaxTurns = %d, want 7", r.MaxTurns)
+	}
+	if len(r.Ignore) != 1 || r.Ignore[0] != "vendor/**" {
+		t.Errorf("Ignore = %v, want [vendor/**]", r.Ignore)
+	}
+	if r.Brief != "DESIGN.md" {
+		t.Errorf("Brief = %q, want DESIGN.md", r.Brief)
+	}
+	if r.Prompt.Template != "custom" {
+		t.Errorf("Prompt.Template = %q, want custom", r.Prompt.Template)
 	}
 }

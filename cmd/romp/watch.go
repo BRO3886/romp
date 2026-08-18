@@ -71,7 +71,11 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		GH:       &gh.Client{},
 		Store:    store,
 		RunJob: func(ctx context.Context, issue int) error {
-			return buildRunner(root, cfg, verify, h, timeout).Run(ctx, issue)
+			r, err := buildRunner(root, cfg, verify, h, timeout)
+			if err != nil {
+				return err
+			}
+			return r.Run(ctx, issue)
 		},
 	}
 	return w.Run(ctx)

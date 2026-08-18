@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -97,27 +98,65 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlag string, verif
 		return nil, fmt.Errorf("parsing timeout %q: %w", cfg.Timeout, err)
 	}
 
-	return buildRunner(root, cfg, verify, h, timeout), nil
+	return buildRunner(root, cfg, verify, h, timeout)
 }
 
 // buildRunner assembles a Runner from already-resolved config and options so
 // both the run and watch commands share one construction path.
-func buildRunner(root string, cfg *config.Config, verify []string, h harness.Harness, timeout time.Duration) *runner.Runner {
+func buildRunner(root string, cfg *config.Config, verify []string, h harness.Harness, timeout time.Duration) (*runner.Runner, error) {
+	templateText, err := loadTemplate(root, cfg.Prompt.Template)
+	if err != nil {
+		return nil, err
+	}
+	brief, err := resolveBrief(root, cfg.Prompt.Brief)
+	if err != nil {
+		return nil, err
+	}
 	return &runner.Runner{
 		Harness:      h,
 		Git:          &git.Repo{Root: root},
 		GH:           &gh.Client{},
-		Prompt:       &prompt.Renderer{Template: prompt.Default()},
+		Prompt:       &prompt.Renderer{Template: templateText},
 		Verify:       verify,
 		Model:        cfg.Harness.Model,
 		Effort:       cfg.Harness.Effort,
+		MaxTurns:     cfg.Harness.MaxTurns,
 		Base:         cfg.Base,
 		Timeout:      timeout,
 		Protected:    cfg.Scope.Protected,
+		Ignore:       cfg.Scope.Ignore,
+		Brief:        brief,
 		TriggerLabel: cfg.Label,
 		BlockedLabel: cfg.BlockedLabel,
 		Stderr:       os.Stderr,
+	}, nil
+}
+
+// loadTemplate returns the goal-contract template text: the configured file
+// when set, otherwise the built-in default. A configured file that cannot be
+// read is an error rather than a silent fallback.
+func loadTemplate(root, path string) (string, error) {
+	if path == "" {
+		return prompt.Default(), nil
 	}
+	data, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		return "", fmt.Errorf("reading prompt template %s: %w", path, err)
+	}
+	return string(data), nil
+}
+
+// resolveBrief validates that a configured brief file exists and returns its
+// path, which the prompt passes to the agent as a READ FIRST pointer (the
+// agent reads the file itself in the worktree).
+func resolveBrief(root, path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	if _, err := os.Stat(filepath.Join(root, path)); err != nil {
+		return "", fmt.Errorf("prompt brief %s: %w", path, err)
+	}
+	return path, nil
 }
 
 func repoRoot(ctx context.Context) (string, error) {

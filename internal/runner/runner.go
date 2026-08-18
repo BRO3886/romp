@@ -54,9 +54,12 @@ type Runner struct {
 	Verify       []string
 	Model        string
 	Effort       string
+	MaxTurns     int
 	Base         string
 	Timeout      time.Duration
 	Protected    []string
+	Ignore       []string
+	Brief        string
 	TriggerLabel string
 	BlockedLabel string
 	Stderr       io.Writer
@@ -135,6 +138,8 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		URL:       issue.URL,
 		Verify:    strings.Join(r.Verify, " && "),
 		Protected: strings.Join(r.Protected, ", "),
+		Ignore:    strings.Join(r.Ignore, ", "),
+		Brief:     r.Brief,
 	})
 	if err != nil {
 		return err
@@ -150,7 +155,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		runCtx, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
-	_, err = r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort})
+	_, err = r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
 	if err != nil {
 		return err
 	}

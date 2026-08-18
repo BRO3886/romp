@@ -17,6 +17,9 @@ type Request struct {
 	// Effort, when non-empty, requests a thinking budget (claude's
 	// --effort); empty leaves the harness default in place.
 	Effort string
+	// MaxTurns, when positive, caps the agent's turn budget (claude's
+	// --max-turns); zero leaves the harness default in place.
+	MaxTurns int
 }
 
 // Result is the outcome of a run. Fields are added additively so adapters
