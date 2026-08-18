@@ -42,6 +42,10 @@
   --elevation-1: 0 0 0 1px rgb(26 37 48 / 0.05), 0 1px 3px rgb(26 37 48 / 0.06), 0 6px 16px -6px rgb(26 37 48 / 0.08);
   --elevation-2: 0 0 0 1px rgb(26 37 48 / 0.07), 0 2px 6px rgb(26 37 48 / 0.08), 0 16px 36px -10px rgb(26 37 48 / 0.16);
   --elevation-2-hover: 0 0 0 1px rgb(26 37 48 / 0.09), 0 4px 10px rgb(26 37 48 / 0.09), 0 22px 48px -12px rgb(26 37 48 / 0.20);
+  /* Elevation-1 with the ring tinted copper, so a caution surface is marked by
+     its edge rather than by an applied graphic. */
+  --elevation-caution: 0 0 0 1px rgb(192 102 46 / 0.20), 0 1px 3px rgb(26 37 48 / 0.05), 0 6px 16px -6px rgb(26 37 48 / 0.08);
+  --elevation-caution-hover: 0 0 0 1px rgb(192 102 46 / 0.34), 0 2px 6px rgb(26 37 48 / 0.07), 0 14px 32px -10px rgb(26 37 48 / 0.15);
 
   --img-outline: rgb(0 0 0 / 0.10);
   --border-hairline: 1px;
@@ -477,27 +481,36 @@ h1, h2 { font-weight: 800; }
 .safety-section { padding: clamp(4.5rem, 8vw, 6.5rem) 1.5rem; background: var(--bg-soft); border-block: var(--border-hairline) solid var(--border); }
 .safety-inner { max-width: 940px; margin: 0 auto; }
 .safety-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+/* The copper hairline is the caution mark. It rides the shadow ring rather than
+   a drawn bar, so it traces the corner radius instead of cutting across it. */
 .safety-card {
-  position: relative; overflow: hidden;
-  background: var(--surface); box-shadow: var(--elevation-1); border-radius: 14px;
-  padding: 1.4rem 1.5rem 1.5rem;
+  display: grid; grid-template-columns: 34px 1fr; gap: 0.4rem 0.9rem; align-content: start;
+  background: var(--surface); border-radius: 16px; padding: 1.5rem;
+  box-shadow: var(--elevation-caution);
+  transition: box-shadow 150ms ease-out, transform 150ms ease-out;
 }
-/* A copper cap marks these as cautions. Drawn as a bar rather than a border so
-   it does not taper into the corner radius. */
-.safety-card::before {
-  content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--fox);
+@media (hover: hover) and (pointer: fine) {
+  .safety-card:hover { box-shadow: var(--elevation-caution-hover); transform: translateY(-2px); }
 }
 .safety-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; border-radius: 9px; margin-bottom: 0.85rem;
+  width: 34px; height: 34px; border-radius: 10px;
   background: var(--fox-tint); color: var(--fox-deep);
 }
-.safety-card h3 { font-size: 1.05rem; letter-spacing: -0.015em; margin-bottom: 0.4rem; }
-.safety-card p { font-size: 0.93rem; line-height: 1.6; color: var(--ink-muted); margin: 0; }
+.safety-card h3 {
+  align-self: center; font-size: 1.05rem; letter-spacing: -0.015em;
+  text-wrap: balance; min-width: 0;
+}
+/* The copy runs the full card width; only the heading is indented by the icon. */
+.safety-card p {
+  grid-column: 1 / -1; font-size: 0.93rem; line-height: 1.6;
+  color: var(--ink-muted); margin: 0; text-wrap: pretty;
+}
 .safety-note { margin-top: 2rem; text-align: center; }
 
 @media (max-width: 720px) {
   .safety-grid { grid-template-columns: 1fr; }
+  .safety-card { padding: 1.25rem; border-radius: 14px; }
 }
 
 /* --- FAQ --- */
