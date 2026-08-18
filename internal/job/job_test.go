@@ -135,7 +135,7 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 		t.Errorf("in-flight rows after finish = %v, want none", jobs)
 	}
 
-	outcomes, err := s.History(ctx, 10)
+	outcomes, err := s.History(ctx, "", 10)
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestFinishWithoutInFlightRowIsNoOp(t *testing.T) {
 	if err := s.Finish(context.Background(), Outcome{Repo: "o/r", Issue: 7, Outcome: "done"}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
-	outcomes, err := s.History(context.Background(), 10)
+	outcomes, err := s.History(context.Background(), "", 10)
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestHistoryNewestFirst(t *testing.T) {
 		t.Fatalf("Finish 8: %v", err)
 	}
 
-	outcomes, err := s.History(ctx, 10)
+	outcomes, err := s.History(ctx, "", 10)
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
@@ -229,11 +229,44 @@ func TestPruneDeletesOnlyOldOutcomes(t *testing.T) {
 		t.Errorf("Prune = %d, want 1", pruned)
 	}
 
-	outcomes, err := s.History(ctx, 10)
+	outcomes, err := s.History(ctx, "", 10)
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
 	if len(outcomes) != 1 || outcomes[0].Issue != 8 {
 		t.Errorf("History after prune = %v, want only issue 8", outcomes)
+	}
+}
+
+func TestHistoryFiltersByRepo(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	for _, outcome := range []Outcome{
+		{Repo: "o/r", Issue: 7, Outcome: "done", FinishedAt: "2026-08-18T12:00:00Z"},
+		{Repo: "other/r", Issue: 8, Outcome: "done", FinishedAt: "2026-08-18T13:00:00Z"},
+	} {
+		if ok, err := s.Claim(ctx, outcome.Repo, outcome.Issue, "romp"); err != nil || !ok {
+			t.Fatalf("Claim %s #%d: ok=%v err=%v", outcome.Repo, outcome.Issue, ok, err)
+		}
+		if err := s.Finish(ctx, outcome); err != nil {
+			t.Fatalf("Finish %s #%d: %v", outcome.Repo, outcome.Issue, err)
+		}
+	}
+
+	outcomes, err := s.History(ctx, "o/r", 10)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Repo != "o/r" || outcomes[0].Issue != 7 {
+		t.Errorf("History(o/r) = %v, want only o/r #7", outcomes)
+	}
+
+	all, err := s.History(ctx, "", 10)
+	if err != nil {
+		t.Fatalf("History all: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("History(all) len = %d, want 2", len(all))
 	}
 }
