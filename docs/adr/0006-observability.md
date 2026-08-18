@@ -18,6 +18,6 @@ status reads the job table directly (no socket in v0) and prints each in-flight 
 
 - Concurrent jobs are attributable at a glance; status answers "what is running", and the codename ties each log line and PR back to its issue.
 - The codename is deterministic, so the same issue always yields the same name and no persistence beyond the job table is needed.
-- status is local-only in v0: it sees this machine's job table, not teammates' watchers. A socket (and `status --all`) is the same deferred follow-up as `cancel` and `logs` tailing, which all need a way to address a live job.
+- status is local-only in v0: it sees this machine's job table, not teammates' watchers. `status --all` (all repos on this machine) is a cheap read across the state dir. A socket is the deferred follow-up behind `cancel`, `logs` tailing, and cross-machine status, since those need a way to address a live job.
 - gc reclaims worktrees only; the `romp-N` branches of failed jobs still accumulate until a later slice adds branch deletion, guarded by an open-PR check.
 - The job table still stores only in-flight rows (ADR 0005), so status shows running jobs, not outcome history.
