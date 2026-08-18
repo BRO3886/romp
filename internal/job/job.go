@@ -208,6 +208,25 @@ func nullable(s string) any {
 	return s
 }
 
+// CountBefore returns how many outcomes finished before before. The cutoff is
+// an RFC 3339 timestamp; outcomes store UTC timestamps in a zero-padded form
+// that compares lexicographically.
+func (s *Store) CountBefore(ctx context.Context, before string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM outcomes WHERE finished_at < ?`, before).Scan(&n)
+	return n, err
+}
+
+// Prune deletes outcomes finished before before and returns how many were
+// removed, keeping the history table bounded.
+func (s *Store) Prune(ctx context.Context, before string) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM outcomes WHERE finished_at < ?`, before)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func newID() (string, error) {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {

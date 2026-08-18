@@ -83,24 +83,6 @@ func elapsed(claimedAt string, now time.Time) string {
 	return now.Sub(t).Round(time.Second).String()
 }
 
-// loadJobs resolves the current repo and reads its in-flight job rows.
-func loadJobs(ctx context.Context) (owner, name string, jobs []job.Job, err error) {
-	owner, name, err = currentRepo(ctx)
-	if err != nil {
-		return "", "", nil, err
-	}
-	store, err := job.Open(job.Path())
-	if err != nil {
-		return "", "", nil, err
-	}
-	defer store.Close()
-	jobs, err = store.List(ctx, owner+"/"+name)
-	if err != nil {
-		return "", "", nil, err
-	}
-	return owner, name, jobs, nil
-}
-
 // currentRepo resolves the origin of the working directory.
 func currentRepo(ctx context.Context) (owner, name string, err error) {
 	root, err := repoRoot(ctx)

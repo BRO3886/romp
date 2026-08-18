@@ -195,3 +195,45 @@ func TestHistoryNewestFirst(t *testing.T) {
 		t.Errorf("history order = [%d %d], want newest first [8 7]", outcomes[0].Issue, outcomes[1].Issue)
 	}
 }
+
+func TestPruneDeletesOnlyOldOutcomes(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	for _, n := range []int{7, 8} {
+		if ok, err := s.Claim(ctx, "o/r", n, "romp-7"); err != nil || !ok {
+			t.Fatalf("Claim %d: ok=%v err=%v", n, ok, err)
+		}
+	}
+	if err := s.Finish(ctx, Outcome{Repo: "o/r", Issue: 7, Outcome: "done", FinishedAt: "2026-08-01T00:00:00Z"}); err != nil {
+		t.Fatalf("Finish 7: %v", err)
+	}
+	if err := s.Finish(ctx, Outcome{Repo: "o/r", Issue: 8, Outcome: "done", FinishedAt: "2026-08-18T00:00:00Z"}); err != nil {
+		t.Fatalf("Finish 8: %v", err)
+	}
+
+	cutoff := "2026-08-15T00:00:00Z"
+	n, err := s.CountBefore(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("CountBefore: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("CountBefore = %d, want 1", n)
+	}
+
+	pruned, err := s.Prune(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if pruned != 1 {
+		t.Errorf("Prune = %d, want 1", pruned)
+	}
+
+	outcomes, err := s.History(ctx, 10)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Issue != 8 {
+		t.Errorf("History after prune = %v, want only issue 8", outcomes)
+	}
+}
