@@ -63,7 +63,7 @@ func Defaults() Config {
 		Width:        3,
 		Timeout:      "25m",
 		HistoryDays:  30,
-		Harness:      Harness{Default: "claude", Effort: "high"},
+		Harness:      Harness{Default: "codex", Effort: "high"},
 	}
 }
 

@@ -87,7 +87,7 @@ func seedConfig(build, test, lang string) string {
 		fmt.Fprintf(&b, "build = %q\n", build)
 	}
 	fmt.Fprintf(&b, "test  = %q\n\n", test)
-	b.WriteString("[harness]\ndefault = \"claude\"\n")
+	b.WriteString("[harness]\ndefault = \"codex\"\n")
 	return b.String()
 }
 

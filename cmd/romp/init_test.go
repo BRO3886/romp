@@ -14,7 +14,7 @@ func TestSeedConfig(t *testing.T) {
 	for _, want := range []string{
 		`build = "go build ./..."`,
 		`test  = "go test ./... -count=1"`,
-		`default = "claude"`,
+		`default = "codex"`,
 		`claimed_label  = "romp:claimed"`,
 		`blocked_label  = "romp:blocked"`,
 	} {

@@ -10,7 +10,7 @@ func TestDefaults(t *testing.T) {
 	cfg := Defaults()
 	if cfg.Label != "romp" || cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" ||
 		cfg.Width != 3 || cfg.Timeout != "25m" || cfg.HistoryDays != 30 ||
-		cfg.Harness.Default != "claude" || cfg.Harness.Effort != "high" {
+		cfg.Harness.Default != "codex" || cfg.Harness.Effort != "high" {
 		t.Fatalf("Defaults() = %+v", cfg)
 	}
 }
@@ -55,8 +55,8 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.Harness.Effort != "max" {
 		t.Errorf("Harness.Effort = %q, want max (local.toml)", cfg.Harness.Effort)
 	}
-	if cfg.Harness.Default != "claude" {
-		t.Errorf("Harness.Default = %q, want claude (default)", cfg.Harness.Default)
+	if cfg.Harness.Default != "codex" {
+		t.Errorf("Harness.Default = %q, want codex (default)", cfg.Harness.Default)
 	}
 }
 
@@ -123,13 +123,13 @@ func TestLoadEffortByHarness(t *testing.T) {
 			wantErr: `harness.effort "ultra" is not valid for claude (want low, medium, high, xhigh, max)`,
 		},
 		{
-			name:    "auto is not a live claude value",
+			name:    "auto is not a live effort value",
 			toml:    "[harness]\neffort = \"auto\"\n",
-			wantErr: `harness.effort "auto" is not valid for claude (want low, medium, high, xhigh, max)`,
+			wantErr: `harness.effort "auto" is not valid for codex (want none, minimal, low, medium, high, xhigh, max, ultra)`,
 		},
 		{
 			name:    "none rejected on claude",
-			toml:    "[harness]\neffort = \"none\"\n",
+			toml:    "[harness]\ndefault = \"claude\"\neffort = \"none\"\n",
 			wantErr: `harness.effort "none" is not valid for claude (want low, medium, high, xhigh, max)`,
 		},
 		{

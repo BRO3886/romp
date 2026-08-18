@@ -52,7 +52,7 @@ romp watch         # then let it run
 
 ```
 $ romp watch
-romp v0.1.0 — your-org/your-project (main), width 3, harness claude
+romp v0.1.0 — your-org/your-project (main), width 3, harness codex
 watching label "romp" every 60s
 
 19:04:12  assigned issue #17 to agent  [job 1a4f]
@@ -147,7 +147,7 @@ protected = ["testdata/**", "internal/testutil/**", ".github/**"]
 ignore    = ["vendor/**", "node_modules/**"]
 
 [harness]
-default   = "claude"                 # claude | codex
+default   = "codex"                  # claude | codex
 model     = ""                       # harness default if empty
 effort    = "high"                   # low | medium | high | xhigh | max
                                      # codex also: none | minimal | ultra
