@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -203,6 +204,27 @@ func TestRunJobKeepsTriggerOnBlocked(t *testing.T) {
 	}
 	if !contains(removed, "7:romp:claimed") {
 		t.Errorf("claim label not released on blocked: %v", removed)
+	}
+}
+
+func TestRunJobLogsTimeout(t *testing.T) {
+	ghc := &fakeGH{}
+	store := newFakeStore()
+	store.rows[7] = true
+
+	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
+	var logMsg string
+	w.Logf = func(format string, a ...any) { logMsg = fmt.Sprintf(format, a...) }
+	w.RunJob = func(context.Context, int) error { return fmt.Errorf("%w: killed", runner.ErrTimeout) }
+
+	w.runJobSync(t, 7)
+
+	if !strings.Contains(logMsg, "timeout") {
+		t.Errorf("log = %q, want timeout", logMsg)
+	}
+	_, removed := ghc.snapshot()
+	if !contains(removed, "7:romp:claimed") {
+		t.Errorf("claim label not released on timeout: %v", removed)
 	}
 }
 

@@ -16,6 +16,31 @@ func openTest(t *testing.T) *Store {
 	return s
 }
 
+func TestDBs(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", root)
+	ctx := context.Background()
+
+	for _, repo := range []struct{ owner, name string }{{"a", "b"}, {"c", "d"}} {
+		s, err := Open(Path(repo.owner, repo.name))
+		if err != nil {
+			t.Fatalf("Open %s: %v", repo.owner+"/"+repo.name, err)
+		}
+		if _, err := s.Claim(ctx, repo.owner+"/"+repo.name, 1, "romp-1"); err != nil {
+			t.Fatalf("Claim %s: %v", repo.owner+"/"+repo.name, err)
+		}
+		s.Close()
+	}
+
+	dbs, err := DBs()
+	if err != nil {
+		t.Fatalf("DBs: %v", err)
+	}
+	if len(dbs) != 2 {
+		t.Fatalf("DBs len = %d, want 2 (%v)", len(dbs), dbs)
+	}
+}
+
 func TestClaimAndDelete(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

@@ -8,7 +8,14 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// maxRateLimitAttempts and rateLimitBackoff bound how long a job survives a
+// GitHub rate limit before the underlying call fails for good.
+const maxRateLimitAttempts = 3
+
+var rateLimitBackoff = []time.Duration{5 * time.Second, 15 * time.Second}
 
 // Client talks to GitHub through the gh CLI.
 type Client struct{}
@@ -33,12 +40,47 @@ func (i Issue) HasLabel(label string) bool {
 }
 
 func (c *Client) run(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "gh", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("gh %s: %w\n%s", strings.Join(args, " "), err, out)
+	return retryAttempts(ctx, maxRateLimitAttempts, rateLimitBackoff, func() (string, error) {
+		cmd := exec.CommandContext(ctx, "gh", args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("gh %s: %w\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out)), nil
+	})
+}
+
+// retryAttempts re-runs fn when it fails with a GitHub rate-limit error,
+// waiting backoff[i] before attempt i+1, up to maxAttempts total calls. Any
+// other error returns immediately. The backoff is explicit so tests can pass
+// durations far shorter than the production schedule.
+func retryAttempts(ctx context.Context, maxAttempts int, backoff []time.Duration, fn func() (string, error)) (string, error) {
+	var lastErr error
+	for i := 0; i < maxAttempts; i++ {
+		out, err := fn()
+		if err == nil || !isRateLimited(err) {
+			return out, err
+		}
+		lastErr = err
+		if i < maxAttempts-1 {
+			timer := time.NewTimer(backoff[i])
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return "", ctx.Err()
+			}
+		}
 	}
-	return strings.TrimSpace(string(out)), nil
+	return "", lastErr
+}
+
+// isRateLimited reports whether a gh error is a GitHub rate-limit failure.
+// A bare 403 is deliberately not matched: it also covers permission errors,
+// which retrying would never fix.
+func isRateLimited(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "rate limit") || strings.Contains(msg, "too many requests")
 }
 
 type issueJSON struct {

@@ -131,6 +131,15 @@ func LogsDir(owner, name string) string {
 	return filepath.Join(stateDir(), owner+"-"+name, "logs")
 }
 
+// DBs returns every job-table file under the state dir, one per repo.
+func DBs() ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(stateDir(), "*", "jobs.db"))
+	if err != nil {
+		return nil, err
+	}
+	return matches, nil
+}
+
 func stateDir() string {
 	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
 		return filepath.Join(dir, "romp")

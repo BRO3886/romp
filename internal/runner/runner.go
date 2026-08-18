@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,10 @@ import (
 // defaultTriggerLabel is the label romp watch polls for, and the one a
 // finished run removes as its completion marker.
 const defaultTriggerLabel = "romp"
+
+// ErrTimeout is returned when the job timeout expires while the harness is
+// running. The agent is killed and the job stays labelled so it can retry.
+var ErrTimeout = errors.New("timeout")
 
 // GitOps is the git surface a run needs: read the remote and the default
 // branch, manage the job worktree and branch, and publish the result.
@@ -162,6 +167,9 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 	}
 	_, err = r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
 	if err != nil {
+		if runCtx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("%w: %v", ErrTimeout, err)
+		}
 		return err
 	}
 	r.logf("agent took %s", time.Since(start).Round(time.Second))

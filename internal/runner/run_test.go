@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/harness"
@@ -107,6 +108,17 @@ func (fakeHarness) Run(context.Context, harness.Request) (harness.Result, error)
 	return harness.Result{}, nil
 }
 
+// blockingHarness never finishes on its own; it returns when its context is
+// cancelled, which is what the job timeout does.
+type blockingHarness struct{}
+
+func (blockingHarness) Name() string { return "blocking" }
+
+func (blockingHarness) Run(ctx context.Context, _ harness.Request) (harness.Result, error) {
+	<-ctx.Done()
+	return harness.Result{}, ctx.Err()
+}
+
 // writePR is an AddWorktree hook standing in for an agent that finished the
 // work and left a PR artifact behind.
 func writePR(dir string) error {
@@ -175,6 +187,22 @@ func TestRunFailsWhenTriggerLabelRemovalFails(t *testing.T) {
 	err := r.Run(context.Background(), 7)
 	if err == nil || !strings.Contains(err.Error(), "removing romp label") {
 		t.Fatalf("Run error = %v, want a trigger-label removal failure", err)
+	}
+}
+
+func TestRunTimeout(t *testing.T) {
+	g := &fakeGit{changed: true, onAdd: writePR}
+	c := &fakeGH{}
+	r := newTestRunner(t, g, c, []string{"true"})
+	r.Harness = blockingHarness{}
+	r.Timeout = 50 * time.Millisecond
+
+	err := r.Run(context.Background(), 7)
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("Run error = %v, want ErrTimeout", err)
+	}
+	if len(c.prs) != 0 {
+		t.Errorf("PRs opened = %v, want none", c.prs)
 	}
 }
 

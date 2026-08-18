@@ -172,6 +172,8 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan struct{},
 		w.logf("#%d: done", iss.Number)
 	case errors.Is(err, runner.ErrBlocked):
 		w.logf("#%d: blocked", iss.Number)
+	case errors.Is(err, runner.ErrTimeout):
+		w.logf("#%d: timeout", iss.Number)
 	default:
 		w.logf("#%d: %v", iss.Number, err)
 	}
