@@ -201,7 +201,7 @@ func buildHarness(name string) (harness.Harness, error) {
 	case "claude":
 		return harness.Claude{}, nil
 	case "codex":
-		return nil, fmt.Errorf("harness codex is not implemented yet")
+		return harness.Codex{}, nil
 	default:
 		return nil, fmt.Errorf("unknown harness %q (want claude or codex)", name)
 	}

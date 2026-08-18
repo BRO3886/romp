@@ -14,6 +14,7 @@ import (
 	"github.com/BRO3886/romp/internal/config"
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/git"
+	"github.com/BRO3886/romp/internal/harness"
 )
 
 // minGitMajor and minGitMinor are the git version romp requires (2.35, the
@@ -97,15 +98,42 @@ func checkGH(ctx context.Context) (string, error) {
 }
 
 func checkHarness(ctx context.Context) (string, error) {
-	h, err := buildHarness(doctorConfig(ctx).Harness.Default)
-	if err != nil {
-		return "", err
-	}
+	return summarizeHarnesses([]harnessProbe{
+		probeHarness(ctx, harness.Claude{}),
+		probeHarness(ctx, harness.Codex{}),
+	})
+}
+
+// harnessProbe is one adapter's Check outcome.
+type harnessProbe struct {
+	name   string
+	detail string
+	err    error
+}
+
+func probeHarness(ctx context.Context, h harness.Harness) harnessProbe {
 	detail, err := h.Check(ctx)
-	if err != nil {
-		return "", err
+	return harnessProbe{name: h.Name(), detail: detail, err: err}
+}
+
+// summarizeHarnesses passes when at least one probe succeeded. The detail
+// lists every healthy harness and, in parentheses, any that failed.
+func summarizeHarnesses(probes []harnessProbe) (string, error) {
+	var ok, bad []string
+	for _, p := range probes {
+		if p.err != nil {
+			bad = append(bad, p.name+": "+p.err.Error())
+			continue
+		}
+		ok = append(ok, p.name+" "+p.detail)
 	}
-	return h.Name() + " " + detail, nil
+	if len(ok) == 0 {
+		return "", fmt.Errorf("need claude or codex: %s", strings.Join(bad, "; "))
+	}
+	if len(bad) == 0 {
+		return strings.Join(ok, "; "), nil
+	}
+	return strings.Join(ok, "; ") + " (" + strings.Join(bad, "; ") + ")", nil
 }
 
 func checkConfig(ctx context.Context) (string, error) {
@@ -122,23 +150,6 @@ func checkConfig(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return "valid — verify: " + strings.Join(verify, "; "), nil
-}
-
-// doctorConfig loads the merged config for the current repo, falling back to
-// the built-in defaults when romp is run outside a repository so the harness
-// check still has a name to test.
-func doctorConfig(ctx context.Context) *config.Config {
-	root, err := repoRoot(ctx)
-	if err != nil {
-		cfg := config.Defaults()
-		return &cfg
-	}
-	cfg, err := config.Load(root, config.Overrides{})
-	if err != nil {
-		def := config.Defaults()
-		return &def
-	}
-	return cfg
 }
 
 // gitVersionAtLeast reports whether a `git --version` string is at least

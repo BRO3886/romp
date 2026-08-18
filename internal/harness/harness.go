@@ -14,11 +14,13 @@ type Request struct {
 	// Model, when non-empty, requests a specific model; empty uses the
 	// harness default.
 	Model string
-	// Effort, when non-empty, requests a thinking budget (claude's
-	// --effort); empty leaves the harness default in place.
+	// Effort, when non-empty, is a thinking budget already accepted for
+	// this harness at config load (claude --effort, Codex
+	// model_reasoning_effort). Empty leaves the harness default in place.
 	Effort string
 	// MaxTurns, when positive, caps the agent's turn budget (claude's
-	// --max-turns); zero leaves the harness default in place.
+	// --max-turns). Codex has no equivalent and ignores this field.
+	// Zero leaves the harness default in place.
 	MaxTurns int
 }
 

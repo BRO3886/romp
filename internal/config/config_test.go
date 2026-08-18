@@ -80,6 +80,101 @@ func TestLoadOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsUnknownHarness(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "[harness]\ndefault = \"bogus\"\n")
+	_, err := Load(root, Overrides{})
+	if err == nil {
+		t.Fatal("Load() = nil error, want unknown harness")
+	}
+	want := `unknown harness "bogus" (want claude or codex)`
+	if err.Error() != want {
+		t.Errorf("err = %q, want %q", err, want)
+	}
+}
+
+func TestLoadEffortByHarness(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		o       Overrides
+		want    string
+		wantErr string
+	}{
+		{
+			name: "shared high on claude",
+			toml: "[harness]\ndefault = \"claude\"\neffort = \"high\"\n",
+			want: "high",
+		},
+		{
+			name: "shared high on codex",
+			toml: "[harness]\ndefault = \"codex\"\neffort = \"high\"\n",
+			want: "high",
+		},
+		{
+			name: "codex-only ultra",
+			toml: "[harness]\ndefault = \"codex\"\neffort = \"ultra\"\n",
+			want: "ultra",
+		},
+		{
+			name:    "ultra rejected on claude",
+			toml:    "[harness]\ndefault = \"claude\"\neffort = \"ultra\"\n",
+			wantErr: `harness.effort "ultra" is not valid for claude (want low, medium, high, xhigh, max)`,
+		},
+		{
+			name:    "auto is not a live claude value",
+			toml:    "[harness]\neffort = \"auto\"\n",
+			wantErr: `harness.effort "auto" is not valid for claude (want low, medium, high, xhigh, max)`,
+		},
+		{
+			name:    "none rejected on claude",
+			toml:    "[harness]\neffort = \"none\"\n",
+			wantErr: `harness.effort "none" is not valid for claude (want low, medium, high, xhigh, max)`,
+		},
+		{
+			name:    "unknown effort",
+			toml:    "[harness]\ndefault = \"codex\"\neffort = \"ludicrous\"\n",
+			wantErr: `harness.effort "ludicrous" is not valid for codex (want none, minimal, low, medium, high, xhigh, max, ultra)`,
+		},
+		{
+			name:    "flag switches onto an incompatible effort",
+			toml:    "[harness]\ndefault = \"codex\"\neffort = \"ultra\"\n",
+			o:       Overrides{Harness: "claude"},
+			wantErr: `harness.effort "ultra" is not valid for claude (want low, medium, high, xhigh, max)`,
+		},
+		{
+			name: "flag switches onto a shared effort",
+			toml: "[harness]\ndefault = \"claude\"\neffort = \"max\"\n",
+			o:    Overrides{Harness: "codex"},
+			want: "max",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			root := t.TempDir()
+			write(t, filepath.Join(root, "romp.toml"), tt.toml)
+			cfg, err := Load(root, tt.o)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("Load() = %+v, nil error, want %q", cfg, tt.wantErr)
+				}
+				if err.Error() != tt.wantErr {
+					t.Errorf("err = %q, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Harness.Effort != tt.want {
+				t.Errorf("Effort = %q, want %q", cfg.Harness.Effort, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadLabelOverrides(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := t.TempDir()

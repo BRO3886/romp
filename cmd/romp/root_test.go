@@ -110,11 +110,17 @@ func TestVerifyCommands(t *testing.T) {
 }
 
 func TestBuildHarness(t *testing.T) {
-	if _, err := buildHarness("claude"); err != nil {
+	h, err := buildHarness("claude")
+	if err != nil {
 		t.Errorf("buildHarness(claude) = %v", err)
+	} else if h.Name() != "claude" {
+		t.Errorf("buildHarness(claude).Name() = %q, want claude", h.Name())
 	}
-	if _, err := buildHarness("codex"); err == nil {
-		t.Error("buildHarness(codex) = nil error, want not-implemented")
+	h, err = buildHarness("codex")
+	if err != nil {
+		t.Errorf("buildHarness(codex) = %v", err)
+	} else if h.Name() != "codex" {
+		t.Errorf("buildHarness(codex).Name() = %q, want codex", h.Name())
 	}
 	if _, err := buildHarness("bogus"); err == nil {
 		t.Error("buildHarness(bogus) = nil error, want unknown-harness")

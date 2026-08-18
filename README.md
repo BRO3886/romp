@@ -91,7 +91,7 @@ is nothing to cancel otherwise. `romp logs` reads the per-job log files
 directly, so it works with or without a watcher.
 
 Run `romp doctor` first. It catches the three things that break every new setup:
-`gh` not authenticated, the agent CLI not logged in, and git older than 2.35.
+`gh` not authenticated, neither `claude` nor `codex` on PATH, and git older than 2.35.
 
 ---
 
@@ -149,7 +149,8 @@ ignore    = ["vendor/**", "node_modules/**"]
 [harness]
 default   = "claude"                 # claude | codex
 model     = ""                       # harness default if empty
-effort    = "high"                   # claude only: low | medium | high | xhigh | max | auto
+effort    = "high"                   # low | medium | high | xhigh | max
+                                     # codex also: none | minimal | ultra
 max_turns = 30                       # claude only; ignored for codex
 
 [prompt]

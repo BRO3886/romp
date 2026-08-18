@@ -4,7 +4,7 @@ Status: accepted
 
 ## Context
 
-romp supports multiple coding-agent CLIs — claude today, codex next — and each ships its own structured-output mechanism (claude's `--json-schema`, codex's own format). Coupling romp to any one of them means learning a new output format per harness, and the agent's final free-text message is not a reliable carrier for structured data.
+romp supports multiple coding-agent CLIs — claude and codex — and each ships its own structured-output mechanism (claude's `--json-schema`, Codex's `--output-schema`). Coupling romp to any one of them means learning a new output format per harness, and the agent's final free-text message is not a reliable carrier for structured data.
 
 ## Decision
 

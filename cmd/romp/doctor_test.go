@@ -71,6 +71,61 @@ func TestRunDoctorFailure(t *testing.T) {
 	}
 }
 
+func TestSummarizeHarnesses(t *testing.T) {
+	claudeOK := harnessProbe{name: "claude", detail: "2.1.0"}
+	codexOK := harnessProbe{name: "codex", detail: "0.146.0"}
+	claudeBad := harnessProbe{name: "claude", err: fmt.Errorf("claude CLI not found on PATH")}
+	codexBad := harnessProbe{name: "codex", err: fmt.Errorf("codex CLI not found on PATH")}
+
+	tests := []struct {
+		name    string
+		probes  []harnessProbe
+		want    string
+		wantErr string
+	}{
+		{
+			name:   "both healthy",
+			probes: []harnessProbe{claudeOK, codexOK},
+			want:   "claude 2.1.0; codex 0.146.0",
+		},
+		{
+			name:   "only claude",
+			probes: []harnessProbe{claudeOK, codexBad},
+			want:   "claude 2.1.0 (codex: codex CLI not found on PATH)",
+		},
+		{
+			name:   "only codex",
+			probes: []harnessProbe{claudeBad, codexOK},
+			want:   "codex 0.146.0 (claude: claude CLI not found on PATH)",
+		},
+		{
+			name:    "neither",
+			probes:  []harnessProbe{claudeBad, codexBad},
+			wantErr: "need claude or codex: claude: claude CLI not found on PATH; codex: codex CLI not found on PATH",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := summarizeHarnesses(tt.probes)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("summarizeHarnesses = %q, nil error, want %q", got, tt.wantErr)
+				}
+				if err.Error() != tt.wantErr {
+					t.Errorf("err = %q, want %q", err.Error(), tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("summarizeHarnesses = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("summarizeHarnesses = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDoctorCmdWritesToStdout(t *testing.T) {
 	cmd := newDoctorCmd(
 		doctorCheck{name: "x", run: func(context.Context) (string, error) { return "y", nil }},
