@@ -1,0 +1,15 @@
+{{/* The command body for one install route. The terminal shell around it is
+     persistent — only this block swaps when the tab changes. */}}
+<div class="install-panel{{ if .active }} active{{ end }}" role="tabpanel" id="panel-{{ .id }}" aria-labelledby="tab-{{ .id }}" data-panel="{{ .id }}" data-title="{{ .title }}" data-copy="{{ .copy }}">
+  <div class="install-term-body">
+    {{ range .lines }}
+    <div class="install-term-line">
+      {{- if .comment -}}
+        <span class="t-comment"># {{ .comment }}</span>
+      {{- else -}}
+        <span class="t-prompt" aria-hidden="true">$</span> <span class="t-cmd">{{ .text }}</span>
+      {{- end -}}
+    </div>
+    {{ end }}
+  </div>
+</div>

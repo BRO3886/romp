@@ -1,0 +1,4 @@
+name: "romp-docs"
+license: "MIT"
+description: "Light-mode documentation theme for romp."
+min_version: "0.120.0"

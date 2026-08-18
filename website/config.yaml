@@ -1,0 +1,84 @@
+baseURL: "https://romp.sidv.dev/"
+locale: "en-US"
+title: "romp — label an issue, get a pull request"
+theme: "romp-docs"
+
+params:
+  description: "romp watches a GitHub repo for labelled issues, runs your local coding agent in an isolated git worktree, independently re-runs your verify command, and opens a pull request. Uses your existing Claude Code or Codex login — no API keys, no cloud runner."
+  author: "Siddhartha Varma"
+  github: "https://github.com/BRO3886/romp"
+  ogImage: "/og-image.png"
+  keywords:
+    - romp
+    - GitHub issue to pull request
+    - autonomous coding agent
+    - Claude Code automation
+    - Codex CLI automation
+    - git worktree CI
+    - local agent runner
+    - issue triage automation
+    - AI pull requests
+    - self-hosted coding agent
+
+markup:
+  highlight:
+    style: dracula
+    noClasses: false
+    lineNos: false
+    guessSyntax: true
+  goldmark:
+    renderer:
+      unsafe: true
+
+menu:
+  main:
+    - name: "Getting Started"
+      url: "/docs/getting-started/"
+      weight: 1
+    - name: "Commands"
+      url: "/docs/commands/"
+      weight: 2
+    - name: "Configuration"
+      url: "/docs/configuration/"
+      weight: 3
+    - name: "Architecture"
+      url: "/docs/architecture/"
+      weight: 4
+    - name: "GitHub"
+      url: "https://github.com/BRO3886/romp"
+      weight: 5
+
+mediaTypes:
+  text/markdown:
+    suffixes:
+      - md
+
+outputFormats:
+  MD:
+    mediaType: text/markdown
+    baseName: index
+    isPlainText: true
+
+outputs:
+  home:
+    - HTML
+    - RSS
+  page:
+    - HTML
+    - MD
+  section:
+    - HTML
+    - MD
+
+sitemap:
+  changefreq: weekly
+  priority: 0.5
+
+frontmatter:
+  lastmod:
+    - lastmod
+    - :git
+    - date
+    - publishDate
+
+enableRobotsTXT: true

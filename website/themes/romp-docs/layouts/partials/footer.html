@@ -1,0 +1,48 @@
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-cta">
+      <h2>Label an issue.<br>Get a pull request.</h2>
+      <div class="footer-cta__actions">
+        <a class="btn btn-primary" href="{{ "docs/getting-started/" | relURL }}">Get started <span aria-hidden="true">→</span></a>
+        <a class="btn btn-ghost-dark" href="{{ .Site.Params.github }}" rel="noopener">View on GitHub <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+
+    <div class="footer-top">
+      <div class="footer-brand">
+        <span class="footer-brand-name">romp</span>
+        <p class="footer-tagline">Runs your local coding agent on labelled issues — in an isolated worktree, independently verified, delivered as a pull request.</p>
+      </div>
+      <nav class="footer-nav" aria-label="Footer">
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="{{ "docs/getting-started/" | relURL }}">Getting started</a>
+          <a href="{{ "docs/commands/" | relURL }}">Commands</a>
+          <a href="{{ "docs/configuration/" | relURL }}">Configuration</a>
+        </div>
+        <div class="footer-col">
+          <h4>How it works</h4>
+          <a href="{{ "docs/goal-contract/" | relURL }}">Goal contract</a>
+          <a href="{{ "docs/outcomes/" | relURL }}">Outcomes</a>
+          <a href="{{ "docs/architecture/" | relURL }}">Architecture</a>
+        </div>
+        <div class="footer-col">
+          <h4>Project</h4>
+          <a href="{{ .Site.Params.github }}" rel="noopener">Repository ↗</a>
+          <a href="https://github.com/BRO3886" rel="noopener">@BRO3886 ↗</a>
+          <a href="{{ "docs/safety/" | relURL }}">Safety</a>
+        </div>
+      </nav>
+    </div>
+
+    <div class="footer-word" aria-hidden="true">romp</div>
+
+    <div class="footer-bottom">
+      <p>© {{ now.Year }} romp · built by <a href="https://github.com/BRO3886" rel="noopener">@BRO3886</a></p>
+      <div class="footer-bottom__links">
+        <a href="https://sidv.dev" rel="noopener">sidv.dev ↗</a>
+        <a href="{{ .Site.Params.github }}" rel="noopener">Source ↗</a>
+      </div>
+    </div>
+  </div>
+</footer>

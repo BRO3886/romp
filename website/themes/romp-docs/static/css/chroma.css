@@ -1,0 +1,51 @@
+/* romp syntax theme — light tokens on the navy terminal background */
+
+.chroma { background-color: transparent; color: #ece4d3; }
+
+/* keywords, builtins, reserved words */
+.chroma .k, .chroma .kc, .chroma .kd, .chroma .kn, .chroma .kp, .chroma .kr,
+.chroma .nb, .chroma .bp, .chroma .ne, .chroma .ow, .chroma .nt,
+.chroma .cp, .chroma .cpf { color: #f0a06a; }
+.chroma .k, .chroma .kd, .chroma .kr, .chroma .nb, .chroma .ne,
+.chroma .ow, .chroma .nt { font-weight: 600; }
+
+/* types, classes, constants */
+.chroma .kt, .chroma .nc, .chroma .nn, .chroma .no { color: #6cc7e0; }
+
+/* strings */
+.chroma .s, .chroma .sa, .chroma .sb, .chroma .sc, .chroma .dl, .chroma .sd,
+.chroma .s1, .chroma .s2, .chroma .se, .chroma .sh, .chroma .si, .chroma .sr,
+.chroma .ss, .chroma .sx { color: #9fd8a9; }
+
+/* numbers */
+.chroma .m, .chroma .mb, .chroma .mf, .chroma .mh, .chroma .mi, .chroma .mo,
+.chroma .il { color: #6cc7e0; }
+
+/* functions */
+.chroma .nf, .chroma .fm { color: #7eb6e8; }
+
+/* variables */
+.chroma .nv, .chroma .vc, .chroma .vg, .chroma .vi, .chroma .vm { color: #c9a6e0; }
+
+/* attributes & entities */
+.chroma .na, .chroma .nd, .chroma .ni, .chroma .nl { color: #e0a06a; }
+
+/* operators */
+.chroma .o, .chroma .or { color: #aab6c2; }
+
+/* comments */
+.chroma .c, .chroma .ch, .chroma .cm, .chroma .c1, .chroma .cs {
+  color: #8a9aa8; font-style: italic;
+}
+
+/* generics */
+.chroma .gd { color: #f08a8a; }
+.chroma .gi { color: #9fd8a9; }
+.chroma .gr { color: #f08a8a; }
+.chroma .gh, .chroma .gu { color: #7eb6e8; font-weight: 600; }
+.chroma .go, .chroma .gp, .chroma .gt { color: #aab6c2; }
+.chroma .w { color: #ece4d3; }
+
+/* line numbers & highlight */
+.chroma .ln, .chroma .lnt { color: #6b7680; }
+.chroma .hl { background-color: rgba(192, 102, 46, 0.16); }

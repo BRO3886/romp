@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="{{ .Site.Language.Locale }}" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} — romp{{ end }}</title>
+
+  {{- $desc := .Description | default .Site.Params.description }}
+  <meta name="description" content="{{ $desc }}">
+  <meta name="author" content="{{ .Site.Params.author }}">
+  {{- $kw := .Params.keywords | default .Site.Params.keywords }}
+  <meta name="keywords" content="{{ delimit $kw ", " }}">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} — romp{{ end }}">
+  <meta property="og:description" content="{{ $desc }}">
+  <meta property="og:type" content="{{ if .IsHome }}website{{ else }}article{{ end }}">
+  <meta property="og:url" content="{{ .Permalink }}">
+  <meta property="og:site_name" content="romp">
+  {{ with .Site.Params.ogImage }}<meta property="og:image" content="{{ . | absURL }}">{{ end }}
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} — romp{{ end }}">
+  <meta name="twitter:description" content="{{ $desc }}">
+
+  <!-- Canonical -->
+  <link rel="canonical" href="{{ .Permalink }}">
+
+  {{ if .IsHome }}
+  <!-- Structured Data: SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "romp",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Command Line Tool",
+    "operatingSystem": "macOS, Linux",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "url": "{{ .Site.BaseURL }}",
+    "downloadUrl": "https://github.com/BRO3886/romp/releases/latest",
+    "codeRepository": "https://github.com/BRO3886/romp",
+    "programmingLanguage": "Go",
+    "description": "{{ $desc }}",
+    "author": { "@type": "Person", "name": "{{ .Site.Params.author }}", "url": "https://sidv.dev" },
+    "license": "https://opensource.org/licenses/MIT",
+    "featureList": [
+      "Runs your local coding agent on labelled issues",
+      "Isolated git worktree per job",
+      "Independent verify command re-run before a PR opens",
+      "Goal contract: GATE, DONE, PROVE IT, CONSTRAINTS",
+      "Blocks under-scoped issues instead of guessing",
+      "Claude Code and Codex harnesses",
+      "Job codenames, per-job logs, and outcome history"
+    ]
+  }
+  </script>
+  <!-- Structured Data: FAQPage -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is romp?",
+        "acceptedAnswer": { "@type": "Answer", "text": "romp is an open-source CLI that watches a GitHub repo for labelled issues, runs your local coding agent (Claude Code or Codex) on each one in an isolated git worktree, independently re-runs your verify command, and opens a pull request. It uses your existing agent login — no API keys, no cloud runner." }
+      },
+      {
+        "@type": "Question",
+        "name": "How do I install romp?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Run `go install github.com/BRO3886/romp/cmd/romp@latest`, or download a release tarball from GitHub Releases. Requires Go 1.25+ to build from source, plus git 2.35+ and an authenticated gh CLI." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does romp need an API key?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No. romp drives your already-logged-in Claude Code or Codex CLI, and uses gh for GitHub access. There is no cloud runner and no additional API key to manage." }
+      },
+      {
+        "@type": "Question",
+        "name": "How does romp know a change is done?",
+        "acceptedAnswer": { "@type": "Answer", "text": "A job is done only when an explicit verify command (committed in romp.toml under [verify]) passes, re-run by romp itself after the agent exits. The agent's own claim of passing is never trusted." }
+      },
+      {
+        "@type": "Question",
+        "name": "What happens when an issue is under-specified?",
+        "acceptedAnswer": { "@type": "Answer", "text": "The agent self-rejects before touching code, writes the specific gap to .romp/blocked.md, and romp relabels the issue romp:blocked and posts the gap as a comment — no PR is opened." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does romp merge pull requests?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No. romp opens the PR and stops. You review and merge. Branch protection on the default branch is strongly recommended." }
+      }
+    ]
+  }
+  </script>
+  {{ end }}
+
+  {{ if .IsHome }}<link rel="preload" as="image" href="{{ "mascot.webp" | relURL }}" type="image/webp" fetchpriority="high">{{ end }}
+
+  <!-- Icons -->
+  <link rel="icon" href="{{ "favicon.png" | relURL }}" type="image/png">
+  <link rel="apple-touch-icon" href="{{ "apple-touch-icon.png" | relURL }}">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="{{ "css/chroma.css" | relURL }}">
+  <link rel="stylesheet" href="{{ "css/style.css" | relURL }}">
+</head>
+<body>
+  {{ partial "nav.html" . }}
+
+  <main>
+    {{ block "main" . }}{{ end }}
+  </main>
+
+  {{ partial "footer.html" . }}
+  <script src="{{ "js/main.js" | relURL }}"></script>
+</body>
+</html>
