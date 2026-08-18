@@ -19,9 +19,11 @@ type fakeGH struct {
 	issues     []gh.Issue
 	added      []string
 	removed    []string
+	assigned   []int
 	comments   []string
 	prByBranch map[string]int
 	addErr     error
+	assignErr  error
 }
 
 func (f *fakeGH) ListIssues(context.Context, string, string) ([]gh.Issue, error) {
@@ -41,6 +43,16 @@ func (f *fakeGH) AddLabel(_ context.Context, _ string, number int, label string)
 		return f.addErr
 	}
 	f.added = append(f.added, fmt.Sprintf("%d:%s", number, label))
+	return nil
+}
+
+func (f *fakeGH) Assign(_ context.Context, _ string, number int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.assignErr != nil {
+		return f.assignErr
+	}
+	f.assigned = append(f.assigned, number)
 	return nil
 }
 
@@ -210,6 +222,36 @@ func TestClaimBatchStopsAtWidth(t *testing.T) {
 	added, _ := ghc.snapshot()
 	if len(added) != 1 {
 		t.Errorf("claimed %d issues at width 1, want 1", len(added))
+	}
+}
+
+func TestClaimAssignsAuthenticatedUser(t *testing.T) {
+	ghc := &fakeGH{}
+	store := newFakeStore()
+	w := &Watcher{Repo: "o/r", Claim: "romp:claimed", GH: ghc, Store: store}
+
+	if !w.claim(context.Background(), gh.Issue{Number: 7}) {
+		t.Fatal("claim = false, want true")
+	}
+	if len(ghc.assigned) != 1 || ghc.assigned[0] != 7 {
+		t.Errorf("assigned = %v, want [7]", ghc.assigned)
+	}
+}
+
+func TestClaimRollsBackOnAssignFailure(t *testing.T) {
+	ghc := &fakeGH{assignErr: errors.New("boom")}
+	store := newFakeStore()
+	w := &Watcher{Repo: "o/r", Claim: "romp:claimed", GH: ghc, Store: store}
+
+	if w.claim(context.Background(), gh.Issue{Number: 7}) {
+		t.Fatal("claim = true, want false when Assign fails")
+	}
+	if store.has(7) {
+		t.Fatal("row not rolled back after Assign failure")
+	}
+	_, removed := ghc.snapshot()
+	if len(removed) != 1 || removed[0] != "7:romp:claimed" {
+		t.Errorf("claim label not removed after Assign failure: %v", removed)
 	}
 }
 

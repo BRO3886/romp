@@ -199,6 +199,12 @@ func (c *Client) AddLabel(ctx context.Context, repo string, number int, label st
 	return err
 }
 
+// Assign adds the authenticated user as an assignee.
+func (c *Client) Assign(ctx context.Context, repo string, number int) error {
+	_, err := c.run(ctx, "issue", "edit", strconv.Itoa(number), "--repo", repo, "--add-assignee", "@me")
+	return err
+}
+
 // RemoveLabel removes a label from an issue.
 func (c *Client) RemoveLabel(ctx context.Context, repo string, number int, label string) error {
 	_, err := c.run(ctx, "issue", "edit", strconv.Itoa(number), "--repo", repo, "--remove-label", label)

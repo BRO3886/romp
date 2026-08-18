@@ -58,8 +58,8 @@ Whether the daemon may claim another job. Refused when the machine is under memo
 _Avoid_: cap, slot, machine limit, free RAM
 
 **Claim**:
-Taking ownership of a labelled issue: atomically inserting a job row, then adding the claim label so no other machine works it.
-_Avoid_: assign, reserve, lock
+Taking ownership of a labelled issue: atomically inserting a job row, adding the claim label, and assigning the authenticated GitHub user so no other machine works it.
+_Avoid_: reserve, lock
 
 **Claim label**:
 A GitHub label (`romp:claimed` by default, configurable as `claimed_label`) marking an issue as taken by a running job; the poll excludes it.

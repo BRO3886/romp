@@ -25,6 +25,7 @@ type GHOps interface {
 	ListIssues(ctx context.Context, repo, label string) ([]gh.Issue, error)
 	AddLabel(ctx context.Context, repo string, number int, label string) error
 	RemoveLabel(ctx context.Context, repo string, number int, label string) error
+	Assign(ctx context.Context, repo string, number int) error
 	Comment(ctx context.Context, repo string, number int, body string) error
 	OpenPR(ctx context.Context, repo, branch string) (int, error)
 }
@@ -192,6 +193,12 @@ func (w *Watcher) claim(ctx context.Context, iss gh.Issue) bool {
 	}
 	if err := w.GH.AddLabel(ctx, w.Repo, iss.Number, w.Claim); err != nil {
 		w.logf("#%d: adding claim label: %v", iss.Number, err)
+		_ = w.Store.Delete(ctx, w.Repo, iss.Number)
+		return false
+	}
+	if err := w.GH.Assign(ctx, w.Repo, iss.Number); err != nil {
+		w.logf("#%d: assigning: %v", iss.Number, err)
+		_ = w.GH.RemoveLabel(ctx, w.Repo, iss.Number, w.Claim)
 		_ = w.Store.Delete(ctx, w.Repo, iss.Number)
 		return false
 	}
