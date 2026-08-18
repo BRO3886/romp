@@ -9,6 +9,13 @@ import (
 	"github.com/BRO3886/romp/internal/runner"
 )
 
+// Set by ldflags at build time.
+var (
+	version   = "dev"
+	commit    = "none"
+	buildTime = "unknown"
+)
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		if errors.Is(err, runner.ErrBlocked) {

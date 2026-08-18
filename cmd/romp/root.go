@@ -23,7 +23,9 @@ func newRootCmd() *cobra.Command {
 		Short:         "Label an issue. Get a pull request.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Version:       version,
 	}
+	root.SetVersionTemplate(fmt.Sprintf("romp %s (commit %s, built %s)\n", version, commit, buildTime))
 	root.AddCommand(newRunCmd(newRunner, execRun))
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newWatchCmd())
