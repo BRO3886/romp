@@ -38,6 +38,10 @@ func (c Codex) Check(ctx context.Context) (string, error) {
 func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 	cmd := exec.CommandContext(ctx, "codex", codexArgs(req, c.Args)...)
 	cmd.Dir = req.Dir
+	// CombinedOutput leaves stdin on /dev/null. Codex treats a non-TTY
+	// stdin as piped input and appends it to an argv prompt, so the
+	// goal contract goes on stdin and stays off argv.
+	cmd.Stdin = strings.NewReader(req.Prompt)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return Result{Output: string(out)}, fmt.Errorf("codex: %w\n%s", err, out)
@@ -46,7 +50,7 @@ func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 }
 
 func codexArgs(req Request, extra []string) []string {
-	args := []string{"exec", "--sandbox", "workspace-write"}
+	args := []string{"exec", "--sandbox", "workspace-write", "--color", "never"}
 	if req.Dir != "" {
 		args = append(args, "--cd", req.Dir)
 	}
@@ -57,6 +61,5 @@ func codexArgs(req Request, extra []string) []string {
 		args = append(args, "-c", "model_reasoning_effort="+req.Effort)
 	}
 	args = append(args, extra...)
-	args = append(args, req.Prompt)
 	return args
 }
