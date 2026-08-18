@@ -1,0 +1,3 @@
+# The agent boundary: a prompt contract, outcomes via .romp/ files
+
+romp drives the agent through a rendered prompt and reads results back through markdown files under `.romp/` — `pull-request.md` for the PR title, conventional commit subject, and description (optionally with mermaid diagrams), and `blocked.md` for the gap when an issue is under-scoped. The harness is a small interface (`Name` plus `Run`) that claude and codex adapters implement. This is chosen over harness-specific structured output (claude's `--json-schema`, codex's own format) so the prompt is the single contract and a new adapter drops in without romp learning that harness's output format.

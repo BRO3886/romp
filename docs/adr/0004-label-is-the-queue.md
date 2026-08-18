@@ -1,3 +1,0 @@
-# The issue label is the queue; the job table is in-flight only
-
-Pending work is "open issues carrying the trigger label": the poll query returns every currently-labelled issue, so a watcher that starts after a burst simply drains the backlog at the configured width with no separate backfill mechanism. Local state (SQLite) records only in-flight jobs, not the queue, because a durable local queue drifts out of sync with GitHub reality — labels removed by hand, issues closed or edited. Before claiming an issue, romp dedupes on issue identity (an existing job row, an existing `romp-N` branch, an existing open PR) so a crash-and-restart never spawns a duplicate agent on the same issue.
