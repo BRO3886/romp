@@ -8,8 +8,6 @@
 
 It runs on your machine and uses your existing Claude Code or Codex login. No API keys, no cloud runner, no new billing relationship.
 
-> A *romp* is a group of otters. Otters use rocks to crack shellfish — small tool users solving scoped problems. That is the whole idea.
-
 ---
 
 ## Status
