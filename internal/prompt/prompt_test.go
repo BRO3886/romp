@@ -31,6 +31,9 @@ func TestRenderFillsPlaceholders(t *testing.T) {
 		"PROVE IT",
 		"CONSTRAINTS",
 		"REPORT",
+		"GATE",
+		"self-reject",
+		"Do not invent missing criteria",
 		".romp/pull-request.md",
 		".romp/blocked.md",
 		"mermaid",
@@ -39,6 +42,19 @@ func TestRenderFillsPlaceholders(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered prompt missing %q", want)
 		}
+	}
+}
+
+func TestDefaultPutsGateBeforeImplementation(t *testing.T) {
+	text := Default()
+	gate := strings.Index(text, "GATE")
+	done := strings.Index(text, "DONE means")
+	report := strings.Index(text, "REPORT:")
+	if gate < 0 || done < 0 || report < 0 {
+		t.Fatalf("template missing GATE/DONE/REPORT")
+	}
+	if !(gate < done && done < report) {
+		t.Errorf("section order: GATE=%d DONE=%d REPORT=%d, want GATE then DONE then REPORT", gate, done, report)
 	}
 }
 

@@ -43,7 +43,7 @@ func (r Renderer) Render(d Data) (string, error) {
 // template is configured.
 func Default() string { return defaultTemplate }
 
-const defaultTemplate = `You are an autonomous coding agent fixing an issue in {{.Repo}}.
+const defaultTemplate = `You are an autonomous coding agent working an issue in {{.Repo}}.
 
 Work in the git worktree you are already in. The branch is {{.Branch}}, based on {{.Base}}.
 {{if .Brief}}READ FIRST: read {{.Brief}} in this worktree before touching any code, and follow it.{{end}}
@@ -54,8 +54,27 @@ Issue #{{.Issue}}: {{.Title}}
 Issue body:
 {{.Body}}
 
+GATE — decide this before you touch any source file.
+
+The issue is shippable only if ALL of these are already written in the issue body. You may not invent them.
+1. At least one acceptance criterion a test could check.
+2. The files or area expected to change.
+3. Enough constraint that two competent agents would ship the same product.
+
+If ANY item is missing, or the issue is ambiguous or contradictory, you MUST self-reject:
+- Do not edit source files.
+- Do not invent missing criteria, pick a favorite interpretation, or "use your judgment" to fill a gap.
+- Requests like "make it nicer", "improve X", or a menu of options (colors / JSON / extra columns) with no choice made are under-specified.
+- Write the specific gap to .romp/blocked.md: what is missing, ambiguous, or contradictory.
+- Do not write .romp/pull-request.md.
+- Stop.
+
+If you already edited files and then see the gap, revert those edits, write .romp/blocked.md, and stop.
+
+Only if the GATE passed, continue.
+
 DONE means all of the following hold on a clean working tree:
-1. Every acceptance criterion in the issue is met.
+1. Every acceptance criterion in the issue is met. Criteria come from the issue, not from you.
 2. This command passes: {{.Verify}}
 
 PROVE IT: run ` + "`{{.Verify}}`" + ` yourself before you stop, and show the fresh passing output in your final message. Failing tests are not a stopping condition; fix them and re-run.
@@ -78,6 +97,4 @@ commit: <conventional commit subject>
 <PR description>
 
 The commit subject must follow conventional commits: a type prefix (feat, fix, refactor, docs, test, chore) followed by a short description. The description must tell a reviewer what changed and why. If the change is substantial (multiple files, a new abstraction, an architectural decision), include one or more mermaid diagrams (flowchart or sequence) to explain it. For a small change, a few sentences are enough and no diagram is needed.
-
-If the issue is ambiguous, contradictory, or under-specified, stop without writing code. Write the specific gap — what is missing, ambiguous, or contradictory — to the file .romp/blocked.md, then stop.
 `
