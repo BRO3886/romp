@@ -51,6 +51,7 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 		verify      string
 		harnessName string
 		model       string
+		effort      string
 		width       int
 	)
 	cmd := &cobra.Command{
@@ -61,6 +62,7 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 			r, err := factory(cmd.Context(), config.Overrides{
 				Harness: harnessName,
 				Model:   model,
+				Effort:  effort,
 				Width:   width,
 			}, verify, cmd.Flags().Changed("verify"))
 			if err != nil {
@@ -73,6 +75,7 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 	cmd.Flags().StringVar(&verify, "verify", "", "command that must pass in the worktree before a PR opens (overrides config)")
 	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to use (claude or codex)")
 	cmd.Flags().StringVar(&model, "model", "", "model for the harness")
+	cmd.Flags().StringVar(&effort, "effort", "", "reasoning effort for the harness")
 	cmd.Flags().IntVar(&width, "width", 0, "concurrent jobs (ignored by run)")
 	cmd.MarkFlagRequired("issue")
 	return cmd

@@ -71,6 +71,7 @@ func Defaults() Config {
 type Overrides struct {
 	Harness string
 	Model   string
+	Effort  string
 	Width   int
 }
 
@@ -96,6 +97,9 @@ func Load(root string, o Overrides) (*Config, error) {
 	}
 	if o.Model != "" {
 		cfg.Harness.Model = o.Model
+	}
+	if o.Effort != "" {
+		cfg.Harness.Effort = o.Effort
 	}
 	if o.Width != 0 {
 		cfg.Width = o.Width
