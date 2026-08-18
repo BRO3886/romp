@@ -75,8 +75,8 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		GH:       &gh.Client{},
 		Store:    store,
 		RunJob: func(ctx context.Context, issue int) (string, error) {
-			name := codename.For(repo, issue)
-			f, err := openJobLog(owner, name, name)
+			jobName := codename.For(repo, issue)
+			f, err := openJobLog(owner, name, jobName)
 			if err != nil {
 				return "", err
 			}
@@ -85,7 +85,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 			if err != nil {
 				return "", err
 			}
-			r.Codename = name
+			r.Codename = jobName
 			r.Stderr = io.MultiWriter(os.Stderr, f)
 			return r.Run(ctx, issue)
 		},
