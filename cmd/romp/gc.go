@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,13 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/BRO3886/romp/internal/config"
 	"github.com/BRO3886/romp/internal/git"
 	"github.com/BRO3886/romp/internal/job"
 )
-
-// defaultHistoryDays is how long finished jobs stay in history before gc
-// considers them removable.
-const defaultHistoryDays = 30
 
 func newGcCmd() *cobra.Command {
 	var apply bool
@@ -27,15 +23,16 @@ func newGcCmd() *cobra.Command {
 		Short: "Remove stale worktrees and old job history",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runGc(cmd.Context(), apply, historyDays)
+			return runGc(cmd, apply, historyDays)
 		},
 	}
 	cmd.Flags().BoolVar(&apply, "apply", false, "delete worktrees and history instead of listing them")
-	cmd.Flags().IntVar(&historyDays, "history-days", defaultHistoryDays, "delete outcomes older than N days")
+	cmd.Flags().IntVar(&historyDays, "history-days", 0, "delete outcomes older than N days (0 disables; default from user config)")
 	return cmd
 }
 
-func runGc(ctx context.Context, apply bool, historyDays int) error {
+func runGc(cmd *cobra.Command, apply bool, historyDays int) error {
+	ctx := cmd.Context()
 	root, err := repoRoot(ctx)
 	if err != nil {
 		return err
@@ -43,6 +40,15 @@ func runGc(ctx context.Context, apply bool, historyDays int) error {
 	owner, name, err := (&git.Repo{Root: root}).Origin(ctx)
 	if err != nil {
 		return fmt.Errorf("resolve origin: %w", err)
+	}
+
+	cfg, err := config.Load(root, config.Overrides{})
+	if err != nil {
+		return err
+	}
+	days := cfg.HistoryDays
+	if cmd.Flags().Changed("history-days") {
+		days = historyDays
 	}
 
 	store, err := job.Open(job.Path())
@@ -92,8 +98,8 @@ func runGc(ctx context.Context, apply bool, historyDays int) error {
 		}
 	}
 
-	if historyDays > 0 {
-		cutoff := time.Now().UTC().Add(-time.Duration(historyDays) * 24 * time.Hour).Format(time.RFC3339Nano)
+	if days > 0 {
+		cutoff := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour).Format(time.RFC3339Nano)
 		n, err := store.CountBefore(ctx, cutoff)
 		if err != nil {
 			return err
@@ -104,9 +110,9 @@ func runGc(ctx context.Context, apply bool, historyDays int) error {
 				if _, err := store.Prune(ctx, cutoff); err != nil {
 					return err
 				}
-				fmt.Printf("pruned %s older than %dd\n", outcomeWord(n), historyDays)
+				fmt.Printf("pruned %s older than %dd\n", outcomeWord(n), days)
 			} else {
-				fmt.Printf("would prune %s older than %dd (pass --apply to delete)\n", outcomeWord(n), historyDays)
+				fmt.Printf("would prune %s older than %dd (pass --apply to delete)\n", outcomeWord(n), days)
 			}
 		}
 	}

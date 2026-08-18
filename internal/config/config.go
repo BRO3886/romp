@@ -19,6 +19,7 @@ type Config struct {
 	Base         string  `toml:"base"`
 	Width        int     `toml:"width"`
 	Timeout      string  `toml:"timeout"`
+	HistoryDays  int     `toml:"history_days"`
 	Verify       Verify  `toml:"verify"`
 	Scope        Scope   `toml:"scope"`
 	Harness      Harness `toml:"harness"`
@@ -61,6 +62,7 @@ func Defaults() Config {
 		BlockedLabel: "romp:blocked",
 		Width:        3,
 		Timeout:      "25m",
+		HistoryDays:  30,
 		Harness:      Harness{Default: "claude", Effort: "high"},
 	}
 }
@@ -78,11 +80,12 @@ type Overrides struct {
 func Load(root string, o Overrides) (*Config, error) {
 	cfg := Defaults()
 
-	for _, f := range []string{userConfigPath(), filepath.Join(root, "romp.toml"), filepath.Join(root, ".romp", "local.toml")} {
+	userCfg := userConfigPath()
+	for _, f := range []string{userCfg, filepath.Join(root, "romp.toml"), filepath.Join(root, ".romp", "local.toml")} {
 		if f == "" {
 			continue
 		}
-		if err := apply(&cfg, f); err != nil {
+		if err := apply(&cfg, f, f == userCfg); err != nil {
 			return nil, err
 		}
 	}
@@ -99,7 +102,10 @@ func Load(root string, o Overrides) (*Config, error) {
 	return &cfg, nil
 }
 
-func apply(dst *Config, path string) error {
+// apply reads one TOML file into src and overlays it on dst. global marks the
+// user config file, which is the only source for machine-wide settings like
+// HistoryDays.
+func apply(dst *Config, path string, global bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -111,13 +117,14 @@ func apply(dst *Config, path string) error {
 	if err := toml.Unmarshal(data, &src); err != nil {
 		return fmt.Errorf("parsing %s: %w", path, err)
 	}
-	overlay(dst, &src)
+	overlay(dst, &src, global)
 	return nil
 }
 
 // overlay copies non-zero fields from src over dst. Zero means "not set", so
 // dst keeps its current (lower-precedence) value for anything src leaves out.
-func overlay(dst *Config, src *Config) {
+// Global-only fields are copied solely when src is the user config file.
+func overlay(dst *Config, src *Config, global bool) {
 	if src.Label != "" {
 		dst.Label = src.Label
 	}
@@ -135,6 +142,9 @@ func overlay(dst *Config, src *Config) {
 	}
 	if src.Timeout != "" {
 		dst.Timeout = src.Timeout
+	}
+	if global && src.HistoryDays != 0 {
+		dst.HistoryDays = src.HistoryDays
 	}
 	if src.Verify.Build != "" {
 		dst.Verify.Build = src.Verify.Build

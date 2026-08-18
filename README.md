@@ -81,7 +81,7 @@ All commands operate on the repo containing your current directory.
 | `romp status` | Jobs in this repo. `--all` for every running instance. |
 | `romp cancel <id>` | Kill a running job and free its slot. |
 | `romp logs <id> [-f]` | Show or follow a job's log. |
-| `romp gc` | Remove worktrees left behind by failed jobs. |
+| `romp gc` | Remove stale worktrees and prune old job history (dry-run, then `--apply`). |
 | `romp doctor` | Check `gh` auth, harness login, git version, config validity. |
 
 `status`, `cancel`, and `logs` reach the watcher over a Unix socket at
@@ -188,11 +188,17 @@ command flags
 
 So `romp run -i 17 --harness codex --width 1` overrides everything for one run.
 
+`history_days` is the one global-only setting: it is read from
+`~/.config/romp/config.toml` (how long `romp gc` keeps job history on this
+machine) and is ignored in `romp.toml` and `local.toml`. Pass `--history-days N`
+to override it for one run, or `0` to disable history pruning.
+
 ### Multiple repos
 
 `romp watch` watches one repo — the one you are in. To run several, start one
-per repo; each gets its own socket and its own job table under
-`~/.local/state/romp/<owner>-<repo>/`.
+per repo; each gets its own socket, while the job table and outcome history
+live in one shared SQLite database per machine under
+`~/.local/state/romp/romp.db`.
 
 `romp status --all` shows jobs across every running instance.
 
@@ -241,7 +247,8 @@ If the agent finds the issue ambiguous or contradictory, it stops without writin
 | **timeout** | Job exceeded `timeout`. Killed, worktree kept for inspection |
 | **rate-limited** | Requeued with backoff, up to 3 attempts |
 
-Failed jobs keep their worktree so you can inspect it. `romp gc` removes ones older than a week.
+Failed jobs keep their worktree so you can inspect it. `romp gc` removes them,
+and prunes finished-job history older than `history_days` (default 30).
 
 ---
 

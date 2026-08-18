@@ -9,8 +9,8 @@ import (
 func TestDefaults(t *testing.T) {
 	cfg := Defaults()
 	if cfg.Label != "romp" || cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" ||
-		cfg.Width != 3 || cfg.Timeout != "25m" || cfg.Harness.Default != "claude" ||
-		cfg.Harness.Effort != "high" {
+		cfg.Width != 3 || cfg.Timeout != "25m" || cfg.HistoryDays != 30 ||
+		cfg.Harness.Default != "claude" || cfg.Harness.Effort != "high" {
 		t.Fatalf("Defaults() = %+v", cfg)
 	}
 }
@@ -94,6 +94,37 @@ func TestLoadLabelOverrides(t *testing.T) {
 	}
 	if cfg.BlockedLabel != "team-blocked" {
 		t.Errorf("BlockedLabel = %q, want team-blocked", cfg.BlockedLabel)
+	}
+}
+
+func TestHistoryDaysGlobalOnly(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", user)
+	write(t, filepath.Join(user, "romp", "config.toml"), "history_days = 7\n")
+
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "history_days = 90\n")
+	write(t, filepath.Join(root, ".romp", "local.toml"), "history_days = 5\n")
+
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HistoryDays != 7 {
+		t.Errorf("HistoryDays = %d, want 7 (user config only)", cfg.HistoryDays)
+	}
+}
+
+func TestHistoryDaysDefault(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "history_days = 90\n")
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HistoryDays != 30 {
+		t.Errorf("HistoryDays = %d, want 30 (romp.toml ignored)", cfg.HistoryDays)
 	}
 }
 
