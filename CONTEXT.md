@@ -55,3 +55,9 @@ _Avoid_: assign, reserve, lock
 **Claim label**:
 A GitHub label (`romp:claimed` by default, configurable as `claimed_label`) marking an issue as taken by a running job; the poll excludes it.
 _Avoid_: in-progress label, status label
+
+## Observability
+
+**Codename**:
+A docker-style `adjective_scientist` pair (e.g. `wandering_curie`) that identifies a job in logs and status, derived deterministically from the repo and issue number.
+_Avoid_: id, name, agent-N
