@@ -66,3 +66,13 @@ func (c *Client) AddLabel(ctx context.Context, repo string, number int, label st
 	_, err := c.run(ctx, "issue", "edit", strconv.Itoa(number), "--repo", repo, "--add-label", label)
 	return err
 }
+
+// CreateLabel ensures a label exists on a repo. An existing label is treated
+// as success so init is idempotent.
+func (c *Client) CreateLabel(ctx context.Context, repo, label string) error {
+	_, err := c.run(ctx, "label", "create", label, "--repo", repo)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return err
+	}
+	return nil
+}

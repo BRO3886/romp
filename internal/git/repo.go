@@ -28,6 +28,18 @@ func (r *Repo) run(ctx context.Context, dir string, args ...string) (string, err
 	return strings.TrimSpace(string(out)), nil
 }
 
+// FindRoot returns the top-level directory of the git repository containing
+// dir (the current directory when dir is empty).
+func FindRoot(ctx context.Context, dir string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse --show-toplevel: %w\n%s", err, out)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // Origin returns the owner and repo name parsed from the origin remote URL.
 // It understands scp-like (git@github.com:owner/name.git) and https forms.
 func (r *Repo) Origin(ctx context.Context) (owner, name string, err error) {

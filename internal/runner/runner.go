@@ -20,12 +20,16 @@ import (
 
 // Runner wires the ports together for a single one-shot job.
 type Runner struct {
-	Harness harness.Harness
-	Git     *git.Repo
-	GH      *gh.Client
-	Prompt  *prompt.Renderer
-	Verify  string
-	Stderr  io.Writer
+	Harness   harness.Harness
+	Git       *git.Repo
+	GH        *gh.Client
+	Prompt    *prompt.Renderer
+	Verify    []string
+	Model     string
+	Base      string
+	Timeout   time.Duration
+	Protected []string
+	Stderr    io.Writer
 }
 
 func (r *Runner) logf(format string, a ...any) {
@@ -36,6 +40,10 @@ func (r *Runner) logf(format string, a ...any) {
 // On failure it returns an error describing the outcome (no-changes, red,
 // etc.) and leaves the worktree in place for inspection.
 func (r *Runner) Run(ctx context.Context, issueNum int) error {
+	if len(r.Verify) == 0 {
+		return fmt.Errorf("no verify command configured: run `romp init` or pass --verify")
+	}
+
 	owner, name, err := r.Git.Origin(ctx)
 	if err != nil {
 		return fmt.Errorf("resolve origin: %w", err)
@@ -46,9 +54,12 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 	if err := r.Git.Fetch(ctx); err != nil {
 		return fmt.Errorf("fetch: %w", err)
 	}
-	base, err := r.Git.DefaultBranch(ctx)
-	if err != nil {
-		return fmt.Errorf("default branch: %w", err)
+	base := r.Base
+	if base == "" {
+		base, err = r.Git.DefaultBranch(ctx)
+		if err != nil {
+			return fmt.Errorf("default branch: %w", err)
+		}
 	}
 
 	issue, err := r.GH.Issue(ctx, repo, issueNum)
@@ -67,14 +78,15 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 	}
 
 	promptText, err := r.Prompt.Render(prompt.Data{
-		Issue:  fmt.Sprint(issueNum),
-		Title:  issue.Title,
-		Body:   issue.Body,
-		Repo:   repo,
-		Branch: branch,
-		Base:   base,
-		URL:    issue.URL,
-		Verify: r.Verify,
+		Issue:     fmt.Sprint(issueNum),
+		Title:     issue.Title,
+		Body:      issue.Body,
+		Repo:      repo,
+		Branch:    branch,
+		Base:      base,
+		URL:       issue.URL,
+		Verify:    strings.Join(r.Verify, " && "),
+		Protected: strings.Join(r.Protected, ", "),
 	})
 	if err != nil {
 		return err
@@ -84,7 +96,13 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 	r.logf("running %s", r.Harness.Name())
 
 	start := time.Now()
-	res, err := r.Harness.Run(ctx, harness.Request{Dir: dir, Prompt: promptText})
+	runCtx := ctx
+	var cancel context.CancelFunc
+	if r.Timeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, r.Timeout)
+		defer cancel()
+	}
+	res, err := r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model})
 	if err != nil {
 		return err
 	}
@@ -133,9 +151,9 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		return fmt.Errorf("commit: %w", err)
 	}
 
-	r.logf("verify: %s", r.Verify)
+	r.logf("verify: %s", strings.Join(r.Verify, " && "))
 	if err := r.verify(ctx, dir); err != nil {
-		return fmt.Errorf("red: %s failed: %v (worktree kept at %s)", r.Verify, err, dir)
+		return fmt.Errorf("red: %s failed: %v (worktree kept at %s)", strings.Join(r.Verify, " && "), err, dir)
 	}
 
 	if err := r.Git.Push(ctx, dir, branch); err != nil {
@@ -155,20 +173,22 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 	return nil
 }
 
-// verify re-runs the test command itself in the worktree. The agent's own
-// claim that tests pass is not proof.
+// verify re-runs each test command itself in the worktree, in order. The
+// agent's own claim that tests pass is not proof.
 func (r *Runner) verify(ctx context.Context, dir string) error {
-	fields := strings.Fields(r.Verify)
-	if len(fields) == 0 {
-		return fmt.Errorf("empty verify command")
+	for _, v := range r.Verify {
+		fields := strings.Fields(v)
+		if len(fields) == 0 {
+			return fmt.Errorf("empty verify command")
+		}
+		cmd := exec.CommandContext(ctx, fields[0], fields[1:]...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%s", out)
+		}
+		r.logf("verify ok (%s):\n%s", v, out)
 	}
-	cmd := exec.CommandContext(ctx, fields[0], fields[1:]...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s", out)
-	}
-	r.logf("verify ok:\n%s", out)
 	return nil
 }
 
