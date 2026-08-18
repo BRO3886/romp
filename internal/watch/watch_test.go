@@ -110,6 +110,7 @@ func TestClaimBatchDispatchesUnclaimedOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobWG.Wait()
+	wg.Wait()
 
 	sort.Ints(called)
 	if len(called) != 2 || called[0] != 1 || called[1] != 4 {
@@ -123,8 +124,8 @@ func TestClaimBatchDispatchesUnclaimedOnly(t *testing.T) {
 	if contains(added, "2:romp:claimed") || contains(added, "3:romp:claimed") {
 		t.Errorf("claim label added for already-claimed/blocked issue: %v", added)
 	}
-	if !contains(removed, "1:romp") || !contains(removed, "4:romp") {
-		t.Errorf("trigger labels removed on done = %v, want 1 and 4", removed)
+	if !contains(removed, "1:romp:claimed") || !contains(removed, "4:romp:claimed") {
+		t.Errorf("claim labels released on done = %v, want 1 and 4", removed)
 	}
 }
 
@@ -162,7 +163,7 @@ func TestClaimRollsBackRowOnLabelFailure(t *testing.T) {
 	}
 }
 
-func TestRunJobRemovesTriggerOnDone(t *testing.T) {
+func TestRunJobReleasesOnDone(t *testing.T) {
 	ghc := &fakeGH{}
 	store := newFakeStore()
 	store.rows[7] = true
@@ -176,11 +177,13 @@ func TestRunJobRemovesTriggerOnDone(t *testing.T) {
 		t.Error("in-flight row not deleted")
 	}
 	_, removed := ghc.snapshot()
-	if !contains(removed, "7:romp") {
-		t.Errorf("trigger label not removed on done: %v", removed)
-	}
 	if !contains(removed, "7:romp:claimed") {
 		t.Errorf("claim label not released: %v", removed)
+	}
+	// The runner removes the trigger label as its completion marker, so watch
+	// must not remove it a second time.
+	if contains(removed, "7:romp") {
+		t.Errorf("watch removed the trigger label the runner owns: %v", removed)
 	}
 }
 

@@ -13,28 +13,65 @@ import (
 	"time"
 
 	"github.com/BRO3886/romp/internal/gh"
-	"github.com/BRO3886/romp/internal/git"
 	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/prompt"
 )
 
+// defaultTriggerLabel is the label romp watch polls for, and the one a
+// finished run removes as its completion marker.
+const defaultTriggerLabel = "romp"
+
+// GitOps is the git surface a run needs: read the remote and the default
+// branch, manage the job worktree and branch, and publish the result.
+type GitOps interface {
+	Origin(ctx context.Context) (owner, name string, err error)
+	Fetch(ctx context.Context) error
+	DefaultBranch(ctx context.Context) (string, error)
+	AddWorktree(ctx context.Context, branch, dir, base string) error
+	RemoveWorktree(ctx context.Context, dir string) error
+	DeleteBranch(ctx context.Context, branch string) error
+	HasChanges(ctx context.Context, dir, base string) (bool, error)
+	CommitAll(ctx context.Context, dir, msg string) error
+	Push(ctx context.Context, dir, branch string) error
+}
+
+// GHOps is the GitHub surface a run needs: read the issue, report a block,
+// move labels, and open the PR.
+type GHOps interface {
+	Issue(ctx context.Context, repo string, number int) (gh.Issue, error)
+	Comment(ctx context.Context, repo string, number int, body string) error
+	AddLabel(ctx context.Context, repo string, number int, label string) error
+	RemoveLabel(ctx context.Context, repo string, number int, label string) error
+	CreatePR(ctx context.Context, repo, title, body, head, base string) (string, error)
+}
+
 // Runner wires the ports together for a single one-shot job.
 type Runner struct {
 	Harness      harness.Harness
-	Git          *git.Repo
-	GH           *gh.Client
+	Git          GitOps
+	GH           GHOps
 	Prompt       *prompt.Renderer
 	Verify       []string
 	Model        string
 	Base         string
 	Timeout      time.Duration
 	Protected    []string
+	TriggerLabel string
 	BlockedLabel string
 	Stderr       io.Writer
 }
 
 func (r *Runner) logf(format string, a ...any) {
 	fmt.Fprintf(r.Stderr, format+"\n", a...)
+}
+
+// triggerLabel returns the configured trigger label, falling back to the
+// default when unset so a hand-built Runner still marks the issue done.
+func (r *Runner) triggerLabel() string {
+	if r.TriggerLabel != "" {
+		return r.TriggerLabel
+	}
+	return defaultTriggerLabel
 }
 
 // blockedLabel returns the configured blocked label, falling back to the
@@ -174,12 +211,18 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 	if err != nil {
 		return err
 	}
+	r.logf("PR: %s", url)
+
+	// Label removal is the completion marker (ADR 0003): without it a later
+	// watch re-claims this issue and opens a second PR for it.
+	if err := r.GH.RemoveLabel(ctx, repo, issueNum, r.triggerLabel()); err != nil {
+		return fmt.Errorf("removing %s label: %w", r.triggerLabel(), err)
+	}
 
 	if err := r.Git.RemoveWorktree(ctx, dir); err != nil {
 		r.logf("warning: cleanup worktree: %v", err)
 	}
 
-	r.logf("PR: %s", url)
 	return nil
 }
 
