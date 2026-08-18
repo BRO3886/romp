@@ -180,10 +180,18 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 	return tx.Commit()
 }
 
-// History returns the most recent limit finished jobs, newest first.
-func (s *Store) History(ctx context.Context, limit int) ([]Outcome, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at FROM outcomes ORDER BY finished_at DESC LIMIT ?`, limit)
+// History returns the most recent limit finished jobs for repo, newest first.
+// An empty repo returns outcomes from every repository.
+func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome, error) {
+	query := `SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at FROM outcomes`
+	var args []any
+	if repo != "" {
+		query += ` WHERE repo = ?`
+		args = append(args, repo)
+	}
+	query += ` ORDER BY finished_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
