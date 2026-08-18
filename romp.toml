@@ -10,4 +10,6 @@ build = "go build ./..."
 test  = "go test ./... -count=1"
 
 [harness]
-default = "claude"
+default = "codex"
+model   = "5.6-terra"
+effort  = "medium"
