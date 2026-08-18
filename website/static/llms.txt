@@ -1,0 +1,25 @@
+# romp
+
+> romp is an open-source Go CLI that watches a GitHub repository for labelled issues, runs a local coding agent in an isolated git worktree, independently reruns the repository's verification command, and opens a pull request.
+
+## Product summary
+
+- Runs Claude Code or Codex locally through the user's existing login.
+- Uses GitHub and the authenticated `gh` CLI as the source of truth.
+- Gives every job a goal contract: GATE, DONE, PROVE IT, and CONSTRAINTS.
+- Never merges pull requests or deploys production.
+- Blocks under-specified issues before code changes and reports the missing detail.
+
+## Key documentation
+
+- [Getting started](https://romp.sidv.dev/docs/getting-started/): requirements, installation, and first run
+- [Commands](https://romp.sidv.dev/docs/commands/): command and flag reference
+- [Configuration](https://romp.sidv.dev/docs/configuration/): `romp.toml` and configuration layering
+- [Goal contract](https://romp.sidv.dev/docs/goal-contract/): the agent's finish line
+- [Architecture](https://romp.sidv.dev/docs/architecture/): job lifecycle and system design
+- [Safety](https://romp.sidv.dev/docs/safety/): permissions, secrets, and operational boundaries
+
+## Source
+
+- Repository: https://github.com/BRO3886/romp
+- License: MIT
