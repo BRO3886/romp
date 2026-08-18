@@ -6,26 +6,85 @@
   <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} — romp{{ end }}</title>
 
   {{- $desc := .Description | default .Site.Params.description }}
+  {{- $pageTitle := cond .IsHome .Site.Title (printf "%s — romp" .Title) }}
   <meta name="description" content="{{ $desc }}">
   <meta name="author" content="{{ .Site.Params.author }}">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
   {{- $kw := .Params.keywords | default .Site.Params.keywords }}
   <meta name="keywords" content="{{ delimit $kw ", " }}">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} — romp{{ end }}">
+  <meta property="og:title" content="{{ $pageTitle }}">
   <meta property="og:description" content="{{ $desc }}">
   <meta property="og:type" content="{{ if .IsHome }}website{{ else }}article{{ end }}">
   <meta property="og:url" content="{{ .Permalink }}">
   <meta property="og:site_name" content="romp">
-  {{ with .Site.Params.ogImage }}<meta property="og:image" content="{{ . | absURL }}">{{ end }}
+  {{ with .Site.Params.ogImage }}
+  <meta property="og:image" content="{{ . | absURL }}">
+  <meta property="og:image:alt" content="romp — local coding agent automation for GitHub issues">
+  {{ end }}
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} — romp{{ end }}">
+  <meta name="twitter:title" content="{{ $pageTitle }}">
   <meta name="twitter:description" content="{{ $desc }}">
+  {{ with .Site.Params.ogImage }}<meta name="twitter:image" content="{{ . | absURL }}">{{ end }}
 
   <!-- Canonical -->
   <link rel="canonical" href="{{ .Permalink }}">
+  {{ with .OutputFormats.Get "RSS" }}<link rel="alternate" type="application/rss+xml" title="{{ $.Site.Title }} RSS" href="{{ .Permalink }}">{{ end }}
+
+  <!-- Structured Data: site and page entities -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "{{ .Site.BaseURL }}#organization",
+        "name": "romp",
+        "url": "{{ .Site.BaseURL }}",
+        "logo": "{{ .Site.Params.logo | absURL }}",
+        "sameAs": ["{{ .Site.Params.github }}", "https://sidv.dev"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "{{ .Site.BaseURL }}#website",
+        "name": "romp",
+        "url": "{{ .Site.BaseURL }}",
+        "description": {{ $desc | jsonify }},
+        "publisher": { "@id": "{{ .Site.BaseURL }}#organization" },
+        "inLanguage": "en-US"
+      },
+      {
+        "@type": "{{ if .IsHome }}WebPage{{ else }}TechArticle{{ end }}",
+        "@id": "{{ .Permalink }}#page",
+        "url": "{{ .Permalink }}",
+        "name": {{ $pageTitle | jsonify }},
+        "description": {{ $desc | jsonify }},
+        "isPartOf": { "@id": "{{ .Site.BaseURL }}#website" },
+        "publisher": { "@id": "{{ .Site.BaseURL }}#organization" },
+        "inLanguage": "en-US"{{ with .Date }},
+        "datePublished": "{{ .Format "2006-01-02" }}"{{ end }}{{ with .Lastmod }},
+        "dateModified": "{{ .Format "2006-01-02" }}"{{ end }}
+      }
+    ]
+  }
+  </script>
+
+  {{ if not .IsHome }}
+  <!-- Structured Data: documentation breadcrumb -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "{{ .Site.BaseURL }}" },
+      { "@type": "ListItem", "position": 2, "name": "{{ .Title }}", "item": "{{ .Permalink }}" }
+    ]
+  }
+  </script>
+  {{ end }}
 
   {{ if .IsHome }}
   <!-- Structured Data: SoftwareApplication -->
