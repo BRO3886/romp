@@ -98,6 +98,12 @@ func (r *Repo) RemoveWorktree(ctx context.Context, dir string) error {
 	return err
 }
 
+// DeleteBranch force-deletes a local branch.
+func (r *Repo) DeleteBranch(ctx context.Context, branch string) error {
+	_, err := r.run(ctx, "", "branch", "-D", branch)
+	return err
+}
+
 // HasChanges reports whether the worktree at dir differs from base, either as
 // uncommitted changes or commits on top of base (the agent may commit itself).
 func (r *Repo) HasChanges(ctx context.Context, dir, base string) (bool, error) {

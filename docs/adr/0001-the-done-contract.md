@@ -1,3 +1,17 @@
 # The done contract: an explicit verify command, independently re-run
 
-romp decides a job is done only when a verification command passes, run by romp itself after the agent exits — never on the agent's own claim. The command is a per-repo contract committed in `romp.toml` under `[verify]`; romp does not infer it from the language at runtime, and refuses to run without it. Language detection happens once at `romp init` as a seeded suggestion the human confirms (`go.mod` → `go test ./... -count=1`, `Cargo.toml` → `cargo test`, `package.json` → `npm test`, `pyproject.toml` → `pytest`, `Makefile` → `make test`). Both rules exist for one reason: a wrong or unverified green produces a plausible PR that solves the wrong problem, which costs more than no PR — the agent can believe tests pass (or skip them) and report success, and a runtime language guess fails silently on monorepos and custom runners.
+Status: accepted
+
+## Context
+
+romp's only value is that a green PR actually solves the issue. Two things threaten that. First, the agent may report tests pass without running them, so trusting its claim means the cheapest green wins. Second, romp has no a priori knowledge of how a given repo proves "done" — Go, Rust, JavaScript, and Python each use a different command.
+
+## Decision
+
+A job is done only when an explicit verification command passes, run by romp itself after the agent exits — the agent's own claim is never trusted. The command is a per-repo contract committed in `romp.toml` under `[verify]`, and romp refuses to run without it rather than guessing. `romp init` seeds the command by detecting the language once (`go.mod` → `go test ./... -count=1`, `Cargo.toml` → `cargo test`, `package.json` → `npm test`, `pyproject.toml` → `pytest`, `Makefile` → `make test`), and the human confirms it before committing.
+
+## Consequences
+
+- Both failure modes are removed: the command cannot be wrong silently, and the green cannot be unverified.
+- Runtime language detection is deliberately rejected. Monorepos and custom runners make any heuristic wrong often enough to matter, and a silent wrong guess is worse than failing loudly — a wrong test command produces a plausible PR that solves the wrong problem, which costs more than no PR.
+- The cost is friction: a repo without `[verify]` cannot be run until `init` or a `--verify` flag supplies the command.

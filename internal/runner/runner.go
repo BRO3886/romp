@@ -90,6 +90,26 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		r.logf("%s", res.Output)
 	}
 
+	gap, err := readBlocked(dir)
+	if err != nil {
+		return err
+	}
+	if gap != "" {
+		if err := r.GH.Comment(ctx, repo, issueNum, blockedComment(gap)); err != nil {
+			return fmt.Errorf("posting blocked comment: %w", err)
+		}
+		if err := r.GH.AddLabel(ctx, repo, issueNum, blockedLabel); err != nil {
+			return fmt.Errorf("relabelling %s: %w", blockedLabel, err)
+		}
+		if err := r.Git.RemoveWorktree(ctx, dir); err != nil {
+			r.logf("warning: cleanup worktree: %v", err)
+		}
+		if err := r.Git.DeleteBranch(ctx, branch); err != nil {
+			r.logf("warning: delete branch: %v", err)
+		}
+		return fmt.Errorf("%w: %s", ErrBlocked, gap)
+	}
+
 	pr, err := readPR(dir, issue.Title, issueNum)
 	if err != nil {
 		return err

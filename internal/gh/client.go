@@ -54,3 +54,15 @@ func (c *Client) CreatePR(ctx context.Context, repo, title, body, head, base str
 	return c.run(ctx, "pr", "create", "--repo", repo, "--base", base, "--head", head,
 		"--title", title, "--body", body)
 }
+
+// Comment posts a comment on an issue.
+func (c *Client) Comment(ctx context.Context, repo string, number int, body string) error {
+	_, err := c.run(ctx, "issue", "comment", strconv.Itoa(number), "--repo", repo, "--body", body)
+	return err
+}
+
+// AddLabel adds a label to an issue.
+func (c *Client) AddLabel(ctx context.Context, repo string, number int, label string) error {
+	_, err := c.run(ctx, "issue", "edit", strconv.Itoa(number), "--repo", repo, "--add-label", label)
+	return err
+}

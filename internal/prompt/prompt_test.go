@@ -32,6 +32,7 @@ func TestRenderFillsPlaceholders(t *testing.T) {
 		"CONSTRAINTS",
 		"REPORT",
 		".romp/pull-request.md",
+		".romp/blocked.md",
 		"mermaid",
 		"conventional commit",
 	} {

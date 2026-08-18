@@ -75,5 +75,5 @@ commit: <conventional commit subject>
 
 The commit subject must follow conventional commits: a type prefix (feat, fix, refactor, docs, test, chore) followed by a short description. The description must tell a reviewer what changed and why. If the change is substantial (multiple files, a new abstraction, an architectural decision), include one or more mermaid diagrams (flowchart or sequence) to explain it. For a small change, a few sentences are enough and no diagram is needed.
 
-If the issue is ambiguous, contradictory, or under-specified, stop without writing code and explain exactly what is missing or contradictory.
+If the issue is ambiguous, contradictory, or under-specified, stop without writing code. Write the specific gap — what is missing, ambiguous, or contradictory — to the file .romp/blocked.md, then stop.
 `

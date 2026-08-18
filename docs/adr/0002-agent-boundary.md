@@ -1,3 +1,17 @@
 # The agent boundary: a prompt contract, outcomes via .romp/ files
 
-romp drives the agent through a rendered prompt and reads results back through markdown files under `.romp/` — `pull-request.md` for the PR title, conventional commit subject, and description (optionally with mermaid diagrams), and `blocked.md` for the gap when an issue is under-scoped. The harness is a small interface (`Name` plus `Run`) that claude and codex adapters implement. This is chosen over harness-specific structured output (claude's `--json-schema`, codex's own format) so the prompt is the single contract and a new adapter drops in without romp learning that harness's output format.
+Status: accepted
+
+## Context
+
+romp supports multiple coding-agent CLIs — claude today, codex next — and each ships its own structured-output mechanism (claude's `--json-schema`, codex's own format). Coupling romp to any one of them means learning a new output format per harness, and the agent's final free-text message is not a reliable carrier for structured data.
+
+## Decision
+
+The prompt is the single contract between romp and the agent. The agent reports structured outcomes by writing markdown files under `.romp/` — `pull-request.md` (PR title, conventional commit subject, description, optionally mermaid diagrams) and `blocked.md` (the gap when an issue is under-scoped) — which romp reads after the harness exits. The harness interface stays minimal (`Name` plus `Run`); adapters implement it, and romp never parses a harness's native output.
+
+## Consequences
+
+- A new harness drops in without romp learning its output format; the `.romp/` convention is harness-agnostic.
+- Outcome artifacts must not reach the committed diff: romp removes `pull-request.md` before committing, and `blocked.md` is consumed on a path that returns before any commit.
+- The contract is only as strong as the agent's obedience to it, so romp falls back to defaults (issue title, conventional commit, "Closes #N") when the artifact is missing or malformed.
