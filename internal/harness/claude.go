@@ -18,19 +18,21 @@ type Claude struct {
 func (c Claude) Name() string { return "claude" }
 
 func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
-	args := []string{
-		"-p",
-		"--output-format", "text",
-		"--permission-mode", "bypassPermissions",
-	}
-	args = append(args, c.Args...)
-	args = append(args, req.Prompt)
-
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, "claude", claudeArgs(req, c.Args)...)
 	cmd.Dir = req.Dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return Result{Output: string(out)}, fmt.Errorf("claude: %w\n%s", err, out)
 	}
 	return Result{Output: string(out)}, nil
+}
+
+func claudeArgs(req Request, extra []string) []string {
+	args := []string{"-p", "--output-format", "text", "--permission-mode", "bypassPermissions"}
+	if req.Model != "" {
+		args = append(args, "--model", req.Model)
+	}
+	args = append(args, extra...)
+	args = append(args, req.Prompt)
+	return args
 }

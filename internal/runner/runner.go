@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/git"
@@ -82,10 +83,12 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 	r.logf("worktree %s", dir)
 	r.logf("running %s", r.Harness.Name())
 
+	start := time.Now()
 	res, err := r.Harness.Run(ctx, harness.Request{Dir: dir, Prompt: promptText})
 	if err != nil {
 		return err
 	}
+	r.logf("agent took %s", time.Since(start).Round(time.Second))
 	if res.Output != "" {
 		r.logf("%s", res.Output)
 	}

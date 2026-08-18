@@ -11,6 +11,9 @@ type Request struct {
 	Dir string
 	// Prompt is the rendered goal contract.
 	Prompt string
+	// Model, when non-empty, requests a specific model; empty uses the
+	// harness default.
+	Model string
 }
 
 // Result is the outcome of a run. Fields are added additively so adapters
