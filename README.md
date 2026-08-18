@@ -147,6 +147,7 @@ ignore    = ["vendor/**", "node_modules/**"]
 [harness]
 default   = "claude"                 # claude | codex
 model     = ""                       # harness default if empty
+effort    = "high"                   # claude only: low | medium | high | xhigh | max | auto
 max_turns = 30                       # claude only; ignored for codex
 
 [prompt]

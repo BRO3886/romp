@@ -14,6 +14,9 @@ type Request struct {
 	// Model, when non-empty, requests a specific model; empty uses the
 	// harness default.
 	Model string
+	// Effort, when non-empty, requests a thinking budget (claude's
+	// --effort); empty leaves the harness default in place.
+	Effort string
 }
 
 // Result is the outcome of a run. Fields are added additively so adapters

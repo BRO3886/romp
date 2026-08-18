@@ -110,6 +110,7 @@ func buildRunner(root string, cfg *config.Config, verify []string, h harness.Har
 		Prompt:       &prompt.Renderer{Template: prompt.Default()},
 		Verify:       verify,
 		Model:        cfg.Harness.Model,
+		Effort:       cfg.Harness.Effort,
 		Base:         cfg.Base,
 		Timeout:      timeout,
 		Protected:    cfg.Scope.Protected,

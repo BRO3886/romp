@@ -53,6 +53,7 @@ type Runner struct {
 	Prompt       *prompt.Renderer
 	Verify       []string
 	Model        string
+	Effort       string
 	Base         string
 	Timeout      time.Duration
 	Protected    []string
@@ -149,7 +150,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		runCtx, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
-	_, err = r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model})
+	_, err = r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort})
 	if err != nil {
 		return err
 	}

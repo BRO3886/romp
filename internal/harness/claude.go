@@ -32,6 +32,9 @@ func claudeArgs(req Request, extra []string) []string {
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
+	if req.Effort != "" {
+		args = append(args, "--effort", req.Effort)
+	}
 	args = append(args, extra...)
 	args = append(args, req.Prompt)
 	return args

@@ -42,6 +42,7 @@ type Scope struct {
 type Harness struct {
 	Default  string `toml:"default"`
 	Model    string `toml:"model"`
+	Effort   string `toml:"effort"`
 	MaxTurns int    `toml:"max_turns"`
 }
 
@@ -60,7 +61,7 @@ func Defaults() Config {
 		BlockedLabel: "romp:blocked",
 		Width:        3,
 		Timeout:      "25m",
-		Harness:      Harness{Default: "claude"},
+		Harness:      Harness{Default: "claude", Effort: "high"},
 	}
 }
 
@@ -155,6 +156,9 @@ func overlay(dst *Config, src *Config) {
 	}
 	if src.Harness.Model != "" {
 		dst.Harness.Model = src.Harness.Model
+	}
+	if src.Harness.Effort != "" {
+		dst.Harness.Effort = src.Harness.Effort
 	}
 	if src.Harness.MaxTurns != 0 {
 		dst.Harness.MaxTurns = src.Harness.MaxTurns
