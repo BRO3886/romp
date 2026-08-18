@@ -63,9 +63,9 @@ func TestLoadPrecedence(t *testing.T) {
 func TestLoadOverrides(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := t.TempDir()
-	write(t, filepath.Join(root, "romp.toml"), "width = 2\n[harness]\nmodel = \"sonnet\"\n")
+	write(t, filepath.Join(root, "romp.toml"), "width = 2\n[harness]\nmodel = \"sonnet\"\neffort = \"max\"\n")
 
-	cfg, err := Load(root, Overrides{Width: 9, Model: "opus-flag"})
+	cfg, err := Load(root, Overrides{Width: 9, Model: "opus-flag", Effort: "low"})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -75,8 +75,22 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.Harness.Model != "opus-flag" {
 		t.Errorf("Harness.Model = %q, want opus-flag (flag wins)", cfg.Harness.Model)
 	}
+	if cfg.Harness.Effort != "low" {
+		t.Errorf("Harness.Effort = %q, want low (flag wins)", cfg.Harness.Effort)
+	}
+}
+
+func TestLoadOmitsEffortOverride(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "width = 2\n[harness]\nmodel = \"sonnet\"\n")
+
+	cfg, err := Load(root, Overrides{Width: 9, Model: "opus-flag"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 	if cfg.Harness.Effort != "high" {
-		t.Errorf("Harness.Effort = %q, want high (default survives an unset key)", cfg.Harness.Effort)
+		t.Errorf("Harness.Effort = %q, want high (default survives an unset override)", cfg.Harness.Effort)
 	}
 }
 
@@ -148,6 +162,12 @@ func TestLoadEffortByHarness(t *testing.T) {
 			toml: "[harness]\ndefault = \"claude\"\neffort = \"max\"\n",
 			o:    Overrides{Harness: "codex"},
 			want: "max",
+		},
+		{
+			name:    "flag effort is rejected by selected harness",
+			toml:    "[harness]\ndefault = \"claude\"\neffort = \"medium\"\n",
+			o:       Overrides{Effort: "ultra"},
+			wantErr: `harness.effort "ultra" is not valid for claude (want low, medium, high, xhigh, max)`,
 		},
 	}
 	for _, tt := range tests {

@@ -31,7 +31,7 @@ func TestRunCmdFlags(t *testing.T) {
 	}
 
 	cmd := newRunCmd(factory, run)
-	cmd.SetArgs([]string{"--verify", "go build ./...", "--harness", "codex", "--model", "opus", "--width", "1", "-i", "7"})
+	cmd.SetArgs([]string{"--verify", "go build ./...", "--harness", "codex", "--model", "opus", "--effort", "low", "--width", "1", "-i", "7"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -53,6 +53,9 @@ func TestRunCmdFlags(t *testing.T) {
 	if gotOverrides.Model != "opus" {
 		t.Errorf("overrides.Model = %q, want opus", gotOverrides.Model)
 	}
+	if gotOverrides.Effort != "low" {
+		t.Errorf("overrides.Effort = %q, want low", gotOverrides.Effort)
+	}
 	if gotOverrides.Width != 1 {
 		t.Errorf("overrides.Width = %d, want 1", gotOverrides.Width)
 	}
@@ -60,11 +63,12 @@ func TestRunCmdFlags(t *testing.T) {
 
 func TestRunCmdVerifyDefaults(t *testing.T) {
 	var (
+		gotOverrides config.Overrides
 		gotVerify    string
 		gotVerifySet bool
 	)
-	factory := func(_ context.Context, _ config.Overrides, verifyFlag string, verifySet bool) (*runner.Runner, error) {
-		gotVerify, gotVerifySet = verifyFlag, verifySet
+	factory := func(_ context.Context, o config.Overrides, verifyFlag string, verifySet bool) (*runner.Runner, error) {
+		gotOverrides, gotVerify, gotVerifySet = o, verifyFlag, verifySet
 		return &runner.Runner{}, nil
 	}
 	run := func(_ context.Context, _ *runner.Runner, _ int) error { return nil }
@@ -79,6 +83,9 @@ func TestRunCmdVerifyDefaults(t *testing.T) {
 	}
 	if gotVerify != "" {
 		t.Errorf("verifyFlag = %q, want empty", gotVerify)
+	}
+	if gotOverrides.Effort != "" {
+		t.Errorf("overrides.Effort = %q, want empty when --effort is absent", gotOverrides.Effort)
 	}
 }
 
