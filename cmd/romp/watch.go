@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/BRO3886/romp/internal/codename"
 	"github.com/BRO3886/romp/internal/config"
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/git"
@@ -71,12 +75,29 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		GH:       &gh.Client{},
 		Store:    store,
 		RunJob: func(ctx context.Context, issue int) error {
+			name := codename.For(repo, issue)
+			f, err := openJobLog(owner, name, name)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
 			r, err := buildRunner(root, cfg, verify, h, timeout)
 			if err != nil {
 				return err
 			}
+			r.Codename = name
+			r.Stderr = io.MultiWriter(os.Stderr, f)
 			return r.Run(ctx, issue)
 		},
 	}
 	return w.Run(ctx)
+}
+
+// openJobLog creates or appends to the per-job log file for a codename.
+func openJobLog(owner, name, codename string) (*os.File, error) {
+	dir := job.LogsDir(owner, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("creating log dir: %w", err)
+	}
+	return os.OpenFile(filepath.Join(dir, codename+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 }

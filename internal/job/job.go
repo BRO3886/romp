@@ -15,6 +15,14 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Job is one in-flight row from the table.
+type Job struct {
+	Repo      string
+	Issue     int
+	Branch    string
+	ClaimedAt string
+}
+
 // Store is a thin handle over the SQLite job table.
 type Store struct {
 	db *sql.DB
@@ -87,6 +95,24 @@ func (s *Store) ClearRunning(ctx context.Context) error {
 	return err
 }
 
+// List returns every in-flight row, ordered by issue number.
+func (s *Store) List(ctx context.Context) ([]Job, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT repo, issue, branch, claimed_at FROM jobs ORDER BY issue`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Job
+	for rows.Next() {
+		var j Job
+		if err := rows.Scan(&j.Repo, &j.Issue, &j.Branch, &j.ClaimedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
 func newID() (string, error) {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -98,6 +124,11 @@ func newID() (string, error) {
 // Path returns the job-table file for owner/name under the state dir.
 func Path(owner, name string) string {
 	return filepath.Join(stateDir(), owner+"-"+name, "jobs.db")
+}
+
+// LogsDir returns the per-job log directory for owner/name under the state dir.
+func LogsDir(owner, name string) string {
+	return filepath.Join(stateDir(), owner+"-"+name, "logs")
 }
 
 func stateDir() string {

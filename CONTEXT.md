@@ -59,5 +59,5 @@ _Avoid_: in-progress label, status label
 ## Observability
 
 **Codename**:
-A docker-style `adjective_scientist` pair (e.g. `wandering_curie`) that identifies a job in logs and status, derived deterministically from the repo and issue number.
+An `adjective_name` pair (e.g. `sunny_naruto`) that identifies a job in logs and status, derived deterministically from the repo and issue number.
 _Avoid_: id, name, agent-N

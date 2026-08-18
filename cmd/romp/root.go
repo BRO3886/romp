@@ -27,6 +27,8 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newRunCmd(newRunner, execRun))
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newWatchCmd())
+	root.AddCommand(newStatusCmd())
+	root.AddCommand(newGcCmd())
 	return root
 }
 

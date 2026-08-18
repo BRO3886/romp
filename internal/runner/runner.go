@@ -55,6 +55,7 @@ type Runner struct {
 	Model        string
 	Effort       string
 	MaxTurns     int
+	Codename     string
 	Base         string
 	Timeout      time.Duration
 	Protected    []string
@@ -66,7 +67,11 @@ type Runner struct {
 }
 
 func (r *Runner) logf(format string, a ...any) {
-	fmt.Fprintf(r.Stderr, "%s  %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(format, a...))
+	prefix := ""
+	if r.Codename != "" {
+		prefix = "[" + r.Codename + "] "
+	}
+	fmt.Fprintf(r.Stderr, "%s  %s%s\n", time.Now().Format("15:04:05"), prefix, fmt.Sprintf(format, a...))
 }
 
 // triggerLabel returns the configured trigger label, falling back to the

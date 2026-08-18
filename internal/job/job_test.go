@@ -77,3 +77,33 @@ func TestClearRunning(t *testing.T) {
 		t.Fatalf("Claim after clear: ok=%v err=%v, want true", ok, err)
 	}
 }
+
+func TestList(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	for _, n := range []int{3, 1, 2} {
+		if ok, err := s.Claim(ctx, "o/r", n, "romp-3"); err != nil || !ok {
+			t.Fatalf("Claim %d: ok=%v err=%v", n, ok, err)
+		}
+	}
+
+	jobs, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(jobs) != 3 {
+		t.Fatalf("List len = %d, want 3", len(jobs))
+	}
+	for i, want := range []int{1, 2, 3} {
+		if jobs[i].Issue != want {
+			t.Errorf("jobs[%d].Issue = %d, want %d (ordered by issue)", i, jobs[i].Issue, want)
+		}
+		if jobs[i].Repo != "o/r" || jobs[i].Branch != "romp-3" {
+			t.Errorf("jobs[%d] = %+v, want repo o/r branch romp-3", i, jobs[i])
+		}
+		if jobs[i].ClaimedAt == "" {
+			t.Errorf("jobs[%d].ClaimedAt empty", i)
+		}
+	}
+}

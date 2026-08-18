@@ -8,7 +8,7 @@ watch runs jobs concurrently, all printing to one stderr. Once width exceeds one
 
 ## Decision
 
-Every job gets a codename — a docker-style `adjective_scientist` pair such as `wandering_curie` — derived deterministically from the repo and issue number, so the name is stable across restarts and needs no extra storage. The codename, not the issue number, is the human-facing identity: it prefixes every log line, names the per-job log file, and is the primary column in status.
+Every job gets a codename — an `adjective_name` pair such as `sunny_naruto` — derived deterministically from the repo and issue number, so the name is stable across restarts and needs no extra storage. The codename, not the issue number, is the human-facing identity: it prefixes every log line, names the per-job log file, and is the primary column in status.
 
 status reads the job table directly (no socket in v0) and prints each in-flight job's codename, issue, branch, and elapsed time from `claimed_at`. Per-job logs live under the state dir as `logs/<codename>.log`, one file per job, so concurrent jobs no longer interleave. gc defaults to dry-run and prints what it would remove; `--apply` deletes worktrees whose job has no in-flight row. Branch deletion is out of scope for v0.
 
