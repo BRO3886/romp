@@ -26,6 +26,7 @@ type GHOps interface {
 	AddLabel(ctx context.Context, repo string, number int, label string) error
 	RemoveLabel(ctx context.Context, repo string, number int, label string) error
 	Assign(ctx context.Context, repo string, number int) error
+	Unassign(ctx context.Context, repo string, number int) error
 	Comment(ctx context.Context, repo string, number int, body string) error
 	OpenPR(ctx context.Context, repo, branch string) (int, error)
 }
@@ -366,12 +367,16 @@ func detailOf(err error) string {
 	return err.Error()
 }
 
-// release drops the claim label and in-flight row on terminal state, using a
-// context that survives cancellation so a force-killed job still unclaims.
+// release drops the claim label, the assignee, and the in-flight row on
+// terminal state, using a context that survives cancellation so a
+// force-killed job still unclaims.
 func (w *Watcher) release(ctx context.Context, iss gh.Issue) {
 	ctx = context.WithoutCancel(ctx)
 	if err := w.GH.RemoveLabel(ctx, w.Repo, iss.Number, w.Claim); err != nil {
 		w.logf("#%d: removing claim label: %v", iss.Number, err)
+	}
+	if err := w.GH.Unassign(ctx, w.Repo, iss.Number); err != nil {
+		w.logf("#%d: unassigning: %v", iss.Number, err)
 	}
 	if err := w.Store.Delete(ctx, w.Repo, iss.Number); err != nil {
 		w.logf("#%d: deleting job row: %v", iss.Number, err)

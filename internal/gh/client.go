@@ -205,6 +205,12 @@ func (c *Client) Assign(ctx context.Context, repo string, number int) error {
 	return err
 }
 
+// Unassign removes the authenticated user as an assignee.
+func (c *Client) Unassign(ctx context.Context, repo string, number int) error {
+	_, err := c.run(ctx, "issue", "edit", strconv.Itoa(number), "--repo", repo, "--remove-assignee", "@me")
+	return err
+}
+
 // RemoveLabel removes a label from an issue.
 func (c *Client) RemoveLabel(ctx context.Context, repo string, number int, label string) error {
 	_, err := c.run(ctx, "issue", "edit", strconv.Itoa(number), "--repo", repo, "--remove-label", label)

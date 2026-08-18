@@ -189,6 +189,9 @@ func TestCancelViaSocketRecordsCancelledAndCleansUp(t *testing.T) {
 	if !contains(removed, "7:romp:claimed") {
 		t.Errorf("claim label not released on cancel: %v", removed)
 	}
+	if len(ghc.unassigned) != 1 || ghc.unassigned[0] != 7 {
+		t.Errorf("unassigned on cancel = %v, want [7]", ghc.unassigned)
+	}
 	cleanMu.Lock()
 	defer cleanMu.Unlock()
 	if cleanCalls != 1 {

@@ -20,6 +20,7 @@ type fakeGH struct {
 	added      []string
 	removed    []string
 	assigned   []int
+	unassigned []int
 	comments   []string
 	prByBranch map[string]int
 	addErr     error
@@ -53,6 +54,13 @@ func (f *fakeGH) Assign(_ context.Context, _ string, number int) error {
 		return f.assignErr
 	}
 	f.assigned = append(f.assigned, number)
+	return nil
+}
+
+func (f *fakeGH) Unassign(_ context.Context, _ string, number int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.unassigned = append(f.unassigned, number)
 	return nil
 }
 
@@ -285,6 +293,9 @@ func TestRunJobReleasesOnDone(t *testing.T) {
 	if !contains(removed, "7:romp:claimed") {
 		t.Errorf("claim label not released: %v", removed)
 	}
+	if len(ghc.unassigned) != 1 || ghc.unassigned[0] != 7 {
+		t.Errorf("unassigned = %v, want [7]", ghc.unassigned)
+	}
 	// The runner removes the trigger label as its completion marker, so watch
 	// must not remove it a second time.
 	if contains(removed, "7:romp") {
@@ -308,6 +319,9 @@ func TestRunJobKeepsTriggerOnBlocked(t *testing.T) {
 	}
 	if !contains(removed, "7:romp:claimed") {
 		t.Errorf("claim label not released on blocked: %v", removed)
+	}
+	if len(ghc.unassigned) != 1 || ghc.unassigned[0] != 7 {
+		t.Errorf("unassigned on blocked = %v, want [7]", ghc.unassigned)
 	}
 }
 
