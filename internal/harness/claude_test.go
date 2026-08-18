@@ -19,4 +19,16 @@ func TestClaudeArgs(t *testing.T) {
 	if !reflect.DeepEqual(noModel, want) {
 		t.Errorf("no model = %v, want %v", noModel, want)
 	}
+
+	withEffort := claudeArgs(Request{Prompt: "hello", Effort: "high"}, nil)
+	want = append(append([]string{}, base...), "--effort", "high", "hello")
+	if !reflect.DeepEqual(withEffort, want) {
+		t.Errorf("with effort = %v, want %v", withEffort, want)
+	}
+
+	both := claudeArgs(Request{Prompt: "hello", Model: "sonnet", Effort: "max"}, []string{"--verbose"})
+	want = append(append([]string{}, base...), "--model", "sonnet", "--effort", "max", "--verbose", "hello")
+	if !reflect.DeepEqual(both, want) {
+		t.Errorf("model and effort = %v, want %v", both, want)
+	}
 }

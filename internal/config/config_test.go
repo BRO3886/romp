@@ -9,7 +9,8 @@ import (
 func TestDefaults(t *testing.T) {
 	cfg := Defaults()
 	if cfg.Label != "romp" || cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" ||
-		cfg.Width != 3 || cfg.Timeout != "25m" || cfg.Harness.Default != "claude" {
+		cfg.Width != 3 || cfg.Timeout != "25m" || cfg.Harness.Default != "claude" ||
+		cfg.Harness.Effort != "high" {
 		t.Fatalf("Defaults() = %+v", cfg)
 	}
 }
@@ -32,7 +33,7 @@ func TestLoadPrecedence(t *testing.T) {
 
 	root := t.TempDir()
 	write(t, filepath.Join(root, "romp.toml"), "label = \"from-romp\"\n[verify]\ntest = \"go test ./...\"\n")
-	write(t, filepath.Join(root, ".romp", "local.toml"), "[harness]\nmodel = \"opus\"\n")
+	write(t, filepath.Join(root, ".romp", "local.toml"), "[harness]\nmodel = \"opus\"\neffort = \"max\"\n")
 
 	cfg, err := Load(root, Overrides{})
 	if err != nil {
@@ -50,6 +51,9 @@ func TestLoadPrecedence(t *testing.T) {
 	}
 	if cfg.Harness.Model != "opus" {
 		t.Errorf("Harness.Model = %q, want opus (local.toml)", cfg.Harness.Model)
+	}
+	if cfg.Harness.Effort != "max" {
+		t.Errorf("Harness.Effort = %q, want max (local.toml)", cfg.Harness.Effort)
 	}
 	if cfg.Harness.Default != "claude" {
 		t.Errorf("Harness.Default = %q, want claude (default)", cfg.Harness.Default)
@@ -70,6 +74,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.Harness.Model != "opus-flag" {
 		t.Errorf("Harness.Model = %q, want opus-flag (flag wins)", cfg.Harness.Model)
+	}
+	if cfg.Harness.Effort != "high" {
+		t.Errorf("Harness.Effort = %q, want high (default survives an unset key)", cfg.Harness.Effort)
 	}
 }
 
