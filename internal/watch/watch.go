@@ -168,9 +168,6 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan struct{},
 	err := w.RunJob(ctx, iss.Number)
 	switch {
 	case err == nil:
-		if rerr := w.GH.RemoveLabel(ctx, w.Repo, iss.Number, w.Trigger); rerr != nil {
-			w.logf("#%d: removing trigger label: %v", iss.Number, rerr)
-		}
 		w.logf("#%d: done", iss.Number)
 	case errors.Is(err, runner.ErrBlocked):
 		w.logf("#%d: blocked", iss.Number)

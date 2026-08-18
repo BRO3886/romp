@@ -113,6 +113,7 @@ func buildRunner(root string, cfg *config.Config, verify []string, h harness.Har
 		Base:         cfg.Base,
 		Timeout:      timeout,
 		Protected:    cfg.Scope.Protected,
+		TriggerLabel: cfg.Label,
 		BlockedLabel: cfg.BlockedLabel,
 		Stderr:       os.Stderr,
 	}
