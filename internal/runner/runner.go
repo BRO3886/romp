@@ -26,6 +26,12 @@ const defaultTriggerLabel = "romp"
 // running. The agent is killed and the job stays labelled so it can retry.
 var ErrTimeout = errors.New("timeout")
 
+// ErrNoChanges is returned when the agent finished without touching the repo.
+var ErrNoChanges = errors.New("no-changes")
+
+// ErrRed is returned when the verify command fails after the agent finished.
+var ErrRed = errors.New("red")
+
 // GitOps is the git surface a run needs: read the remote and the default
 // branch, manage the job worktree and branch, and publish the result.
 type GitOps interface {
@@ -97,45 +103,46 @@ func (r *Runner) blockedLabel() string {
 	return defaultBlockedLabel
 }
 
-// Run executes the full pipeline for one issue and opens a PR on success.
-// On failure it returns an error describing the outcome (no-changes, red,
-// etc.) and leaves the worktree in place for inspection.
-func (r *Runner) Run(ctx context.Context, issueNum int) error {
+// Run executes the full pipeline for one issue and opens a PR on success. It
+// returns the PR URL on success; on failure it returns an error describing
+// the outcome (no-changes, red, etc.) and leaves the worktree in place for
+// inspection.
+func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	if len(r.Verify) == 0 {
-		return fmt.Errorf("no verify command configured: run `romp init` or pass --verify")
+		return "", fmt.Errorf("no verify command configured: run `romp init` or pass --verify")
 	}
 
 	owner, name, err := r.Git.Origin(ctx)
 	if err != nil {
-		return fmt.Errorf("resolve origin: %w", err)
+		return "", fmt.Errorf("resolve origin: %w", err)
 	}
 	repo := owner + "/" + name
 	r.logf("repo %s, issue #%d", repo, issueNum)
 
 	if err := r.Git.Fetch(ctx); err != nil {
-		return fmt.Errorf("fetch: %w", err)
+		return "", fmt.Errorf("fetch: %w", err)
 	}
 	base := r.Base
 	if base == "" {
 		base, err = r.Git.DefaultBranch(ctx)
 		if err != nil {
-			return fmt.Errorf("default branch: %w", err)
+			return "", fmt.Errorf("default branch: %w", err)
 		}
 	}
 
 	issue, err := r.GH.Issue(ctx, repo, issueNum)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	branch := fmt.Sprintf("romp-%d", issueNum)
 	dir := filepath.Join(cacheDir(), owner+"-"+name, branch)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
-		return err
+		return "", err
 	}
 
 	if err := r.Git.AddWorktree(ctx, branch, dir, "origin/"+base); err != nil {
-		return fmt.Errorf("worktree: %w", err)
+		return "", fmt.Errorf("worktree: %w", err)
 	}
 
 	promptText, err := r.Prompt.Render(prompt.Data{
@@ -152,7 +159,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		Brief:     r.Brief,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	r.logf("worktree %s", dir)
@@ -168,22 +175,22 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 	_, err = r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
 	if err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("%w: %v", ErrTimeout, err)
+			return "", fmt.Errorf("%w: %v", ErrTimeout, err)
 		}
-		return err
+		return "", err
 	}
 	r.logf("agent took %s", time.Since(start).Round(time.Second))
 
 	gap, err := readBlocked(dir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if gap != "" {
 		if err := r.GH.Comment(ctx, repo, issueNum, blockedComment(gap)); err != nil {
-			return fmt.Errorf("posting blocked comment: %w", err)
+			return "", fmt.Errorf("posting blocked comment: %w", err)
 		}
 		if err := r.GH.AddLabel(ctx, repo, issueNum, r.blockedLabel()); err != nil {
-			return fmt.Errorf("relabelling %s: %w", r.blockedLabel(), err)
+			return "", fmt.Errorf("relabelling %s: %w", r.blockedLabel(), err)
 		}
 		if err := r.Git.RemoveWorktree(ctx, dir); err != nil {
 			r.logf("warning: cleanup worktree: %v", err)
@@ -191,55 +198,55 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		if err := r.Git.DeleteBranch(ctx, branch); err != nil {
 			r.logf("warning: delete branch: %v", err)
 		}
-		return fmt.Errorf("%w: %s", ErrBlocked, gap)
+		return "", fmt.Errorf("%w: %s", ErrBlocked, gap)
 	}
 
 	pr, err := readPR(dir, issue.Title, issueNum)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := removePRArtifact(dir); err != nil {
-		return err
+		return "", err
 	}
 
 	changed, err := r.Git.HasChanges(ctx, dir, "origin/"+base)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !changed {
-		return fmt.Errorf("no-changes: agent made no changes in %s", dir)
+		return "", fmt.Errorf("%w: agent made no changes in %s", ErrNoChanges, dir)
 	}
 
 	if err := r.Git.CommitAll(ctx, dir, pr.Commit); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return "", fmt.Errorf("commit: %w", err)
 	}
 
 	r.logf("verify: %s", strings.Join(r.Verify, " && "))
 	if err := r.verify(ctx, dir); err != nil {
-		return fmt.Errorf("red: %s failed: %v (worktree kept at %s)", strings.Join(r.Verify, " && "), err, dir)
+		return "", fmt.Errorf("%w: %s failed: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), err, dir)
 	}
 
 	if err := r.Git.Push(ctx, dir, branch); err != nil {
-		return fmt.Errorf("push: %w", err)
+		return "", fmt.Errorf("push: %w", err)
 	}
 
 	url, err := r.GH.CreatePR(ctx, repo, pr.Title, withCloses(pr.Body, issueNum), branch, base)
 	if err != nil {
-		return err
+		return "", err
 	}
 	r.logf("PR: %s", url)
 
 	// Label removal is the completion marker (ADR 0003): without it a later
 	// watch re-claims this issue and opens a second PR for it.
 	if err := r.GH.RemoveLabel(ctx, repo, issueNum, r.triggerLabel()); err != nil {
-		return fmt.Errorf("removing %s label: %w", r.triggerLabel(), err)
+		return "", fmt.Errorf("removing %s label: %w", r.triggerLabel(), err)
 	}
 
 	if err := r.Git.RemoveWorktree(ctx, dir); err != nil {
 		r.logf("warning: cleanup worktree: %v", err)
 	}
 
-	return nil
+	return url, nil
 }
 
 // verify re-runs each test command itself in the worktree, in order. The

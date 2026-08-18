@@ -8,37 +8,12 @@ import (
 
 func openTest(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "jobs.db"))
+	s, err := Open(filepath.Join(t.TempDir(), "romp.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
-}
-
-func TestDBs(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", root)
-	ctx := context.Background()
-
-	for _, repo := range []struct{ owner, name string }{{"a", "b"}, {"c", "d"}} {
-		s, err := Open(Path(repo.owner, repo.name))
-		if err != nil {
-			t.Fatalf("Open %s: %v", repo.owner+"/"+repo.name, err)
-		}
-		if _, err := s.Claim(ctx, repo.owner+"/"+repo.name, 1, "romp-1"); err != nil {
-			t.Fatalf("Claim %s: %v", repo.owner+"/"+repo.name, err)
-		}
-		s.Close()
-	}
-
-	dbs, err := DBs()
-	if err != nil {
-		t.Fatalf("DBs: %v", err)
-	}
-	if len(dbs) != 2 {
-		t.Fatalf("DBs len = %d, want 2 (%v)", len(dbs), dbs)
-	}
 }
 
 func TestClaimAndDelete(t *testing.T) {
@@ -86,7 +61,7 @@ func TestClaimIsScopedByRepo(t *testing.T) {
 	}
 }
 
-func TestClearRunning(t *testing.T) {
+func TestClearRunningIsScopedByRepo(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
@@ -95,40 +70,128 @@ func TestClearRunning(t *testing.T) {
 			t.Fatalf("Claim %d: ok=%v err=%v", n, ok, err)
 		}
 	}
-	if err := s.ClearRunning(ctx); err != nil {
+	if ok, err := s.Claim(ctx, "other/r", 1, "romp-1"); err != nil || !ok {
+		t.Fatalf("Claim other/r: ok=%v err=%v", ok, err)
+	}
+	if err := s.ClearRunning(ctx, "o/r"); err != nil {
 		t.Fatalf("ClearRunning: %v", err)
 	}
 	if ok, err := s.Claim(ctx, "o/r", 1, "romp-1"); err != nil || !ok {
 		t.Fatalf("Claim after clear: ok=%v err=%v, want true", ok, err)
 	}
+	if ok, err := s.Claim(ctx, "other/r", 1, "romp-1"); err != nil || ok {
+		t.Fatalf("Claim other/r after clear: ok=%v err=%v, want false (row must survive)", ok, err)
+	}
 }
 
-func TestList(t *testing.T) {
+func TestListFiltersByRepo(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 
-	for _, n := range []int{3, 1, 2} {
-		if ok, err := s.Claim(ctx, "o/r", n, "romp-3"); err != nil || !ok {
-			t.Fatalf("Claim %d: ok=%v err=%v", n, ok, err)
-		}
+	if ok, err := s.Claim(ctx, "o/r", 7, "romp-7"); err != nil || !ok {
+		t.Fatalf("Claim o/r: ok=%v err=%v", ok, err)
+	}
+	if ok, err := s.Claim(ctx, "other/r", 3, "romp-3"); err != nil || !ok {
+		t.Fatalf("Claim other/r: ok=%v err=%v", ok, err)
 	}
 
-	jobs, err := s.List(ctx)
+	jobs, err := s.List(ctx, "o/r")
+	if err != nil {
+		t.Fatalf("List o/r: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].Repo != "o/r" || jobs[0].Issue != 7 {
+		t.Errorf("List(o/r) = %v, want only o/r #7", jobs)
+	}
+
+	all, err := s.List(ctx, "")
+	if err != nil {
+		t.Fatalf("List all: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("List(all) len = %d, want 2", len(all))
+	}
+}
+
+func TestFinishMovesRowToHistory(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	if ok, err := s.Claim(ctx, "o/r", 7, "romp-7"); err != nil || !ok {
+		t.Fatalf("Claim: ok=%v err=%v", ok, err)
+	}
+
+	if err := s.Finish(ctx, Outcome{
+		Repo: "o/r", Issue: 7, Outcome: "done", Branch: "romp-7",
+		PRURL: "https://github.com/o/r/pull/1", FinishedAt: "2026-08-18T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+
+	jobs, err := s.List(ctx, "o/r")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(jobs) != 3 {
-		t.Fatalf("List len = %d, want 3", len(jobs))
+	if len(jobs) != 0 {
+		t.Errorf("in-flight rows after finish = %v, want none", jobs)
 	}
-	for i, want := range []int{1, 2, 3} {
-		if jobs[i].Issue != want {
-			t.Errorf("jobs[%d].Issue = %d, want %d (ordered by issue)", i, jobs[i].Issue, want)
+
+	outcomes, err := s.History(ctx, 10)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(outcomes) != 1 {
+		t.Fatalf("History len = %d, want 1", len(outcomes))
+	}
+	o := outcomes[0]
+	if o.Outcome != "done" || o.PRURL != "https://github.com/o/r/pull/1" || o.Branch != "romp-7" {
+		t.Errorf("outcome = %+v, want done with PR URL and branch", o)
+	}
+	if o.StartedAt == "" {
+		t.Error("StartedAt empty, want the carried-over claim timestamp")
+	}
+	if o.FinishedAt != "2026-08-18T12:00:00Z" {
+		t.Errorf("FinishedAt = %q, want the recorded time", o.FinishedAt)
+	}
+}
+
+func TestFinishWithoutInFlightRowIsNoOp(t *testing.T) {
+	s := openTest(t)
+	if err := s.Finish(context.Background(), Outcome{Repo: "o/r", Issue: 7, Outcome: "done"}); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	outcomes, err := s.History(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(outcomes) != 0 {
+		t.Errorf("History len = %d, want 0", len(outcomes))
+	}
+}
+
+func TestHistoryNewestFirst(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+
+	for _, n := range []int{7, 8} {
+		if ok, err := s.Claim(ctx, "o/r", n, "romp-7"); err != nil || !ok {
+			t.Fatalf("Claim %d: ok=%v err=%v", n, ok, err)
 		}
-		if jobs[i].Repo != "o/r" || jobs[i].Branch != "romp-3" {
-			t.Errorf("jobs[%d] = %+v, want repo o/r branch romp-3", i, jobs[i])
-		}
-		if jobs[i].ClaimedAt == "" {
-			t.Errorf("jobs[%d].ClaimedAt empty", i)
-		}
+	}
+	if err := s.Finish(ctx, Outcome{Repo: "o/r", Issue: 7, Outcome: "done", FinishedAt: "2026-08-18T12:00:00Z"}); err != nil {
+		t.Fatalf("Finish 7: %v", err)
+	}
+	if err := s.Finish(ctx, Outcome{Repo: "o/r", Issue: 8, Outcome: "no-changes", FinishedAt: "2026-08-18T13:00:00Z"}); err != nil {
+		t.Fatalf("Finish 8: %v", err)
+	}
+
+	outcomes, err := s.History(ctx, 10)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(outcomes) != 2 {
+		t.Fatalf("History len = %d, want 2", len(outcomes))
+	}
+	if outcomes[0].Issue != 8 || outcomes[1].Issue != 7 {
+		t.Errorf("history order = [%d %d], want newest first [8 7]", outcomes[0].Issue, outcomes[1].Issue)
 	}
 }

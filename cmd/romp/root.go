@@ -29,6 +29,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newWatchCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newGcCmd())
+	root.AddCommand(newHistoryCmd())
 	return root
 }
 
@@ -204,5 +205,6 @@ func buildHarness(name string) (harness.Harness, error) {
 }
 
 func execRun(ctx context.Context, r *runner.Runner, issue int) error {
-	return r.Run(ctx, issue)
+	_, err := r.Run(ctx, issue)
+	return err
 }

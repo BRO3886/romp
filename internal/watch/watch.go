@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/BRO3886/romp/internal/gh"
+	"github.com/BRO3886/romp/internal/job"
 	"github.com/BRO3886/romp/internal/runner"
 )
 
@@ -28,7 +29,8 @@ type GHOps interface {
 type Store interface {
 	Claim(ctx context.Context, repo string, issue int, branch string) (bool, error)
 	Delete(ctx context.Context, repo string, issue int) error
-	ClearRunning(ctx context.Context) error
+	ClearRunning(ctx context.Context, repo string) error
+	Finish(ctx context.Context, o job.Outcome) error
 }
 
 // Watcher claims trigger-labelled issues and runs them at Width concurrency.
@@ -42,7 +44,7 @@ type Watcher struct {
 
 	GH     GHOps
 	Store  Store
-	RunJob func(ctx context.Context, issue int) error
+	RunJob func(ctx context.Context, issue int) (string, error)
 	Logf   func(format string, a ...any)
 }
 
@@ -67,7 +69,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
-	if err := w.Store.ClearRunning(ctx); err != nil {
+	if err := w.Store.ClearRunning(ctx, w.Repo); err != nil {
 		return fmt.Errorf("clearing stale jobs: %w", err)
 	}
 
@@ -166,7 +168,21 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan struct{},
 	defer func() { <-slots }()
 	defer w.release(ctx, iss)
 
-	err := w.RunJob(ctx, iss.Number)
+	prURL, err := w.RunJob(ctx, iss.Number)
+	// The record survives cancellation like release does, so a force-killed
+	// job still lands in history.
+	if err := w.Store.Finish(context.WithoutCancel(ctx), job.Outcome{
+		Repo:       w.Repo,
+		Issue:      iss.Number,
+		Outcome:    classifyOutcome(err),
+		Branch:     fmt.Sprintf("romp-%d", iss.Number),
+		PRURL:      prURL,
+		Detail:     detailOf(err),
+		FinishedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}); err != nil {
+		w.logf("#%d: recording history: %v", iss.Number, err)
+	}
+
 	switch {
 	case err == nil:
 		w.logf("#%d: done", iss.Number)
@@ -177,6 +193,33 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan struct{},
 	default:
 		w.logf("#%d: %v", iss.Number, err)
 	}
+}
+
+// classifyOutcome maps a run error to the outcome taxonomy in the README.
+// Failures outside it (git or gh infrastructure errors) are recorded as
+// "error" rather than guessed at.
+func classifyOutcome(err error) string {
+	switch {
+	case err == nil:
+		return "done"
+	case errors.Is(err, runner.ErrBlocked):
+		return "blocked"
+	case errors.Is(err, runner.ErrTimeout):
+		return "timeout"
+	case errors.Is(err, runner.ErrNoChanges):
+		return "no-changes"
+	case errors.Is(err, runner.ErrRed):
+		return "red"
+	default:
+		return "error"
+	}
+}
+
+func detailOf(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // release drops the claim label and in-flight row on terminal state, using a

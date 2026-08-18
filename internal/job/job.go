@@ -1,6 +1,8 @@
-// Package job stores the in-flight jobs of a single repo in a local SQLite
-// table. A row is inserted on claim and deleted on terminal state, so the
-// table is exactly the set of jobs a watcher is currently working.
+// Package job stores romp's job data in one local SQLite file shared by every
+// repo on the machine: the in-flight set (ADR 0005) plus append-only outcome
+// history. A row is inserted on claim and moved to the outcome table on
+// terminal state, so the jobs table is exactly the set a watcher is currently
+// working.
 package job
 
 import (
@@ -21,6 +23,18 @@ type Job struct {
 	Issue     int
 	Branch    string
 	ClaimedAt string
+}
+
+// Outcome is one finished job, appended to history on terminal state.
+type Outcome struct {
+	Repo       string
+	Issue      int
+	Outcome    string
+	Branch     string
+	PRURL      string
+	Detail     string
+	StartedAt  string
+	FinishedAt string
 }
 
 // Store is a thin handle over the SQLite job table.
@@ -56,6 +70,17 @@ CREATE TABLE IF NOT EXISTS jobs (
 	branch     TEXT NOT NULL,
 	claimed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 	UNIQUE(repo, issue)
+);
+CREATE TABLE IF NOT EXISTS outcomes (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	repo        TEXT NOT NULL,
+	issue       INTEGER NOT NULL,
+	outcome     TEXT NOT NULL,
+	branch      TEXT NOT NULL,
+	pr_url      TEXT,
+	detail      TEXT,
+	started_at  TEXT NOT NULL,
+	finished_at TEXT NOT NULL
 );`
 
 // Close releases the underlying connection.
@@ -88,16 +113,26 @@ func (s *Store) Delete(ctx context.Context, repo string, issue int) error {
 	return err
 }
 
-// ClearRunning removes every in-flight row. A fresh watcher calls this on
-// startup, treating a start as proof that nothing is in flight.
-func (s *Store) ClearRunning(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM jobs`)
+// ClearRunning removes every in-flight row for repo. A fresh watcher calls
+// this on startup for its own repo only, treating a start as proof that
+// nothing is in flight there. The repo scope keeps one repo's watcher from
+// wiping another repo's in-flight rows in the shared file.
+func (s *Store) ClearRunning(ctx context.Context, repo string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM jobs WHERE repo = ?`, repo)
 	return err
 }
 
-// List returns every in-flight row, ordered by issue number.
-func (s *Store) List(ctx context.Context) ([]Job, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT repo, issue, branch, claimed_at FROM jobs ORDER BY issue`)
+// List returns the in-flight rows for repo, or every repo when repo is empty,
+// ordered by repo then issue.
+func (s *Store) List(ctx context.Context, repo string) ([]Job, error) {
+	query := `SELECT repo, issue, branch, claimed_at FROM jobs`
+	var args []any
+	if repo != "" {
+		query += ` WHERE repo = ?`
+		args = append(args, repo)
+	}
+	query += ` ORDER BY repo, issue`
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +148,66 @@ func (s *Store) List(ctx context.Context) ([]Job, error) {
 	return out, rows.Err()
 }
 
+// Finish records the terminal outcome for an in-flight job and removes its
+// row in one transaction, carrying the claim timestamp over as the run start.
+// A missing in-flight row is a no-op.
+func (s *Store) Finish(ctx context.Context, o Outcome) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var startedAt string
+	err = tx.QueryRowContext(ctx,
+		`SELECT claimed_at FROM jobs WHERE repo = ? AND issue = ?`, o.Repo, o.Issue).Scan(&startedAt)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO outcomes (repo, issue, outcome, branch, pr_url, detail, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		o.Repo, o.Issue, o.Outcome, o.Branch, nullable(o.PRURL), nullable(o.Detail), startedAt, o.FinishedAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM jobs WHERE repo = ? AND issue = ?`, o.Repo, o.Issue); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// History returns the most recent limit finished jobs, newest first.
+func (s *Store) History(ctx context.Context, limit int) ([]Outcome, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at FROM outcomes ORDER BY finished_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Outcome
+	for rows.Next() {
+		var o Outcome
+		var prURL, detail sql.NullString
+		if err := rows.Scan(&o.Repo, &o.Issue, &o.Outcome, &o.Branch, &prURL, &detail, &o.StartedAt, &o.FinishedAt); err != nil {
+			return nil, err
+		}
+		o.PRURL, o.Detail = prURL.String, detail.String
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 func newID() (string, error) {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -121,23 +216,14 @@ func newID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-// Path returns the job-table file for owner/name under the state dir.
-func Path(owner, name string) string {
-	return filepath.Join(stateDir(), owner+"-"+name, "jobs.db")
+// Path returns the single job-table file shared by every repo.
+func Path() string {
+	return filepath.Join(stateDir(), "romp.db")
 }
 
 // LogsDir returns the per-job log directory for owner/name under the state dir.
 func LogsDir(owner, name string) string {
 	return filepath.Join(stateDir(), owner+"-"+name, "logs")
-}
-
-// DBs returns every job-table file under the state dir, one per repo.
-func DBs() ([]string, error) {
-	matches, err := filepath.Glob(filepath.Join(stateDir(), "*", "jobs.db"))
-	if err != nil {
-		return nil, err
-	}
-	return matches, nil
 }
 
 func stateDir() string {

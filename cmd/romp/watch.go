@@ -59,7 +59,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 	}
 	repo := owner + "/" + name
 
-	store, err := job.Open(job.Path(owner, name))
+	store, err := job.Open(job.Path())
 	if err != nil {
 		return err
 	}
@@ -74,16 +74,16 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		Interval: defaultPollInterval,
 		GH:       &gh.Client{},
 		Store:    store,
-		RunJob: func(ctx context.Context, issue int) error {
+		RunJob: func(ctx context.Context, issue int) (string, error) {
 			name := codename.For(repo, issue)
 			f, err := openJobLog(owner, name, name)
 			if err != nil {
-				return err
+				return "", err
 			}
 			defer f.Close()
 			r, err := buildRunner(root, cfg, verify, h, timeout)
 			if err != nil {
-				return err
+				return "", err
 			}
 			r.Codename = name
 			r.Stderr = io.MultiWriter(os.Stderr, f)

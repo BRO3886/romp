@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/BRO3886/romp/internal/gh"
+	"github.com/BRO3886/romp/internal/job"
 	"github.com/BRO3886/romp/internal/runner"
 )
 
@@ -49,8 +50,9 @@ func (f *fakeGH) snapshot() (added, removed []string) {
 }
 
 type fakeStore struct {
-	mu   sync.Mutex
-	rows map[int]bool
+	mu       sync.Mutex
+	rows     map[int]bool
+	finished []job.Outcome
 }
 
 func newFakeStore() *fakeStore { return &fakeStore{rows: map[int]bool{}} }
@@ -72,7 +74,14 @@ func (f *fakeStore) Delete(_ context.Context, _ string, issue int) error {
 	return nil
 }
 
-func (f *fakeStore) ClearRunning(context.Context) error { return nil }
+func (f *fakeStore) ClearRunning(context.Context, string) error { return nil }
+
+func (f *fakeStore) Finish(_ context.Context, o job.Outcome) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.finished = append(f.finished, o)
+	return nil
+}
 
 func (f *fakeStore) has(issue int) bool {
 	f.mu.Lock()
@@ -98,12 +107,12 @@ func TestClaimBatchDispatchesUnclaimedOnly(t *testing.T) {
 	var called []int
 	var jobWG sync.WaitGroup
 	jobWG.Add(2)
-	w.RunJob = func(_ context.Context, issue int) error {
+	w.RunJob = func(_ context.Context, issue int) (string, error) {
 		mu.Lock()
 		called = append(called, issue)
 		mu.Unlock()
 		jobWG.Done()
-		return nil
+		return "", nil
 	}
 
 	var wg sync.WaitGroup
@@ -138,7 +147,7 @@ func TestClaimBatchStopsAtWidth(t *testing.T) {
 		Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", Blocked: "romp:blocked",
 		Width: 1, GH: ghc, Store: store,
 	}
-	w.RunJob = func(context.Context, int) error { return nil }
+	w.RunJob = func(context.Context, int) (string, error) { return "", nil }
 
 	var wg sync.WaitGroup
 	if err := w.claimBatch(context.Background(), make(chan struct{}, 1), &wg, context.Background()); err != nil {
@@ -170,7 +179,7 @@ func TestRunJobReleasesOnDone(t *testing.T) {
 	store.rows[7] = true
 
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
-	w.RunJob = func(context.Context, int) error { return nil }
+	w.RunJob = func(context.Context, int) (string, error) { return "", nil }
 
 	w.runJobSync(t, 7)
 
@@ -194,7 +203,7 @@ func TestRunJobKeepsTriggerOnBlocked(t *testing.T) {
 	store.rows[7] = true
 
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
-	w.RunJob = func(context.Context, int) error { return fmt.Errorf("%w: gap", runner.ErrBlocked) }
+	w.RunJob = func(context.Context, int) (string, error) { return "", fmt.Errorf("%w: gap", runner.ErrBlocked) }
 
 	w.runJobSync(t, 7)
 
@@ -215,7 +224,7 @@ func TestRunJobLogsTimeout(t *testing.T) {
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
 	var logMsg string
 	w.Logf = func(format string, a ...any) { logMsg = fmt.Sprintf(format, a...) }
-	w.RunJob = func(context.Context, int) error { return fmt.Errorf("%w: killed", runner.ErrTimeout) }
+	w.RunJob = func(context.Context, int) (string, error) { return "", fmt.Errorf("%w: killed", runner.ErrTimeout) }
 
 	w.runJobSync(t, 7)
 
@@ -225,6 +234,48 @@ func TestRunJobLogsTimeout(t *testing.T) {
 	_, removed := ghc.snapshot()
 	if !contains(removed, "7:romp:claimed") {
 		t.Errorf("claim label not released on timeout: %v", removed)
+	}
+}
+
+func TestRunJobRecordsHistory(t *testing.T) {
+	ghc := &fakeGH{}
+	store := newFakeStore()
+	store.rows[7] = true
+
+	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
+	w.RunJob = func(context.Context, int) (string, error) {
+		return "https://github.com/o/r/pull/1", nil
+	}
+
+	w.runJobSync(t, 7)
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.finished) != 1 {
+		t.Fatalf("finished outcomes = %d, want 1", len(store.finished))
+	}
+	if store.finished[0].Outcome != "done" || store.finished[0].PRURL != "https://github.com/o/r/pull/1" {
+		t.Errorf("outcome = %+v, want done with PR URL", store.finished[0])
+	}
+}
+
+func TestRunJobRecordsBlockedOutcome(t *testing.T) {
+	ghc := &fakeGH{}
+	store := newFakeStore()
+	store.rows[7] = true
+
+	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
+	w.RunJob = func(context.Context, int) (string, error) { return "", fmt.Errorf("%w: gap", runner.ErrBlocked) }
+
+	w.runJobSync(t, 7)
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.finished) != 1 || store.finished[0].Outcome != "blocked" {
+		t.Fatalf("outcomes = %v, want one blocked", store.finished)
+	}
+	if store.finished[0].Detail == "" {
+		t.Error("Detail empty, want the gap text")
 	}
 }
 

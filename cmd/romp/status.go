@@ -29,42 +29,29 @@ func newStatusCmd() *cobra.Command {
 }
 
 func runStatus(ctx context.Context, all bool) error {
+	store, err := job.Open(job.Path())
+	if err != nil {
+		return err
+	}
+	defer store.Close()
 	if all {
-		jobs, err := allJobs(ctx)
+		jobs, err := store.List(ctx, "")
 		if err != nil {
 			return err
 		}
 		printJobs(jobs, true)
 		return nil
 	}
-	_, _, jobs, err := loadJobs(ctx)
+	owner, name, err := currentRepo(ctx)
+	if err != nil {
+		return err
+	}
+	jobs, err := store.List(ctx, owner+"/"+name)
 	if err != nil {
 		return err
 	}
 	printJobs(jobs, false)
 	return nil
-}
-
-// allJobs reads every in-flight job table on this machine, one per repo.
-func allJobs(ctx context.Context) ([]job.Job, error) {
-	dbs, err := job.DBs()
-	if err != nil {
-		return nil, err
-	}
-	var out []job.Job
-	for _, db := range dbs {
-		store, err := job.Open(db)
-		if err != nil {
-			return nil, err
-		}
-		jobs, err := store.List(ctx)
-		store.Close()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, jobs...)
-	}
-	return out, nil
 }
 
 func printJobs(jobs []job.Job, withRepo bool) {
@@ -96,24 +83,33 @@ func elapsed(claimedAt string, now time.Time) string {
 	return now.Sub(t).Round(time.Second).String()
 }
 
-// loadJobs resolves the current repo and reads its in-flight job table.
+// loadJobs resolves the current repo and reads its in-flight job rows.
 func loadJobs(ctx context.Context) (owner, name string, jobs []job.Job, err error) {
-	root, err := repoRoot(ctx)
+	owner, name, err = currentRepo(ctx)
 	if err != nil {
 		return "", "", nil, err
 	}
-	owner, name, err = (&git.Repo{Root: root}).Origin(ctx)
-	if err != nil {
-		return "", "", nil, fmt.Errorf("resolve origin: %w", err)
-	}
-	store, err := job.Open(job.Path(owner, name))
+	store, err := job.Open(job.Path())
 	if err != nil {
 		return "", "", nil, err
 	}
 	defer store.Close()
-	jobs, err = store.List(ctx)
+	jobs, err = store.List(ctx, owner+"/"+name)
 	if err != nil {
 		return "", "", nil, err
 	}
 	return owner, name, jobs, nil
+}
+
+// currentRepo resolves the origin of the working directory.
+func currentRepo(ctx context.Context) (owner, name string, err error) {
+	root, err := repoRoot(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	owner, name, err = (&git.Repo{Root: root}).Origin(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve origin: %w", err)
+	}
+	return owner, name, nil
 }

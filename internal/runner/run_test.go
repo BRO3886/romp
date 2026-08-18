@@ -154,8 +154,12 @@ func TestRunRemovesTriggerLabelOnSuccess(t *testing.T) {
 	c := &fakeGH{}
 	r := newTestRunner(t, g, c, []string{"true"})
 
-	if err := r.Run(context.Background(), 7); err != nil {
+	url, err := r.Run(context.Background(), 7)
+	if err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if url != "https://github.com/o/r/pull/1" {
+		t.Errorf("Run URL = %q, want the PR URL", url)
 	}
 	if len(c.prs) != 1 {
 		t.Fatalf("PRs opened = %v, want one", c.prs)
@@ -171,7 +175,7 @@ func TestRunRemovesConfiguredTriggerLabel(t *testing.T) {
 	r := newTestRunner(t, g, c, []string{"true"})
 	r.TriggerLabel = "agent"
 
-	if err := r.Run(context.Background(), 7); err != nil {
+	if _, err := r.Run(context.Background(), 7); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(c.removed) != 1 || c.removed[0] != "7:agent" {
@@ -184,7 +188,7 @@ func TestRunFailsWhenTriggerLabelRemovalFails(t *testing.T) {
 	c := &fakeGH{removeErr: errors.New("boom")}
 	r := newTestRunner(t, g, c, []string{"true"})
 
-	err := r.Run(context.Background(), 7)
+	_, err := r.Run(context.Background(), 7)
 	if err == nil || !strings.Contains(err.Error(), "removing romp label") {
 		t.Fatalf("Run error = %v, want a trigger-label removal failure", err)
 	}
@@ -197,7 +201,7 @@ func TestRunTimeout(t *testing.T) {
 	r.Harness = blockingHarness{}
 	r.Timeout = 50 * time.Millisecond
 
-	err := r.Run(context.Background(), 7)
+	_, err := r.Run(context.Background(), 7)
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("Run error = %v, want ErrTimeout", err)
 	}
@@ -237,7 +241,7 @@ func TestRunKeepsTriggerLabelOnFailure(t *testing.T) {
 			c := &fakeGH{}
 			r := newTestRunner(t, tt.git, c, tt.verify)
 
-			err := r.Run(context.Background(), 7)
+			_, err := r.Run(context.Background(), 7)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Run error = %v, want one containing %q", err, tt.wantErr)
 			}
