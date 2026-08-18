@@ -8,7 +8,7 @@ romp could track pending work in a local queue and run jobs against the local wo
 
 ## Decision
 
-Pending work is "open issues carrying the trigger label": the poll returns every labelled issue, so a watcher started after a burst drains the backlog at width with no backfill mechanism. Local SQLite records only in-flight jobs. Each job runs in a fresh `git worktree` branched from origin's default branch — never the local tree — so the base is deterministic and romp only ever tests committed-and-pushed code. Before claiming, romp dedupes on issue identity (an existing job row, a `romp-N` branch, or an open PR) so a restart never spawns a duplicate agent.
+Pending work is "open issues carrying the trigger label": the poll returns every labelled issue, so a watcher started after a burst drains the backlog at width with no backfill mechanism. Local SQLite records only in-flight jobs. Each job runs in a fresh `git worktree` branched from origin's default branch — never the local tree — so the base is deterministic and romp only ever tests committed-and-pushed code. Before claiming, romp dedupes on issue identity: the job row is serialized by a `UNIQUE(repo, issue)` constraint (ADR 0005), and a trigger-labelled issue whose `romp-N` branch already has an open PR is reconciled — label removed, comment posted, no agent run — so a restart or a survivor label never spawns a duplicate agent.
 
 ## Consequences
 

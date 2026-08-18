@@ -156,6 +156,31 @@ func (c *Client) ListIssues(ctx context.Context, repo, label string) ([]Issue, e
 	return issues, nil
 }
 
+// OpenPR reports the number of the open pull request whose head is branch,
+// or 0 when no such PR exists.
+func (c *Client) OpenPR(ctx context.Context, repo, branch string) (int, error) {
+	out, err := c.run(ctx, "pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", "number")
+	if err != nil {
+		return 0, err
+	}
+	return openPRNumber(out)
+}
+
+// openPRNumber extracts the first PR number from gh pr list --json number
+// output, or 0 when the list is empty.
+func openPRNumber(out string) (int, error) {
+	var raw []struct {
+		Number int `json:"number"`
+	}
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		return 0, err
+	}
+	if len(raw) == 0 {
+		return 0, nil
+	}
+	return raw[0].Number, nil
+}
+
 // CreatePR opens a pull request and returns its URL.
 func (c *Client) CreatePR(ctx context.Context, repo, title, body, head, base string) (string, error) {
 	return c.run(ctx, "pr", "create", "--repo", repo, "--base", base, "--head", head,

@@ -15,15 +15,23 @@ import (
 )
 
 type fakeGH struct {
-	mu      sync.Mutex
-	issues  []gh.Issue
-	added   []string
-	removed []string
-	addErr  error
+	mu         sync.Mutex
+	issues     []gh.Issue
+	added      []string
+	removed    []string
+	comments   []string
+	prByBranch map[string]int
+	addErr     error
 }
 
 func (f *fakeGH) ListIssues(context.Context, string, string) ([]gh.Issue, error) {
 	return f.issues, nil
+}
+
+func (f *fakeGH) OpenPR(_ context.Context, _ string, branch string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.prByBranch[branch], nil
 }
 
 func (f *fakeGH) AddLabel(_ context.Context, _ string, number int, label string) error {
@@ -40,6 +48,13 @@ func (f *fakeGH) RemoveLabel(_ context.Context, _ string, number int, label stri
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.removed = append(f.removed, fmt.Sprintf("%d:%s", number, label))
+	return nil
+}
+
+func (f *fakeGH) Comment(_ context.Context, _ string, number int, body string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.comments = append(f.comments, fmt.Sprintf("%d:%s", number, body))
 	return nil
 }
 
@@ -136,6 +151,44 @@ func TestClaimBatchDispatchesUnclaimedOnly(t *testing.T) {
 	}
 	if !contains(removed, "1:romp:claimed") || !contains(removed, "4:romp:claimed") {
 		t.Errorf("claim labels released on done = %v, want 1 and 4", removed)
+	}
+}
+
+func TestClaimBatchReconcilesOpenPR(t *testing.T) {
+	ghc := &fakeGH{
+		issues:     []gh.Issue{{Number: 1}, {Number: 2}},
+		prByBranch: map[string]int{"romp-2": 42},
+	}
+	store := newFakeStore()
+
+	w := &Watcher{
+		Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", Blocked: "romp:blocked",
+		Width: 10, GH: ghc, Store: store,
+	}
+	var ran []int
+	w.RunJob = func(_ context.Context, issue int) (string, error) {
+		ran = append(ran, issue)
+		return "", nil
+	}
+
+	var wg sync.WaitGroup
+	if err := w.claimBatch(context.Background(), make(chan struct{}, 10), &wg, context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+
+	if len(ran) != 1 || ran[0] != 1 {
+		t.Errorf("RunJob called for %v, want only [1]", ran)
+	}
+	added, removed := ghc.snapshot()
+	if contains(added, "2:romp:claimed") {
+		t.Errorf("issue 2 claimed despite open PR: %v", added)
+	}
+	if !contains(removed, "2:romp") {
+		t.Errorf("trigger label not removed for reconciled issue: %v", removed)
+	}
+	if len(ghc.comments) != 1 || !strings.Contains(ghc.comments[0], "42") {
+		t.Errorf("reconcile comment = %v, want one mentioning PR 42", ghc.comments)
 	}
 }
 

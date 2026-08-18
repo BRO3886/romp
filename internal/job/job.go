@@ -237,12 +237,18 @@ func newID() (string, error) {
 
 // Path returns the single job-table file shared by every repo.
 func Path() string {
-	return filepath.Join(stateDir(), "romp.db")
+	return filepath.Join(StateDir(), "romp.db")
 }
 
 // LogsDir returns the per-job log directory for owner/name under the state dir.
 func LogsDir(owner, name string) string {
-	return filepath.Join(stateDir(), owner+"-"+name, "logs")
+	return filepath.Join(StateDir(), owner+"-"+name, "logs")
+}
+
+// StateDir is the machine-wide romp state directory: XDG_STATE_HOME/romp, or
+// ~/.local/state/romp on systems where that is unset (the macOS default).
+func StateDir() string {
+	return stateDir()
 }
 
 func stateDir() string {

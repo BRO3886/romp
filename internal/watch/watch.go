@@ -4,8 +4,10 @@ package watch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"sync"
@@ -18,11 +20,13 @@ import (
 )
 
 // GHOps is the GitHub surface watch needs: list labelled issues and move
-// labels on and off them.
+// labels and comments on them.
 type GHOps interface {
 	ListIssues(ctx context.Context, repo, label string) ([]gh.Issue, error)
 	AddLabel(ctx context.Context, repo string, number int, label string) error
 	RemoveLabel(ctx context.Context, repo string, number int, label string) error
+	Comment(ctx context.Context, repo string, number int, body string) error
+	OpenPR(ctx context.Context, repo, branch string) (int, error)
 }
 
 // Store is the job-table surface watch needs.
@@ -45,7 +49,15 @@ type Watcher struct {
 	GH     GHOps
 	Store  Store
 	RunJob func(ctx context.Context, issue int) (string, error)
-	Logf   func(format string, a ...any)
+	// CleanJob removes a cancelled job's worktree and branch. It is the
+	// runner's counterpart, invoked only for an abandon so the watcher does
+	// not need git access.
+	CleanJob func(ctx context.Context, issue int) error
+	Logf     func(format string, a ...any)
+
+	mu        sync.Mutex
+	cancels   map[int]context.CancelFunc
+	cancelled map[int]bool
 }
 
 func (w *Watcher) logf(format string, a ...any) {
@@ -80,6 +92,13 @@ func (w *Watcher) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 
 	w.logf("watching label %q every %s (width %d)", w.Trigger, w.Interval, w.Width)
+
+	if ln, err := listen(w.Repo); err != nil {
+		w.logf("cancel socket: %v", err)
+	} else {
+		defer ln.Close()
+		go w.serve(ln)
+	}
 
 	if err := w.claimBatch(ctx, slots, &wg, jobCtx); err != nil {
 		w.logf("poll: %v", err)
@@ -129,6 +148,24 @@ func (w *Watcher) claimBatch(ctx context.Context, slots chan struct{}, wg *sync.
 		if iss.HasLabel(w.Claim) || iss.HasLabel(w.Blocked) {
 			continue
 		}
+		// Reconcile: an open PR for this issue's branch means the work is
+		// already done, so drop the trigger label instead of running a second
+		// agent and opening a duplicate PR. A reconcile check failure defers
+		// the issue to the next tick rather than risking a duplicate run.
+		if pr, err := w.GH.OpenPR(ctx, w.Repo, branchFor(iss.Number)); err != nil {
+			w.logf("#%d: reconcile: %v", iss.Number, err)
+			continue
+		} else if pr != 0 {
+			w.logf("#%d: PR #%d already open; dropping trigger label", iss.Number, pr)
+			if err := w.GH.RemoveLabel(ctx, w.Repo, iss.Number, w.Trigger); err != nil {
+				w.logf("#%d: removing trigger label: %v", iss.Number, err)
+			}
+			if err := w.GH.Comment(ctx, w.Repo, iss.Number,
+				fmt.Sprintf("PR #%d is already open; removed the %q label so this issue is not worked twice.", pr, w.Trigger)); err != nil {
+				w.logf("#%d: reconcile comment: %v", iss.Number, err)
+			}
+			continue
+		}
 		select {
 		case slots <- struct{}{}:
 			if !w.claim(ctx, iss) {
@@ -145,8 +182,7 @@ func (w *Watcher) claimBatch(ctx context.Context, slots chan struct{}, wg *sync.
 }
 
 func (w *Watcher) claim(ctx context.Context, iss gh.Issue) bool {
-	branch := fmt.Sprintf("romp-%d", iss.Number)
-	ok, err := w.Store.Claim(ctx, w.Repo, iss.Number, branch)
+	ok, err := w.Store.Claim(ctx, w.Repo, iss.Number, branchFor(iss.Number))
 	if err != nil {
 		w.logf("#%d: claim: %v", iss.Number, err)
 		return false
@@ -163,19 +199,105 @@ func (w *Watcher) claim(ctx context.Context, iss gh.Issue) bool {
 	return true
 }
 
+// branchFor is the job branch name for an issue.
+func branchFor(issue int) string { return fmt.Sprintf("romp-%d", issue) }
+
+// register records the cancel function for a running job.
+func (w *Watcher) register(issue int, cancel context.CancelFunc) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.cancels == nil {
+		w.cancels = map[int]context.CancelFunc{}
+		w.cancelled = map[int]bool{}
+	}
+	w.cancels[issue] = cancel
+}
+
+func (w *Watcher) unregister(issue int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.cancels, issue)
+	delete(w.cancelled, issue)
+}
+
+// cancelIssue kills the job for issue and records it as cancelled, reporting
+// whether such a job was running.
+func (w *Watcher) cancelIssue(issue int) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	cancel, ok := w.cancels[issue]
+	if !ok {
+		return false
+	}
+	w.cancelled[issue] = true
+	cancel()
+	return true
+}
+
+func (w *Watcher) wasCancelled(issue int) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.cancelled[issue]
+}
+
+// serve accepts control-socket connections until the listener is closed.
+func (w *Watcher) serve(ln net.Listener) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			w.logf("cancel socket: accept: %v", err)
+			continue
+		}
+		go w.handleConn(conn)
+	}
+}
+
+func (w *Watcher) handleConn(conn net.Conn) {
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+	var req CancelRequest
+	if err := json.NewDecoder(conn).Decode(&req); err != nil {
+		_ = json.NewEncoder(conn).Encode(CancelResponse{Error: "invalid request"})
+		return
+	}
+	if req.Issue <= 0 {
+		_ = json.NewEncoder(conn).Encode(CancelResponse{Error: "invalid issue number"})
+		return
+	}
+	if !w.cancelIssue(req.Issue) {
+		_ = json.NewEncoder(conn).Encode(CancelResponse{Error: fmt.Sprintf("no running job for issue %d", req.Issue)})
+		return
+	}
+	w.logf("cancelled #%d", req.Issue)
+	_ = json.NewEncoder(conn).Encode(CancelResponse{OK: true})
+}
+
 func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer func() { <-slots }()
 	defer w.release(ctx, iss)
 
-	prURL, err := w.RunJob(ctx, iss.Number)
+	runCtx, cancel := context.WithCancel(ctx)
+	w.register(iss.Number, cancel)
+	defer w.unregister(iss.Number)
+
+	prURL, err := w.RunJob(runCtx, iss.Number)
+	cancelled := w.wasCancelled(iss.Number)
+	outcome := classifyOutcome(err)
+	if cancelled {
+		outcome = "cancelled"
+	}
 	// The record survives cancellation like release does, so a force-killed
 	// job still lands in history.
 	if err := w.Store.Finish(context.WithoutCancel(ctx), job.Outcome{
 		Repo:       w.Repo,
 		Issue:      iss.Number,
-		Outcome:    classifyOutcome(err),
-		Branch:     fmt.Sprintf("romp-%d", iss.Number),
+		Outcome:    outcome,
+		Branch:     branchFor(iss.Number),
 		PRURL:      prURL,
 		Detail:     detailOf(err),
 		FinishedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -184,6 +306,8 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan struct{},
 	}
 
 	switch {
+	case cancelled:
+		w.logf("#%d: cancelled", iss.Number)
 	case err == nil:
 		w.logf("#%d: done", iss.Number)
 	case errors.Is(err, runner.ErrBlocked):
@@ -192,6 +316,19 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan struct{},
 		w.logf("#%d: timeout", iss.Number)
 	default:
 		w.logf("#%d: %v", iss.Number, err)
+	}
+
+	// Abandon (ADR 0009): a cancelled job is dropped, not retried, so its
+	// trigger label goes too and its worktree and branch are cleaned up.
+	if cancelled {
+		if err := w.GH.RemoveLabel(context.WithoutCancel(ctx), w.Repo, iss.Number, w.Trigger); err != nil {
+			w.logf("#%d: removing trigger label: %v", iss.Number, err)
+		}
+		if w.CleanJob != nil {
+			if err := w.CleanJob(context.WithoutCancel(ctx), iss.Number); err != nil {
+				w.logf("#%d: cleaning up job: %v", iss.Number, err)
+			}
+		}
 	}
 }
 

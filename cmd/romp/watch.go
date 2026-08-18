@@ -89,6 +89,18 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 			r.Stderr = io.MultiWriter(os.Stderr, f)
 			return r.Run(ctx, issue)
 		},
+		CleanJob: func(ctx context.Context, issue int) error {
+			cache, err := os.UserCacheDir()
+			if err != nil {
+				return err
+			}
+			dir := filepath.Join(cache, "romp", owner+"-"+name, fmt.Sprintf("romp-%d", issue))
+			r := &git.Repo{Root: root}
+			if err := r.RemoveWorktree(ctx, dir); err != nil {
+				return err
+			}
+			return r.DeleteBranch(ctx, fmt.Sprintf("romp-%d", issue))
+		},
 	}
 	return w.Run(ctx)
 }

@@ -31,6 +31,8 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newGcCmd())
 	root.AddCommand(newHistoryCmd())
 	root.AddCommand(newDoctorCmd())
+	root.AddCommand(newCancelCmd())
+	root.AddCommand(newLogsCmd())
 	return root
 }
 
