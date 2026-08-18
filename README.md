@@ -248,7 +248,10 @@ If the agent finds the issue ambiguous or contradictory, it stops without writin
 | **red** | Agent finished, `test_cmd` failed on the independent re-run. No PR, worktree kept |
 | **timeout** | Job exceeded `timeout`. Killed, worktree kept for inspection |
 | **cancelled** | You cancelled it. Agent killed, worktree and branch removed, claim and trigger labels removed |
-| **rate-limited** | Requeued with backoff, up to 3 attempts |
+| **error** | Infrastructure failure — git or gh, including a GitHub rate limit that outlives the retries. No PR; re-claimed on a later poll |
+
+GitHub rate limits are retried inside a job (3 attempts with backoff) before
+the job is recorded as `error`.
 
 Failed jobs keep their worktree so you can inspect it. `romp gc` removes them,
 and prunes finished-job history older than `history_days` (default 30).

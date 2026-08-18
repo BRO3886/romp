@@ -9,7 +9,8 @@ One labelled issue worked from claim to terminal state.
 _Avoid_: task, run
 
 **Outcome**:
-The terminal state of a job: done, blocked, no-changes, red, timeout, cancelled, rate-limited.
+The terminal state of a job: done, blocked, no-changes, red, timeout, cancelled, error.
+`rate-limited` names the in-job GitHub retry, not a produced outcome.
 _Avoid_: status, result
 
 **Blocked**:
