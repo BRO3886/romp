@@ -47,11 +47,12 @@ type Watcher struct {
 }
 
 func (w *Watcher) logf(format string, a ...any) {
+	msg := fmt.Sprintf("%s  %s", time.Now().Format("15:04:05"), fmt.Sprintf(format, a...))
 	if w.Logf != nil {
-		w.Logf(format, a...)
+		w.Logf("%s", msg)
 		return
 	}
-	fmt.Fprintf(os.Stderr, format+"\n", a...)
+	fmt.Fprintln(os.Stderr, msg)
 }
 
 // Run clears stale in-flight rows, then polls and dispatches until the first

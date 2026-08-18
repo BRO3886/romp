@@ -62,7 +62,7 @@ type Runner struct {
 }
 
 func (r *Runner) logf(format string, a ...any) {
-	fmt.Fprintf(r.Stderr, format+"\n", a...)
+	fmt.Fprintf(r.Stderr, "%s  %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(format, a...))
 }
 
 // triggerLabel returns the configured trigger label, falling back to the
@@ -149,14 +149,11 @@ func (r *Runner) Run(ctx context.Context, issueNum int) error {
 		runCtx, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
-	res, err := r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model})
+	_, err = r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model})
 	if err != nil {
 		return err
 	}
 	r.logf("agent took %s", time.Since(start).Round(time.Second))
-	if res.Output != "" {
-		r.logf("%s", res.Output)
-	}
 
 	gap, err := readBlocked(dir)
 	if err != nil {
