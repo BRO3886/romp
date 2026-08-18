@@ -9,12 +9,16 @@ One labelled issue worked from claim to terminal state.
 _Avoid_: task, run
 
 **Outcome**:
-The terminal state of a job: done, blocked, no-changes, red, timeout, rate-limited.
+The terminal state of a job: done, blocked, no-changes, red, timeout, cancelled, rate-limited.
 _Avoid_: status, result
 
 **Blocked**:
 An outcome where the agent stops without writing code because the issue is ambiguous, contradictory, or under-scoped; romp relabels the issue `romp:blocked` and posts the specific gap.
 _Avoid_: failed, rejected
+
+**Cancel**:
+A user-initiated action that kills a running job, records the `cancelled` outcome, removes the claim and trigger labels, and cleans up the job's worktree and branch. Cancelling abandons the issue: it stays label-free until a human re-labels it.
+_Avoid_: kill, stop, abort
 
 ## Agent interface
 
