@@ -1,5 +1,7 @@
 # romp
 
+![romp](.github/romp.png)
+
 **Label an issue. Get a pull request.**
 
 `romp` watches a GitHub repo for issues carrying a label, runs your local coding agent on each one in an isolated git worktree, verifies the result against your test suite, and opens a PR.
