@@ -4,28 +4,15 @@
 
 **Label an issue. Get a pull request.**
 
-`romp` watches a GitHub repo for issues carrying a label, runs your local coding agent on each one in an isolated git worktree, verifies the result against your test suite, and opens a PR.
+`romp` watches a GitHub repo for labelled issues, runs your local coding agent on each in an isolated git worktree, independently re-runs your test commands, and opens a PR. It uses your existing Claude Code or Codex login — no API keys, no cloud runner.
 
-It runs on your machine and uses your existing Claude Code or Codex login. No API keys, no cloud runner, no new billing relationship.
-
----
-
-## Status
-
-**Pre-alpha.** The interface below is the target, not a promise. Expect breaking changes. Do not point this at a repo you cannot afford to have a bad branch pushed to.
-
----
+> **Pre-alpha.** Breaking changes expected. Do not point this at a repo you can't afford a bad branch on.
 
 ## Requirements
 
-- Go 1.22+ (to build) or a release binary
-- `git` 2.35+ (worktree support)
-- [`gh`](https://cli.github.com), authenticated (`gh auth login`)
-- One agent CLI, logged in:
-  - [Claude Code](https://claude.com/claude-code) — `claude`
-  - [Codex](https://developers.openai.com/codex) — `codex`
-
----
+- `git` 2.35+, `gh` (authenticated via `gh auth login`)
+- `codex` or `claude`, logged in
+- Go 1.25+ to build, or a release binary
 
 ## Install
 
@@ -33,266 +20,145 @@ It runs on your machine and uses your existing Claude Code or Codex login. No AP
 go install github.com/BRO3886/romp/cmd/romp@latest
 ```
 
-Or grab a binary from [Releases](../../releases).
-
----
-
 ## Quickstart
 
-`romp` works on the repo you are standing in. It finds the git root from your
-current directory and reads the repo from your `origin` remote.
+`romp` reads the repo from your current directory's `origin` remote.
 
 ```bash
 cd ~/code/your-project
 
-romp init          # writes romp.toml, creates the label on GitHub
-romp run -i 17     # try one issue first
+romp doctor        # verify git, gh, harness, config
+romp init          # write romp.toml, create labels, update .gitignore
+romp run -i 17     # run one issue in the foreground
 romp watch         # then let it run
 ```
 
+`init` detects the language (go, rust, node, python, Makefile) and seeds the
+verify command. If nothing is detected, add one to `romp.toml` yourself.
+
 ```
 $ romp watch
-romp v0.1.0 — your-org/your-project (main), width 3, harness codex
-watching label "romp" every 60s
-
-19:04:12  assigned issue #17 to agent  [job 1a4f]
-19:04:12  worktree ~/.cache/romp/your-project/romp-17
-19:22:38  #17 verify: go test ./... -count=1 → ok
-19:22:44  #17 → PR #482 https://github.com/your-org/your-project/pull/482
-
-19:31:05  assigned issue #23 to agent  [job 7c02]
-19:38:19  #23 blocked: acceptance criteria contradict each other → romp:blocked
+19:04:12  watching label "romp" every 1m0s (width 3)
+19:04:12  [sunny_naruto] running codex
+19:22:38  [sunny_naruto] verify ok (go test ./... -count=1)
+19:22:44  [sunny_naruto] PR: https://github.com/you/your-project/pull/482
+19:22:44  #17: done
 ```
 
-Stop with Ctrl-C. Running jobs finish; no new ones start. `Ctrl-C` twice kills
-everything.
-
----
+Ctrl-C drains; twice kills.
 
 ## Commands
 
-All commands operate on the repo containing your current directory.
-
 | Command | What it does |
 |---|---|
-| `romp init` | Write `romp.toml`, create the label on GitHub, update `.gitignore`. |
-| `romp watch` | Poll for labelled issues and work them. Foreground. |
-| `romp run -i N` | Run one issue now. Ignores the label. |
-| `romp status` | Jobs in this repo. `--all` for every running instance. |
-| `romp cancel <issue>` | Kill a running job and abandon it (removes both labels, cleans up). |
-| `romp logs <codename> [-f]` | Show or follow a job's log. |
-| `romp gc` | Remove stale worktrees and prune old job history (dry-run, then `--apply`). |
-| `romp doctor` | Check `gh` auth, harness login, git version, config validity. |
+| `init` | Write `romp.toml`, create the labels, update `.gitignore`. |
+| `watch` | Poll and work labelled issues. One repo, foreground. |
+| `run -i N` | Run one issue now, ignoring the label. |
+| `status` | In-flight jobs. `--all` for every repo. |
+| `history` | Recently finished jobs. `--all` for every repo. |
+| `logs <codename\|issue> [-f]` | Show or follow a job's log. |
+| `cancel <issue>` | Kill a running job and abandon it. |
+| `gc` | Remove stale worktrees and old history. Dry-run unless `--apply`. |
+| `doctor` | Check git, gh auth, harness, config. |
 
-`romp cancel <issue>` reaches the running watcher over a Unix socket at
-`$XDG_RUNTIME_DIR/romp/<owner>-<repo>.sock`, falling back to the state dir when
-`XDG_RUNTIME_DIR` is unset (the macOS default). It needs a live watcher — there
-is nothing to cancel otherwise. `romp logs` reads the per-job log files
-directly, so it works with or without a watcher.
+`run` takes `--verify`, `--harness`, `--model`, `--effort` to override config.
 
-Run `romp doctor` first. It catches the three things that break every new setup:
-`gh` not authenticated, neither `claude` nor `codex` on PATH, and git older than 2.35.
-
----
-
-## How it works
-
-```
-issue labelled "romp"
-        │
-        ▼
-  claim a slot          ← SQLite job table, width N
-        │
-        ▼
-  git worktree add      ← fresh branch off the default branch
-        │
-        ▼
-  render goal prompt    ← from the issue body + your template
-        │
-        ▼
-  run the harness       ← claude -p  |  codex exec
-        │
-        ▼
-  verify independently  ← romp re-runs your test command itself
-        │
-        ▼
-  push + open PR        ← label removed, worktree cleaned up
-```
-
-Every job gets its own worktree, its own branch, and its own log file. Jobs run in parallel up to the configured width.
-
-**The verification step is separate on purpose.** The agent's own claim that tests pass is not proof — `romp` runs your test command itself, in the worktree, after the agent exits. No green, no PR.
-
----
+`cancel` talks to the live watcher over a socket — no watcher, nothing to
+cancel. `logs` reads log files directly and works either way.
 
 ## Configuration
 
-Config is per repo. `romp init` writes `romp.toml` at the repo root:
+`romp init` writes `romp.toml`:
 
 ```toml
-label          = "romp"               # trigger label
-claimed_label  = "romp:claimed"       # marked while a job runs
-blocked_label  = "romp:blocked"       # marked when the issue is under-scoped
-base           = "main"               # default: repo default branch
-width          = 3                    # concurrent jobs in this repo
+label          = "romp"           # trigger label
+claimed_label  = "romp:claimed"
+blocked_label  = "romp:blocked"
+base           = "main"           # default: repo default branch
+width          = 3
 timeout        = "25m"
 
 [verify]
 build = "go build ./..."
 test  = "go test ./... -count=1"
-lint  = "golangci-lint run"          # optional
+lint  = "golangci-lint run"      # optional
 
 [scope]
 protected = ["testdata/**", "internal/testutil/**", ".github/**"]
 ignore    = ["vendor/**", "node_modules/**"]
 
 [harness]
-default   = "codex"                  # claude | codex
-model     = ""                       # harness default if empty
-effort    = "high"                   # low | medium | high | xhigh | max
-                                     # codex also: none | minimal | ultra
-max_turns = 30                       # claude only; ignored for codex
+default   = "codex"              # claude | codex
+model     = ""
+effort    = "high"               # claude: low..max; codex: + none, minimal, ultra
+max_turns = 30                   # claude only
 
 [prompt]
-template = ".romp/prompt.md"         # optional; built-in default if absent
-brief    = ".romp/DESIGN.md"         # optional; READ FIRST context for the agent
+template = ".romp/prompt.md"     # optional
+brief    = ".romp/DESIGN.md"     # optional
 ```
 
-`repo` is not a key. It comes from your `origin` remote.
+Precedence: flags → `.romp/local.toml` (gitignored) → `romp.toml` →
+`~/.config/romp/config.toml` → defaults. Commit `romp.toml` and `.romp/*.md`;
+keep `local.toml` out of git. `history_days` is global-only (user config).
 
-### Where things live
+State lives outside the repo: `~/.local/state/romp/romp.db` (shared job table),
+`~/.local/state/romp/<owner>-<repo>/logs/`, and worktrees under the cache dir.
 
-```
-your-project/
-  romp.toml            # committed — team settings: label, verify, scope
-  .romp/
-    prompt.md          # committed — your goal-prompt template
-    DESIGN.md          # committed — briefing the agent reads first
-    local.toml         # gitignored — your machine: harness, width, model
-```
+## The goal contract
 
-Commit `romp.toml` and `.romp/*.md`. They are how the repo tells any contributor's
-agent what "done" means here. Keep `local.toml` out of git — your teammate may
-run Codex at width 1 while you run Claude at width 5.
+`romp` hands the agent a finish line, not a task description:
 
-`romp init` adds `.romp/local.toml` to `.gitignore` for you.
+- **GATE** — reject the issue before touching code if it's ambiguous,
+  contradictory, or under-scoped. Don't invent missing criteria.
+- **DONE** — every acceptance criterion met, on a clean tree.
+- **PROVE IT** — run the verify command and show the fresh passing output.
+- **CONSTRAINTS** — no deleted/skipped/weakened tests, no hardcoded expected
+  values, no out-of-scope files, no `git commit`/`git push`.
 
-### Precedence
+The agent reports in `.romp/pull-request.md` (PR title + conventional-commit
+subject + description) or `.romp/blocked.md` (the specific gap). Customize the
+template at `.romp/prompt.md`; put long repo context in `.romp/DESIGN.md`.
 
-Highest wins:
+An under-scoped issue gets relabelled `romp:blocked` with the gap posted as a
+comment — a plausible PR solving the wrong problem costs more than no PR.
 
-```
-command flags
-  → .romp/local.toml        (your machine, this repo)
-    → romp.toml             (this repo, committed)
-      → ~/.config/romp/config.toml   (your defaults across all repos)
-        → built-in defaults
-```
-
-So `romp run -i 17 --harness codex --width 1` overrides everything for one run.
-
-`history_days` is the one global-only setting: it is read from
-`~/.config/romp/config.toml` (how long `romp gc` keeps job history on this
-machine) and is ignored in `romp.toml` and `local.toml`. Pass `--history-days N`
-to override it for one run, or `0` to disable history pruning.
-
-### Multiple repos
-
-`romp watch` watches one repo — the one you are in. To run several, start one
-per repo; each gets its own socket, while the job table and outcome history
-live in one shared SQLite database per machine under
-`~/.local/state/romp/romp.db`.
-
-`romp status --all` shows jobs across every running instance.
-
----
-
-## The goal prompt
-
-`romp` does not just hand the issue body to the agent. It renders a goal contract — a verifiable finish line, not a task description:
-
-- **DONE** — the acceptance criteria from the issue, on a clean tree.
-- **PROVE IT** — the exact commands whose fresh output must appear before the agent stops.
-- **CONSTRAINTS** — what must not be touched to get there: no deleted tests, no weakened assertions, no skips, no hardcoded expected values, no out-of-scope files.
-
-Failing tests are not a stopping condition. The agent fixes and re-runs.
-
-Override the template at `.romp/prompt.md`, in the repo. Placeholders:
-`{{.Issue}}` `{{.Title}}` `{{.Body}}` `{{.Repo}}` `{{.Branch}}` `{{.Base}}` `{{.URL}}`
-`{{.Verify}}` `{{.Protected}}` `{{.Ignore}}` `{{.Brief}}`.
-
-Put anything too long for a goal condition in `.romp/DESIGN.md` — repo idioms,
-architecture notes, where the test fixtures live. `romp` passes it as a
-`READ FIRST` pointer so the agent loads the briefing before touching code.
-
----
-
-## Writing issues romp can work
-
-`romp` assumes the issue is **fully scoped** — work that needs implementation, not deliberation. Good issues have:
-
-- Acceptance criteria a test could check
-- The files or area expected to change
-- What is explicitly out of scope
-
-If the agent finds the issue ambiguous or contradictory, it stops without writing code, and `romp` relabels the issue `romp:blocked` and posts the specific gap as a comment. That signal is the point. An under-scoped issue produces a plausible PR that solves the wrong problem, which costs more than no PR at all.
-
----
-
-## Job outcomes
+## Outcomes
 
 | Outcome | What you get |
 |---|---|
-| **done** | PR opened, label removed, worktree removed |
-| **blocked** | No PR. Issue relabelled `romp:blocked`, gap posted as a comment |
-| **no-changes** | Agent exited clean but produced no commits. No PR, job failed |
-| **red** | Agent finished, `test_cmd` failed on the independent re-run. No PR, worktree kept |
-| **timeout** | Job exceeded `timeout`. Killed, worktree kept for inspection |
-| **cancelled** | You cancelled it. Agent killed, worktree and branch removed, claim and trigger labels removed |
-| **error** | Infrastructure failure — git or gh, including a GitHub rate limit that outlives the retries. No PR; re-claimed on a later poll |
+| **done** | PR opened, trigger label removed. |
+| **blocked** | No PR. `romp:blocked` label + gap comment. |
+| **no-changes** | Agent exited clean with no commits. No PR. |
+| **red** | Verify failed on independent re-run. No PR, worktree kept. |
+| **timeout** | Exceeded `timeout`. Killed, worktree kept. |
+| **cancelled** | You cancelled. Worktree, branch, and both labels removed. |
+| **error** | git/gh failure (incl. rate limits outliving retries). Re-claimed later. |
 
-GitHub rate limits are retried inside a job (3 attempts with backoff) before
-the job is recorded as `error`.
-
-Failed jobs keep their worktree so you can inspect it. `romp gc` removes them,
-and prunes finished-job history older than `history_days` (default 30).
-
-`romp cancel` is an abandon, not a retry: the issue loses its trigger label
-too, so the next poll does not pick it up again. Re-label the issue to work it.
-
----
+On claim, romp adds the claim label and assigns the authenticated user; both
+clear when the job ends. `cancel` is an abandon: it removes the trigger label
+too, so re-label the issue to retry it. `gc` reclaims leftover worktrees.
 
 ## Safety
 
-Read this before running `romp watch` unattended.
-
-- **The agent runs with tool access on your machine, driven by text that anyone with write access to the repo can author.** Treat the trigger label as a privileged permission. Restrict who can apply it.
-- **`romp` never merges.** It opens PRs. Review them.
-- **Do not run it against a repo with production credentials in the working tree.**
-- Branch protection on your default branch is strongly recommended.
-- Agent runs are sandboxed only as far as your harness sandboxes them. `codex exec --sandbox workspace-write` is the safer default; Claude's `--dangerously-skip-permissions` is not a sandbox.
-
----
+- The agent runs tools on your machine, driven by text anyone with repo write
+  access can author. Treat the trigger label as privileged.
+- romp never merges. Review the PRs.
+- Don't run it against a repo with production credentials in the tree.
+- Branch protection on the default branch is strongly recommended.
+- Sandboxing is whatever the harness provides: Codex runs `--sandbox
+  workspace-write`, Claude `--permission-mode bypassPermissions`.
 
 ## Non-goals
 
-Things `romp` will not do, so you know what to reach for instead:
-
-- **Interactive sessions.** Use the agent CLI directly, or [T3 Code](https://github.com/pingdotgg/t3code).
-- **Streaming or live steering.** `romp` is batch. The PR is the output.
-- **Cloud execution.** Use Codex Cloud or the Claude Code GitHub Action.
-- **Merging, deploying, or anything past the PR.**
-- **Being a general agent framework.** It does one thing.
-
----
+Interactive sessions, live steering, cloud execution, merging/deploying, or
+being a general agent framework. Use the agent CLI, T3 Code, or Codex Cloud for
+those.
 
 ## Contributing
 
-Harness adapters live in `internal/harness/`. Each implements a small interface and declares which features it supports — an adapter that does not support a feature says so explicitly rather than silently ignoring it.
-
-Tests run offline against a fake harness and a fixture repo. `make test` needs no network, no GitHub, and no agent installed.
-
----
+Harness adapters live in `internal/harness/`. `make test` runs offline against
+a fake harness and fixture repo — no network, no GitHub, no agent.
 
 ## License
 
