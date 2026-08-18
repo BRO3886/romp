@@ -101,6 +101,29 @@ func (j issueJSON) issue() Issue {
 	return Issue{Number: j.Number, Title: j.Title, Body: j.Body, URL: j.URL, Labels: labels}
 }
 
+// AuthStatus verifies the gh CLI is installed and authenticated, returning the
+// account it is logged in as. It fails fast when gh is missing or unauthenticated.
+func (c *Client) AuthStatus(ctx context.Context) (string, error) {
+	out, err := c.run(ctx, "auth", "status")
+	if err != nil {
+		return "", err
+	}
+	if i := strings.Index(out, "account "); i >= 0 {
+		rest := strings.TrimSpace(out[i+len("account "):])
+		if j := strings.IndexAny(rest, " \n"); j >= 0 {
+			rest = rest[:j]
+		}
+		if rest != "" {
+			return rest, nil
+		}
+	}
+	first := out
+	if j := strings.IndexByte(first, '\n'); j >= 0 {
+		first = first[:j]
+	}
+	return strings.TrimSpace(first), nil
+}
+
 // Issue fetches a single issue by number from owner/name.
 func (c *Client) Issue(ctx context.Context, repo string, number int) (Issue, error) {
 	out, err := c.run(ctx, "issue", "view", strconv.Itoa(number), "--repo", repo,

@@ -35,4 +35,9 @@ type Result struct {
 type Harness interface {
 	Name() string
 	Run(ctx context.Context, req Request) (Result, error)
+	// Check verifies the adapter's CLI is installed and healthy, returning a
+	// short human-readable detail (e.g. a version) or an error with an
+	// actionable message. doctor calls it as a preflight; it must not run the
+	// agent.
+	Check(ctx context.Context) (detail string, err error)
 }

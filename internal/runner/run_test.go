@@ -104,6 +104,8 @@ type fakeHarness struct{}
 
 func (fakeHarness) Name() string { return "fake" }
 
+func (fakeHarness) Check(context.Context) (string, error) { return "fake", nil }
+
 func (fakeHarness) Run(context.Context, harness.Request) (harness.Result, error) {
 	return harness.Result{}, nil
 }
@@ -113,6 +115,8 @@ func (fakeHarness) Run(context.Context, harness.Request) (harness.Result, error)
 type blockingHarness struct{}
 
 func (blockingHarness) Name() string { return "blocking" }
+
+func (blockingHarness) Check(context.Context) (string, error) { return "blocking", nil }
 
 func (blockingHarness) Run(ctx context.Context, _ harness.Request) (harness.Result, error) {
 	<-ctx.Done()

@@ -40,6 +40,15 @@ func FindRoot(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// Version returns the installed git version, e.g. "2.50.1".
+func Version(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "git", "--version").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git --version: %w\n%s", err, out)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // Origin returns the owner and repo name parsed from the origin remote URL.
 // It understands scp-like (git@github.com:owner/name.git) and https forms.
 func (r *Repo) Origin(ctx context.Context) (owner, name string, err error) {
