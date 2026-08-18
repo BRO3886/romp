@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -47,8 +48,11 @@ func runHistory(cmd *cobra.Command, all bool) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "no jobs finished yet")
 		return nil
 	}
+	return writeHistory(cmd.OutOrStdout(), outcomes, all)
+}
 
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+func writeHistory(out io.Writer, outcomes []job.Outcome, all bool) error {
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if all {
 		fmt.Fprintln(w, "CODENAME\tREPO\tISSUE\tOUTCOME\tPR\tFINISHED")
 	} else {

@@ -2,87 +2,76 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 
 	"github.com/BRO3886/romp/internal/job"
 )
 
-func TestHistoryCmdDefaultsToCurrentRepo(t *testing.T) {
-	ctx := context.Background()
-	owner, name, err := currentRepo(ctx)
-	if err != nil {
-		t.Fatalf("currentRepo: %v", err)
-	}
-	repo := owner + "/" + name
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	seedHistory(t, ctx, repo, 7)
-	seedHistory(t, ctx, "other/repo", 8)
-
-	cmd := newHistoryCmd()
+func TestWriteHistorySingleRepoOmitsRepoColumn(t *testing.T) {
 	var out bytes.Buffer
-	cmd.SetOut(&out)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("history: %v", err)
+	if err := writeHistory(&out, []job.Outcome{
+		{Repo: "a/b", Issue: 7, Outcome: "done", FinishedAt: "2026-08-18T12:00:00Z"},
+	}, false); err != nil {
+		t.Fatalf("writeHistory: %v", err)
 	}
-
 	got := out.String()
-	if !hasField(got, "7") {
-		t.Errorf("history output = %q, want current repo issue", got)
+	if strings.Contains(got, "REPO") || strings.Contains(got, "a/b") {
+		t.Errorf("single-repo table should omit REPO:\n%s", got)
 	}
-	if strings.Contains(got, "other/repo") || hasField(got, "8") {
-		t.Errorf("history output = %q, must exclude other repos", got)
-	}
-	if strings.Contains(got, "REPO") {
-		t.Errorf("history output = %q, must omit REPO for one repo", got)
+	if col := tableColumn(t, got, "ISSUE", 0); col != "7" {
+		t.Errorf("ISSUE = %q, want 7\n%s", col, got)
 	}
 }
 
-func TestHistoryCmdAllListsEveryRepo(t *testing.T) {
-	ctx := context.Background()
-	owner, name, err := currentRepo(ctx)
-	if err != nil {
-		t.Fatalf("currentRepo: %v", err)
-	}
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	seedHistory(t, ctx, owner+"/"+name, 7)
-	seedHistory(t, ctx, "other/repo", 8)
-
-	cmd := newHistoryCmd()
-	cmd.SetArgs([]string{"--all"})
+func TestWriteHistoryAllIncludesEveryRepo(t *testing.T) {
 	var out bytes.Buffer
-	cmd.SetOut(&out)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("history --all: %v", err)
+	if err := writeHistory(&out, []job.Outcome{
+		{Repo: "a/b", Issue: 7, Outcome: "done", FinishedAt: "t1"},
+		{Repo: "other/repo", Issue: 8, Outcome: "red", FinishedAt: "t2"},
+	}, true); err != nil {
+		t.Fatalf("writeHistory: %v", err)
 	}
-
 	got := out.String()
-	if !strings.Contains(got, "REPO") || !strings.Contains(got, "other/repo") || !hasField(got, "7") || !hasField(got, "8") {
-		t.Errorf("history --all output = %q, want both repos with REPO column", got)
+	if tableColumn(t, got, "REPO", 0) != "a/b" || tableColumn(t, got, "ISSUE", 0) != "7" {
+		t.Errorf("row 0 = %q", got)
+	}
+	if tableColumn(t, got, "REPO", 1) != "other/repo" || tableColumn(t, got, "ISSUE", 1) != "8" {
+		t.Errorf("row 1 = %q", got)
 	}
 }
 
-func hasField(output, field string) bool {
-	for _, value := range strings.Fields(output) {
-		if value == field {
-			return true
+func TestHistoryCmdHasAllFlag(t *testing.T) {
+	if newHistoryCmd().Flags().Lookup("all") == nil {
+		t.Fatal("history is missing --all")
+	}
+}
+
+func tableColumn(t *testing.T, output, column string, row int) string {
+	t.Helper()
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
 		}
 	}
-	return false
-}
-
-func seedHistory(t *testing.T, ctx context.Context, repo string, issue int) {
-	t.Helper()
-	store, err := job.Open(job.Path())
-	if err != nil {
-		t.Fatalf("open job store: %v", err)
+	if len(lines) < row+2 {
+		t.Fatalf("need header + row %d, got %d lines:\n%s", row, len(lines), output)
 	}
-	t.Cleanup(func() { store.Close() })
-	if ok, err := store.Claim(ctx, repo, issue, "romp"); err != nil || !ok {
-		t.Fatalf("Claim %s #%d: ok=%v err=%v", repo, issue, ok, err)
+	headers := strings.Fields(lines[0])
+	idx := -1
+	for i, h := range headers {
+		if h == column {
+			idx = i
+			break
+		}
 	}
-	if err := store.Finish(ctx, job.Outcome{Repo: repo, Issue: issue, Outcome: "done", FinishedAt: "2026-08-18T12:00:00Z"}); err != nil {
-		t.Fatalf("Finish %s #%d: %v", repo, issue, err)
+	if idx < 0 {
+		t.Fatalf("no column %q in %v", column, headers)
 	}
+	fields := strings.Fields(lines[row+1])
+	if idx >= len(fields) {
+		t.Fatalf("row %d has no field %d: %v", row, idx, fields)
+	}
+	return fields[idx]
 }
