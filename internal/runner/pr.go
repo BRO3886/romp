@@ -10,6 +10,8 @@ import (
 
 const prFile = ".romp/pull-request.md"
 
+const prAttribution = "Created with [romp](https://romp.sidv.dev) 🦦"
+
 // prArtifact is the structured PR content the agent writes before stopping.
 type prArtifact struct {
 	Title  string
@@ -103,6 +105,9 @@ func parsePR(content, issueTitle string, issueNum int) prArtifact {
 // withCloses appends a "Closes #N" footer unless the body already references
 // the issue with a closing keyword.
 func withCloses(body string, num int) string {
+	if body == "" {
+		return "Closes #" + strconv.Itoa(num)
+	}
 	lower := strings.ToLower(body)
 	for _, kw := range []string{"closes #", "fixes #", "resolves #"} {
 		if strings.Contains(lower, kw) {
@@ -110,4 +115,15 @@ func withCloses(body string, num int) string {
 		}
 	}
 	return body + "\n\nCloses #" + strconv.Itoa(num)
+}
+
+func withAttribution(body string) string {
+	if strings.Contains(body, prAttribution) {
+		return body
+	}
+	return body + "\n\n" + prAttribution
+}
+
+func prBody(body string, num int) string {
+	return withAttribution(withCloses(strings.TrimSpace(body), num))
 }

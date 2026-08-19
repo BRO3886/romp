@@ -123,8 +123,9 @@ State lives outside the repo: `~/.local/state/romp/romp.db` (shared job table),
   values, no out-of-scope files, no `git commit`/`git push`.
 
 The agent reports in `.romp/pull-request.md` (PR title + conventional-commit
-subject + description) or `.romp/blocked.md` (the specific gap). Customize the
-template at `.romp/prompt.md`; put long repo context in `.romp/DESIGN.md`.
+subject + description) or `.romp/blocked.md` (the specific gap). Romp appends
+its attribution after the description and issue-closing reference. Customize
+the template at `.romp/prompt.md`; put long repo context in `.romp/DESIGN.md`.
 
 An under-scoped issue gets relabelled `romp:blocked` with the gap posted as a
 comment — a plausible PR solving the wrong problem costs more than no PR.

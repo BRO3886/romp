@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,7 @@ func (f *fakeGit) Push(_ context.Context, _, branch string) error {
 
 type fakeGH struct {
 	prs         []string
+	prBodies    []string
 	comments    []string
 	added       []string
 	removed     []string
@@ -92,11 +94,12 @@ func (f *fakeGH) RemoveLabel(_ context.Context, _ string, number int, label stri
 	return nil
 }
 
-func (f *fakeGH) CreatePR(_ context.Context, _, title, _, _, _ string) (string, error) {
+func (f *fakeGH) CreatePR(_ context.Context, _, title, body, _, _ string) (string, error) {
 	if f.createPRErr != nil {
 		return "", f.createPRErr
 	}
 	f.prs = append(f.prs, title)
+	f.prBodies = append(f.prBodies, body)
 	return "https://github.com/o/r/pull/1", nil
 }
 
@@ -167,6 +170,9 @@ func TestRunRemovesTriggerLabelOnSuccess(t *testing.T) {
 	}
 	if len(c.prs) != 1 {
 		t.Fatalf("PRs opened = %v, want one", c.prs)
+	}
+	if got, want := c.prBodies, []string{"the body\n\nCloses #7\n\nCreated with [romp](https://romp.sidv.dev) 🦦"}; !slices.Equal(got, want) {
+		t.Errorf("PR bodies = %v, want %v", got, want)
 	}
 	if len(c.removed) != 1 || c.removed[0] != "7:romp" {
 		t.Errorf("labels removed = %v, want [7:romp]", c.removed)

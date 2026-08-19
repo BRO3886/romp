@@ -230,7 +230,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		return "", fmt.Errorf("push: %w", err)
 	}
 
-	url, err := r.GH.CreatePR(ctx, repo, pr.Title, withCloses(pr.Body, issueNum), branch, base)
+	url, err := r.GH.CreatePR(ctx, repo, pr.Title, prBody(pr.Body, issueNum), branch, base)
 	if err != nil {
 		return "", err
 	}
