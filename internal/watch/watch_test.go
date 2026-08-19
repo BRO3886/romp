@@ -286,13 +286,15 @@ func TestClaimRollsBackRowOnLabelFailure(t *testing.T) {
 	}
 }
 
-func TestRunJobReleasesOnDone(t *testing.T) {
+func TestRunJobKeepsAssigneeOnDone(t *testing.T) {
 	ghc := &fakeGH{}
 	store := newFakeStore()
 	store.rows[7] = true
 
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
-	w.RunJob = func(context.Context, int) (string, error) { return "", nil }
+	w.RunJob = func(context.Context, int) (string, error) {
+		return "https://github.com/o/r/pull/1", nil
+	}
 
 	w.runJobSync(t, 7)
 
@@ -303,8 +305,8 @@ func TestRunJobReleasesOnDone(t *testing.T) {
 	if !contains(removed, "7:romp:claimed") {
 		t.Errorf("claim label not released: %v", removed)
 	}
-	if len(ghc.unassigned) != 1 || ghc.unassigned[0] != 7 {
-		t.Errorf("unassigned = %v, want [7]", ghc.unassigned)
+	if len(ghc.unassigned) != 0 {
+		t.Errorf("unassigned = %v, want none after successful PR", ghc.unassigned)
 	}
 	// The runner removes the trigger label as its completion marker, so watch
 	// must not remove it a second time.
