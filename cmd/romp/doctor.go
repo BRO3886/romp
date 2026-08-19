@@ -146,6 +146,7 @@ func checkConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	warnOpenCodeVariant(os.Stderr, cfg)
 	verify, err := verifyCommands(cfg, "", false)
 	if err != nil {
 		return "", err

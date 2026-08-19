@@ -26,7 +26,7 @@ ignore    = ["vendor/**", "node_modules/**"]
 [harness]
 default   = "codex"              # claude | codex | opencode
 model     = ""
-effort    = "high"               # claude: low..max; codex: + none, minimal, ultra; ignored by opencode
+effort    = "high"               # claude/codex: reasoning effort; opencode: model-specific variant
 max_turns = 30                   # claude only; ignored by codex and opencode
 
 [prompt]
@@ -75,6 +75,11 @@ operator concern, not a team convention.
 | `prompt.brief` | — | File the agent reads first (e.g. `.romp/DESIGN.md`). |
 | `history_days` | `30` | Global only; outcome retention window. |
 
+For OpenCode, `harness.effort` is passed as `opencode run --variant`. Variant
+names are model-specific. Romp prints one warning at startup when the effective
+variant comes from a configuration file. A command-line `--effort` override
+does not produce this configuration warning.
+
 ## Verify
 
 romp refuses to run without a verify command — it never guesses. At least one
@@ -85,13 +90,15 @@ PR only when all of them pass.
 ## Harness effort
 
 The legal `effort` values depend on the harness. Shared names mean the same
-thing and pass through unchanged. An invalid value fails at config load, not
-inside the agent.
+thing and pass through unchanged. Claude and Codex values are validated at
+config load. OpenCode values are passed as model-specific variants and are not
+validated by Romp.
 
 | Harness | Effort values |
 | --- | --- |
 | `claude` | `low`, `medium`, `high`, `xhigh`, `max` |
 | `codex` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `opencode` | Model-specific `--variant` values; not validated by Romp |
 
 ## Where state lives
 

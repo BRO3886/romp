@@ -16,7 +16,7 @@ type Request struct {
 	Model string
 	// Effort, when non-empty, is a thinking budget already accepted for
 	// this harness at config load. Empty leaves the harness default in place.
-	// OpenCode has no stable equivalent and ignores this field.
+	// OpenCode passes this value as its model-specific --variant setting.
 	Effort string
 	// MaxTurns, when positive, caps the agent's turn budget (claude's
 	// --max-turns). Codex and OpenCode have no equivalent and ignore this field.

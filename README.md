@@ -90,13 +90,18 @@ ignore    = ["vendor/**", "node_modules/**"]
 [harness]
 default   = "codex"              # claude | codex | opencode
 model     = ""
-effort    = "high"               # claude: low..max; codex: + none, minimal, ultra; ignored by opencode
+effort    = "high"               # claude/codex: reasoning effort; opencode: model-specific variant
 max_turns = 30                   # claude only; ignored by codex and opencode
 
 [prompt]
 template = ".romp/prompt.md"     # optional
 brief    = ".romp/DESIGN.md"     # optional
 ```
+
+For OpenCode, `harness.effort` is passed as `opencode run --variant`. Variant
+names are model-specific, so Romp prints one warning at startup when an
+effective variant comes from configuration. A command-line `--effort` override
+does not produce this configuration warning.
 
 Precedence: flags → `.romp/local.toml` (gitignored) → `romp.toml` →
 `~/.config/romp/config.toml` → defaults. Commit `romp.toml` and `.romp/*.md`;

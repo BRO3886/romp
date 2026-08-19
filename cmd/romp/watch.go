@@ -40,6 +40,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	warnOpenCodeVariant(cmd.ErrOrStderr(), cfg)
 	verify, err := verifyCommands(cfg, "", false)
 	if err != nil {
 		return err

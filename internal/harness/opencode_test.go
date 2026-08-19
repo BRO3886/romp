@@ -24,10 +24,22 @@ func TestOpenCodeArgs(t *testing.T) {
 		t.Errorf("with model = %v, want %v", withModel, want)
 	}
 
-	withLegacySettings := opencodeArgs(Request{Prompt: "rendered prompt", Effort: "high", MaxTurns: 30}, []string{"--format", "json"})
+	withVariant := opencodeArgs(Request{Prompt: "rendered prompt", Effort: "high"}, nil)
+	want = append(append([]string{}, base...), "--variant", "high", "rendered prompt")
+	if !reflect.DeepEqual(withVariant, want) {
+		t.Errorf("with variant = %v, want %v", withVariant, want)
+	}
+
+	withModelAndVariant := opencodeArgs(Request{Prompt: "rendered prompt", Model: "openai/gpt-5", Effort: "high"}, nil)
+	want = append(append([]string{}, base...), "--model", "openai/gpt-5", "--variant", "high", "rendered prompt")
+	if !reflect.DeepEqual(withModelAndVariant, want) {
+		t.Errorf("with model and variant = %v, want %v", withModelAndVariant, want)
+	}
+
+	withLegacySettings := opencodeArgs(Request{Prompt: "rendered prompt", MaxTurns: 30}, []string{"--format", "json"})
 	want = append(append([]string{}, base...), "--format", "json", "rendered prompt")
 	if !reflect.DeepEqual(withLegacySettings, want) {
-		t.Errorf("with legacy settings = %v, want %v (no OpenCode effort or turn flags)", withLegacySettings, want)
+		t.Errorf("with legacy settings = %v, want %v (no OpenCode turn flag)", withLegacySettings, want)
 	}
 }
 

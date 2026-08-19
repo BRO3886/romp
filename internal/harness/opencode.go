@@ -40,6 +40,9 @@ func opencodeArgs(req Request, extra []string) []string {
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
+	if req.Effort != "" {
+		args = append(args, "--variant", req.Effort)
+	}
 	args = append(args, extra...)
 	return append(args, req.Prompt)
 }

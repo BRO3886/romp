@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -93,6 +94,7 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlag string, verif
 	if err != nil {
 		return nil, err
 	}
+	warnOpenCodeVariant(os.Stderr, cfg)
 
 	verify, err := verifyCommands(cfg, verifyFlag, verifySet)
 	if err != nil {
@@ -110,6 +112,17 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlag string, verif
 	}
 
 	return buildRunner(root, cfg, verify, h, timeout)
+}
+
+func warnOpenCodeVariant(out io.Writer, cfg *config.Config) {
+	if cfg.Harness.Default != "opencode" || cfg.Harness.EffortSource == "" {
+		return
+	}
+	model := cfg.Harness.Model
+	if model == "" {
+		model = "the selected model"
+	}
+	fmt.Fprintf(out, "warning: OpenCode variant %q may not be supported by %s; variants are model-specific (configured in %s)\n", cfg.Harness.Effort, model, cfg.Harness.EffortSource)
 }
 
 // buildRunner assembles a Runner from already-resolved config and options so

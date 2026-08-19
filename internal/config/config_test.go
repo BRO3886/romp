@@ -55,6 +55,9 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.Harness.Effort != "max" {
 		t.Errorf("Harness.Effort = %q, want max (local.toml)", cfg.Harness.Effort)
 	}
+	if cfg.Harness.EffortSource != filepath.Join(root, ".romp", "local.toml") {
+		t.Errorf("Harness.EffortSource = %q, want local.toml", cfg.Harness.EffortSource)
+	}
 	if cfg.Harness.Default != "codex" {
 		t.Errorf("Harness.Default = %q, want codex (default)", cfg.Harness.Default)
 	}
@@ -77,6 +80,52 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.Harness.Effort != "low" {
 		t.Errorf("Harness.Effort = %q, want low (flag wins)", cfg.Harness.Effort)
+	}
+	if cfg.Harness.EffortSource != "" {
+		t.Errorf("Harness.EffortSource = %q, want empty for flag override", cfg.Harness.EffortSource)
+	}
+}
+
+func TestLoadEffortSourcePrecedence(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", user)
+	userConfig := filepath.Join(user, "romp", "config.toml")
+	write(t, userConfig, "[harness]\neffort = \"low\"\n")
+
+	root := t.TempDir()
+	rompConfig := filepath.Join(root, "romp.toml")
+	write(t, rompConfig, "[harness]\neffort = \"medium\"\n")
+	localConfig := filepath.Join(root, ".romp", "local.toml")
+	write(t, localConfig, "[harness]\neffort = \"high\"\n")
+
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Harness.EffortSource != localConfig {
+		t.Fatalf("EffortSource = %q, want local config", cfg.Harness.EffortSource)
+	}
+
+	if err := os.Remove(localConfig); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load without local effort: %v", err)
+	}
+	if cfg.Harness.EffortSource != rompConfig {
+		t.Fatalf("EffortSource = %q, want repo config", cfg.Harness.EffortSource)
+	}
+
+	if err := os.Remove(rompConfig); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load with global effort: %v", err)
+	}
+	if cfg.Harness.EffortSource != userConfig {
+		t.Fatalf("EffortSource = %q, want global config", cfg.Harness.EffortSource)
 	}
 }
 
@@ -127,9 +176,9 @@ func TestLoadEffortByHarness(t *testing.T) {
 			want: "high",
 		},
 		{
-			name: "OpenCode ignores inherited effort",
-			toml: "[harness]\ndefault = \"opencode\"\n",
-			want: "high",
+			name: "OpenCode accepts model-specific variant",
+			toml: "[harness]\ndefault = \"opencode\"\neffort = \"experimental\"\n",
+			want: "experimental",
 		},
 		{
 			name: "codex-only ultra",
