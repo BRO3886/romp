@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"hash/fnv"
 	"io"
 	"os"
 	"regexp"
@@ -16,6 +17,7 @@ const (
 	ansiCyan    = "\x1b[36m"
 	ansiMagenta = "\x1b[35m"
 	ansiRed     = "\x1b[31m"
+	ansiBlue    = "\x1b[34m"
 	ansiYellow  = "\x1b[33m"
 	ansiGreen   = "\x1b[1;32m"
 	ansiBoldRed = "\x1b[1;31m"
@@ -31,7 +33,7 @@ var (
 
 type colorizer struct {
 	enabled bool
-	slot    int
+	name    string
 }
 
 type colorWriter struct {
@@ -40,8 +42,8 @@ type colorWriter struct {
 	c  colorizer
 }
 
-func newColorizer(enabled bool, slot int) colorizer {
-	return colorizer{enabled: enabled, slot: slot}
+func newColorizer(enabled bool, name string) colorizer {
+	return colorizer{enabled: enabled, name: name}
 }
 
 func colorEnabled(interactive bool) bool {
@@ -49,10 +51,10 @@ func colorEnabled(interactive bool) bool {
 	return interactive && !disabled
 }
 
-func NewColorWriter(w io.Writer, slot int) io.Writer {
+func NewColorWriter(w io.Writer, name string) io.Writer {
 	return &colorWriter{
 		w: w,
-		c: newColorizer(colorEnabled(isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())), slot),
+		c: newColorizer(colorEnabled(isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())), name),
 	}
 }
 
@@ -72,7 +74,7 @@ func (c colorizer) colorize(line string) string {
 	line = warningToken.ReplaceAllString(line, "${1}"+ansiYellow+"warning"+ansiReset+":")
 	line = jobIdentity.ReplaceAllStringFunc(line, func(match string) string {
 		identityStart := strings.LastIndexByte(match, ' ') + 1
-		return match[:identityStart] + c.slotColor() + match[identityStart:] + ansiReset
+		return match[:identityStart] + c.nameColor() + match[identityStart:] + ansiReset
 	})
 	if len(line) >= len("12:34:56") {
 		line = ansiDim + line[:len("12:34:56")] + ansiReset + line[len("12:34:56"):]
@@ -95,13 +97,9 @@ func (c colorizer) colorize(line string) string {
 	return line
 }
 
-func (c colorizer) slotColor() string {
-	switch c.slot % 3 {
-	case 1:
-		return ansiMagenta
-	case 2:
-		return ansiRed
-	default:
-		return ansiCyan
-	}
+func (c colorizer) nameColor() string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(c.name))
+	colors := []string{ansiCyan, ansiMagenta, ansiRed, ansiBlue}
+	return colors[h.Sum32()%uint32(len(colors))]
 }

@@ -74,7 +74,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		Interval: defaultPollInterval,
 		GH:       &gh.Client{},
 		Store:    store,
-		RunJob: func(ctx context.Context, issue int, slot int) (string, error) {
+		RunJob: func(ctx context.Context, issue int) (string, error) {
 			jobName := codename.For(repo, issue)
 			f, err := openJobLog(owner, name, jobName)
 			if err != nil {
@@ -86,10 +86,10 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 				return "", err
 			}
 			r.Codename = jobName
-			r.Stderr = io.MultiWriter(watch.NewColorWriter(os.Stderr, slot), f)
+			r.Stderr = io.MultiWriter(watch.NewColorWriter(os.Stderr, jobName), f)
 			return r.Run(ctx, issue)
 		},
-		Stderr: watch.NewColorWriter(os.Stderr, 0),
+		Stderr: watch.NewColorWriter(os.Stderr, ""),
 		CleanJob: func(ctx context.Context, issue int) error {
 			cache, err := os.UserCacheDir()
 			if err != nil {

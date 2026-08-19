@@ -51,7 +51,7 @@ type Watcher struct {
 
 	GH     GHOps
 	Store  Store
-	RunJob func(ctx context.Context, issue int, slot int) (string, error)
+	RunJob func(ctx context.Context, issue int) (string, error)
 	// CleanJob removes a cancelled job's worktree and branch. It is the
 	// runner's counterpart, invoked only for an abandon so the watcher does
 	// not need git access.
@@ -70,10 +70,11 @@ func (w *Watcher) logf(format string, a ...any) {
 		w.Logf("%s", msg)
 		return
 	}
-	if w.Stderr == nil {
-		w.Stderr = os.Stderr
+	stderr := w.Stderr
+	if stderr == nil {
+		stderr = os.Stderr
 	}
-	fmt.Fprintln(w.Stderr, msg)
+	fmt.Fprintln(stderr, msg)
 }
 
 // Run clears stale in-flight rows, then polls and dispatches until the first
@@ -95,9 +96,9 @@ func (w *Watcher) Run(ctx context.Context) error {
 	jobCtx, cancelAll := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelAll()
 
-	slots := make(chan int, w.Width)
-	for slot := 0; slot < w.Width; slot++ {
-		slots <- slot
+	slots := make(chan struct{}, w.Width)
+	for i := 0; i < w.Width; i++ {
+		slots <- struct{}{}
 	}
 	var wg sync.WaitGroup
 
@@ -149,7 +150,7 @@ func (w *Watcher) drain(sigCh <-chan os.Signal, wg *sync.WaitGroup, cancelAll co
 // claimBatch lists trigger-labelled issues and dispatches each unclaimed one,
 // stopping early when every slot is busy so the leftover issues stay unclaimed
 // for another watcher (or the next tick).
-func (w *Watcher) claimBatch(ctx context.Context, slots chan int, wg *sync.WaitGroup, jobCtx context.Context) error {
+func (w *Watcher) claimBatch(ctx context.Context, slots chan struct{}, wg *sync.WaitGroup, jobCtx context.Context) error {
 	issues, err := w.GH.ListIssues(ctx, w.Repo, w.Trigger)
 	if err != nil {
 		return err
@@ -177,13 +178,13 @@ func (w *Watcher) claimBatch(ctx context.Context, slots chan int, wg *sync.WaitG
 			continue
 		}
 		select {
-		case slot := <-slots:
+		case <-slots:
 			if !w.claim(ctx, iss) {
-				slots <- slot
+				slots <- struct{}{}
 				continue
 			}
 			wg.Add(1)
-			go w.runJob(jobCtx, iss, slot, slots, wg)
+			go w.runJob(jobCtx, iss, slots, wg)
 		default:
 			return nil
 		}
@@ -292,16 +293,16 @@ func (w *Watcher) handleConn(conn net.Conn) {
 	_ = json.NewEncoder(conn).Encode(CancelResponse{OK: true})
 }
 
-func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slot int, slots chan<- int, wg *sync.WaitGroup) {
+func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer func() { slots <- slot }()
+	defer func() { slots <- struct{}{} }()
 	defer w.release(ctx, iss)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	w.register(iss.Number, cancel)
 	defer w.unregister(iss.Number)
 
-	prURL, err := w.RunJob(runCtx, iss.Number, slot)
+	prURL, err := w.RunJob(runCtx, iss.Number)
 	cancelled := w.wasCancelled(iss.Number)
 	outcome := classifyOutcome(err)
 	if cancelled {

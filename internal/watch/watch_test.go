@@ -142,7 +142,7 @@ func TestClaimBatchDispatchesUnclaimedOnly(t *testing.T) {
 	var called []int
 	var jobWG sync.WaitGroup
 	jobWG.Add(2)
-	w.RunJob = func(_ context.Context, issue int, _ int) (string, error) {
+	w.RunJob = func(_ context.Context, issue int) (string, error) {
 		mu.Lock()
 		called = append(called, issue)
 		mu.Unlock()
@@ -151,9 +151,9 @@ func TestClaimBatchDispatchesUnclaimedOnly(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	slots := make(chan int, 10)
+	slots := make(chan struct{}, 10)
 	for slot := 0; slot < cap(slots); slot++ {
-		slots <- slot
+		slots <- struct{}{}
 	}
 	if err := w.claimBatch(context.Background(), slots, &wg, context.Background()); err != nil {
 		t.Fatal(err)
@@ -190,15 +190,15 @@ func TestClaimBatchReconcilesOpenPR(t *testing.T) {
 		Width: 10, GH: ghc, Store: store,
 	}
 	var ran []int
-	w.RunJob = func(_ context.Context, issue int, _ int) (string, error) {
+	w.RunJob = func(_ context.Context, issue int) (string, error) {
 		ran = append(ran, issue)
 		return "", nil
 	}
 
 	var wg sync.WaitGroup
-	slots := make(chan int, 10)
+	slots := make(chan struct{}, 10)
 	for slot := 0; slot < cap(slots); slot++ {
-		slots <- slot
+		slots <- struct{}{}
 	}
 	if err := w.claimBatch(context.Background(), slots, &wg, context.Background()); err != nil {
 		t.Fatal(err)
@@ -228,11 +228,11 @@ func TestClaimBatchStopsAtWidth(t *testing.T) {
 		Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", Blocked: "romp:blocked",
 		Width: 1, GH: ghc, Store: store,
 	}
-	w.RunJob = func(context.Context, int, int) (string, error) { return "", nil }
+	w.RunJob = func(context.Context, int) (string, error) { return "", nil }
 
 	var wg sync.WaitGroup
-	slots := make(chan int, 1)
-	slots <- 0
+	slots := make(chan struct{}, 1)
+	slots <- struct{}{}
 	if err := w.claimBatch(context.Background(), slots, &wg, context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestRunJobReleasesOnDone(t *testing.T) {
 	store.rows[7] = true
 
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
-	w.RunJob = func(context.Context, int, int) (string, error) { return "", nil }
+	w.RunJob = func(context.Context, int) (string, error) { return "", nil }
 
 	w.runJobSync(t, 7)
 
@@ -319,7 +319,7 @@ func TestRunJobKeepsTriggerOnBlocked(t *testing.T) {
 	store.rows[7] = true
 
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
-	w.RunJob = func(context.Context, int, int) (string, error) { return "", fmt.Errorf("%w: gap", runner.ErrBlocked) }
+	w.RunJob = func(context.Context, int) (string, error) { return "", fmt.Errorf("%w: gap", runner.ErrBlocked) }
 
 	w.runJobSync(t, 7)
 
@@ -343,7 +343,7 @@ func TestRunJobLogsTimeout(t *testing.T) {
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
 	var logMsg string
 	w.Logf = func(format string, a ...any) { logMsg = fmt.Sprintf(format, a...) }
-	w.RunJob = func(context.Context, int, int) (string, error) {
+	w.RunJob = func(context.Context, int) (string, error) {
 		return "", fmt.Errorf("%w: killed", runner.ErrTimeout)
 	}
 
@@ -364,7 +364,7 @@ func TestRunJobRecordsHistory(t *testing.T) {
 	store.rows[7] = true
 
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
-	w.RunJob = func(context.Context, int, int) (string, error) {
+	w.RunJob = func(context.Context, int) (string, error) {
 		return "https://github.com/o/r/pull/1", nil
 	}
 
@@ -386,7 +386,7 @@ func TestRunJobRecordsBlockedOutcome(t *testing.T) {
 	store.rows[7] = true
 
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
-	w.RunJob = func(context.Context, int, int) (string, error) { return "", fmt.Errorf("%w: gap", runner.ErrBlocked) }
+	w.RunJob = func(context.Context, int) (string, error) { return "", fmt.Errorf("%w: gap", runner.ErrBlocked) }
 
 	w.runJobSync(t, 7)
 
@@ -401,66 +401,26 @@ func TestRunJobRecordsBlockedOutcome(t *testing.T) {
 }
 
 func TestColorizerMapsWatchTokens(t *testing.T) {
-	c := newColorizer(true, 1)
+	c := newColorizer(true, "sunny_naruto")
 	got := c.colorize("12:34:56  [sunny_naruto] warning: PR: https://github.com/o/r/pull/1 #1: done #2: blocked #3: timeout #4: red\n")
-	want := "\x1b[2m12:34:56\x1b[0m  \x1b[35m[sunny_naruto]\x1b[0m \x1b[33mwarning\x1b[0m: PR: \x1b[33mhttps://github.com/o/r/pull/1\x1b[0m #1: \x1b[1;32mdone\x1b[0m #2: \x1b[1;33mblocked\x1b[0m #3: \x1b[1;31mtimeout\x1b[0m #4: \x1b[1;31mred\x1b[0m\n"
+	want := "\x1b[2m12:34:56\x1b[0m  \x1b[36m[sunny_naruto]\x1b[0m \x1b[33mwarning\x1b[0m: PR: \x1b[33mhttps://github.com/o/r/pull/1\x1b[0m #1: \x1b[1;32mdone\x1b[0m #2: \x1b[1;33mblocked\x1b[0m #3: \x1b[1;31mtimeout\x1b[0m #4: \x1b[1;31mred\x1b[0m\n"
 	if got != want {
 		t.Errorf("colorize = %q, want %q", got, want)
 	}
 }
 
-func TestColorizerUsesDeterministicSlotColors(t *testing.T) {
-	for slot, code := range []string{"36", "35", "31", "36"} {
-		got := newColorizer(true, slot).colorize("12:34:56  [sunny_naruto] running codex\n")
-		want := "\x1b[2m12:34:56\x1b[0m  \x1b[" + code + "m[sunny_naruto]\x1b[0m running codex\n"
-		if got != want {
-			t.Errorf("slot %d = %q, want %q", slot, got, want)
-		}
+func TestColorizerUsesDeterministicNameColors(t *testing.T) {
+	name := "sunny_naruto"
+	got := newColorizer(true, name).colorize("12:34:56  [" + name + "] running codex\n")
+	want := newColorizer(true, name).colorize("12:34:56  [" + name + "] running codex\n")
+	if got != want || !strings.Contains(got, "\x1b[") {
+		t.Errorf("colorize(%q) = %q, want deterministic colored output", name, got)
 	}
-}
-
-func TestClaimBatchAssignsStableSlots(t *testing.T) {
-	ghc := &fakeGH{issues: []gh.Issue{{Number: 1}, {Number: 2}}}
-	store := newFakeStore()
-	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", Width: 2, GH: ghc, Store: store}
-
-	started := make(chan struct{}, 2)
-	release := make(chan struct{})
-	slotsByIssue := map[int]int{}
-	var mu sync.Mutex
-	w.RunJob = func(_ context.Context, issue, slot int) (string, error) {
-		mu.Lock()
-		slotsByIssue[issue] = slot
-		mu.Unlock()
-		started <- struct{}{}
-		<-release
-		return "", nil
-	}
-
-	slots := make(chan int, 2)
-	slots <- 0
-	slots <- 1
-	var wg sync.WaitGroup
-	if err := w.claimBatch(context.Background(), slots, &wg, context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	<-started
-	<-started
-
-	mu.Lock()
-	got := map[int]int{1: slotsByIssue[1], 2: slotsByIssue[2]}
-	mu.Unlock()
-	if got[1] != 0 || got[2] != 1 {
-		t.Errorf("slots = %v, want issue 1 in slot 0 and issue 2 in slot 1", got)
-	}
-
-	close(release)
-	wg.Wait()
 }
 
 func TestColorizerDisablesColorWhenNotInteractive(t *testing.T) {
 	line := "12:34:56  [sunny_naruto] done\n"
-	if got := newColorizer(false, 0).colorize(line); got != line {
+	if got := newColorizer(false, "sunny_naruto").colorize(line); got != line {
 		t.Errorf("colorize = %q, want unmodified line %q", got, line)
 	}
 	if colorEnabled(false) {
@@ -478,10 +438,10 @@ func TestColorEnabledRespectsNOColor(t *testing.T) {
 // runJobSync runs runJob synchronously so the test does not need goroutine synchronization.
 func (w *Watcher) runJobSync(t *testing.T, issue int) {
 	t.Helper()
-	slots := make(chan int, 1)
+	slots := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	w.runJob(context.Background(), gh.Issue{Number: issue}, 0, slots, &wg)
+	w.runJob(context.Background(), gh.Issue{Number: issue}, slots, &wg)
 	wg.Wait()
 }
 
