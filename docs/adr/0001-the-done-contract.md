@@ -8,7 +8,7 @@ romp's only value is that a green PR actually solves the issue. Two things threa
 
 ## Decision
 
-A job is done only when an explicit verification command passes, run by romp itself after the agent exits — the agent's own claim is never trusted. The command is a per-repo contract committed in `romp.toml` under `[verify]`, and romp refuses to run without it rather than guessing. `romp init` seeds the command by detecting the language once (`go.mod` → `go test ./... -count=1`, `Cargo.toml` → `cargo test`, `package.json` → `npm test`, `pyproject.toml` → `pytest`, `Makefile` → `make test`), and the human confirms it before committing.
+A job is done only when an explicit verification command passes, run by romp itself after the agent exits — the agent's own claim is never trusted. The command is a per-repo contract committed in `romp.toml` under `[verify]`, and romp refuses to run without it rather than guessing. `romp init` seeds the command by detecting the language once (`go.mod` → `go test ./... -count=1`, `Cargo.toml` → `cargo test`, `Makefile` → `make test`, `package.json` → `npm test`, `pyproject.toml` → `pytest`), and the human confirms it before committing. The `Makefile` check comes before `package.json` so repositories with both files use their explicit project test target.
 
 ## Consequences
 

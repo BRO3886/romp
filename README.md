@@ -137,14 +137,16 @@ comment — a plausible PR solving the wrong problem costs more than no PR.
 | **done** | PR opened, trigger label removed. |
 | **blocked** | No PR. `romp:blocked` label + gap comment. |
 | **no-changes** | Agent exited clean with no commits. No PR. |
-| **red** | Verify failed on independent re-run. No PR, worktree kept. |
-| **timeout** | Exceeded `timeout`. Killed, worktree kept. |
+| **red** | Verify failed on independent re-run. No PR, trigger label removed, worktree kept. |
+| **timeout** | Exceeded `timeout`. Killed, trigger label removed, worktree kept. |
 | **cancelled** | You cancelled. Worktree, branch, and both labels removed. |
-| **error** | git/gh failure (incl. rate limits outliving retries). Re-claimed later. |
+| **error** | git/gh failure (incl. rate limits outliving retries). Trigger label removed, worktree kept. |
 
 On claim, romp adds the claim label and assigns the authenticated user; both
-clear when the job ends. `cancel` is an abandon: it removes the trigger label
-too, so re-label the issue to retry it. `gc` reclaims leftover worktrees.
+clear when the job ends. Failed jobs also remove the trigger label so the same
+failure is not repeated on the next poll. `cancel` is an abandon: it removes
+the trigger label too, so re-label the issue to retry it. `gc` reclaims leftover
+worktrees.
 
 ## Safety
 

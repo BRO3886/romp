@@ -332,6 +332,17 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+func TestDetectPrefersMakefileOverPackageJSON(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "Makefile"), "")
+	write(t, filepath.Join(root, "package.json"), "{}")
+
+	build, test, lang := Detect(root)
+	if build != "" || test != "make test" || lang != "make" {
+		t.Errorf("Detect = (%q, %q, %q), want (empty, %q, %q)", build, test, lang, "make test", "make")
+	}
+}
+
 func TestDetectUnknown(t *testing.T) {
 	build, test, lang := Detect(t.TempDir())
 	if build != "" || test != "" || lang != "" {
