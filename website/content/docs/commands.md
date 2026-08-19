@@ -31,7 +31,7 @@ romp run -i 17
 | --- | --- |
 | `-i, --issue` | Issue number to run (required). |
 | `--verify` | Command that must pass in the worktree before a PR opens (overrides config). |
-| `--harness` | Harness to use (`claude` or `codex`). |
+| `--harness` | Harness to use (`claude`, `codex`, or `opencode`). |
 | `--model` | Model for the harness. |
 | `--effort` | Reasoning effort for the harness. |
 | `--width` | Concurrent jobs (ignored by `run`). |
@@ -110,7 +110,7 @@ Checks four things and prints a table:
 
 - `git` — installed and 2.35+
 - `gh` — installed and authenticated
-- `harness` — at least one of `claude` or `codex` is healthy
+- `harness` — at least one of `claude`, `codex`, or `opencode` is healthy
 - `config` — `romp.toml` loads and a verify command is present
 
 ## `romp init`

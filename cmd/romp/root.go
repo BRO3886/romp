@@ -75,7 +75,7 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 	}
 	cmd.Flags().IntVarP(&issue, "issue", "i", 0, "issue number to run")
 	cmd.Flags().StringVar(&verify, "verify", "", "command that must pass in the worktree before a PR opens (overrides config)")
-	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to use (claude or codex)")
+	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to use (claude, codex, or opencode)")
 	cmd.Flags().StringVar(&model, "model", "", "model for the harness")
 	cmd.Flags().StringVar(&effort, "effort", "", "reasoning effort for the harness")
 	cmd.Flags().IntVar(&width, "width", 0, "concurrent jobs (ignored by run)")
@@ -207,8 +207,10 @@ func buildHarness(name string) (harness.Harness, error) {
 		return harness.Claude{}, nil
 	case "codex":
 		return harness.Codex{}, nil
+	case "opencode":
+		return harness.OpenCode{}, nil
 	default:
-		return nil, fmt.Errorf("unknown harness %q (want claude or codex)", name)
+		return nil, fmt.Errorf("unknown harness %q (want claude, codex, or opencode)", name)
 	}
 }
 

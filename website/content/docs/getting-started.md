@@ -8,7 +8,7 @@ weight: 2
 
 - `git` 2.35+ — the first release with reliable worktree support
 - `gh` — authenticated via `gh auth login`
-- `codex` or `claude`, logged in
+- `codex`, `claude`, or `opencode`, logged in
 - Go 1.25+ to build, or a release binary
 
 ## Install

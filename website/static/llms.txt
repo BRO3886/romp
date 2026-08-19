@@ -4,7 +4,7 @@
 
 ## Product summary
 
-- Runs Claude Code or Codex locally through the user's existing login.
+- Runs Claude Code, Codex, or OpenCode locally through the user's existing login.
 - Uses GitHub and the authenticated `gh` CLI as the source of truth.
 - Gives every job a goal contract: GATE, DONE, PROVE IT, and CONSTRAINTS.
 - Never merges pull requests or deploys production.

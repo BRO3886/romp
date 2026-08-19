@@ -24,10 +24,10 @@ protected = ["testdata/**", "internal/testutil/**", ".github/**"]
 ignore    = ["vendor/**", "node_modules/**"]
 
 [harness]
-default   = "codex"              # claude | codex
+default   = "codex"              # claude | codex | opencode
 model     = ""
-effort    = "high"               # claude: low..max; codex: + none, minimal, ultra
-max_turns = 30                   # claude only
+effort    = "high"               # claude: low..max; codex: + none, minimal, ultra; ignored by opencode
+max_turns = 30                   # claude only; ignored by codex and opencode
 
 [prompt]
 template = ".romp/prompt.md"     # optional
@@ -67,7 +67,7 @@ operator concern, not a team convention.
 | `verify.lint` | — | Optional lint command. |
 | `scope.protected` | — | Paths the agent must not touch. |
 | `scope.ignore` | — | Paths the agent must not read. |
-| `harness.default` | `codex` | `claude` or `codex`. |
+| `harness.default` | `codex` | `claude`, `codex`, or `opencode`. |
 | `harness.model` | — | Specific model, or empty for the harness default. |
 | `harness.effort` | `high` | Reasoning budget (see below). |
 | `harness.max_turns` | — | Turn cap, claude only. |

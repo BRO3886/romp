@@ -64,8 +64,8 @@ machinery to claim, isolate, and verify work.
    `@me`. Concurrent watchers on other machines skip claimed issues.
 3. **Worktree** — each job runs in a fresh `git worktree` branched from the
    default branch. Never the local tree; the base is deterministic.
-4. **Agent** — the goal contract is rendered and handed to the harness (claude
-   or codex).
+4. **Agent** — the goal contract is rendered and handed to the harness (Claude,
+   Codex, or OpenCode).
 5. **Verify** — romp re-runs every `[verify]` command itself. The agent's own
    "tests pass" is never trusted.
 6. **PR or block** — green and scoped means a PR and label removal; an
@@ -78,7 +78,7 @@ romp/
 ├── cmd/romp/          # Cobra commands (init, watch, run, status, ...)
 ├── internal/
 │   ├── config/        # TOML layering, language detection, effort validation
-│   ├── harness/       # claude + codex adapters behind a Run/Name interface
+│   ├── harness/       # Claude, Codex, and OpenCode adapters behind a Run/Name interface
 │   ├── prompt/        # goal-contract template rendering
 │   ├── runner/        # job pipeline: worktree → agent → verify → PR/block
 │   ├── watch/         # poll loop + claim + cancel socket

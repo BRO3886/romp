@@ -102,7 +102,7 @@ func TestLoadRejectsUnknownHarness(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load() = nil error, want unknown harness")
 	}
-	want := `unknown harness "bogus" (want claude or codex)`
+	want := `unknown harness "bogus" (want claude, codex, or opencode)`
 	if err.Error() != want {
 		t.Errorf("err = %q, want %q", err, want)
 	}
@@ -124,6 +124,11 @@ func TestLoadEffortByHarness(t *testing.T) {
 		{
 			name: "shared high on codex",
 			toml: "[harness]\ndefault = \"codex\"\neffort = \"high\"\n",
+			want: "high",
+		},
+		{
+			name: "OpenCode ignores inherited effort",
+			toml: "[harness]\ndefault = \"opencode\"\n",
 			want: "high",
 		},
 		{

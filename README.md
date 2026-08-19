@@ -4,14 +4,14 @@
 
 **Label an issue. Get a pull request.**
 
-`romp` watches a GitHub repo for labelled issues, runs your local coding agent on each in an isolated git worktree, independently re-runs your test commands, and opens a PR. It uses your existing Claude Code or Codex login — no API keys, no cloud runner.
+`romp` watches a GitHub repo for labelled issues, runs your local coding agent on each in an isolated git worktree, independently re-runs your test commands, and opens a PR. It uses your existing Claude Code, Codex, or OpenCode login — no API keys, no cloud runner.
 
 > **Pre-alpha.** Breaking changes expected. Do not point this at a repo you can't afford a bad branch on.
 
 ## Requirements
 
 - `git` 2.35+, `gh` (authenticated via `gh auth login`)
-- `codex` or `claude`, logged in
+- `codex`, `claude`, or `opencode`, logged in
 - Go 1.25+ to build, or a release binary
 
 ## Install
@@ -88,10 +88,10 @@ protected = ["testdata/**", "internal/testutil/**", ".github/**"]
 ignore    = ["vendor/**", "node_modules/**"]
 
 [harness]
-default   = "codex"              # claude | codex
+default   = "codex"              # claude | codex | opencode
 model     = ""
-effort    = "high"               # claude: low..max; codex: + none, minimal, ultra
-max_turns = 30                   # claude only
+effort    = "high"               # claude: low..max; codex: + none, minimal, ultra; ignored by opencode
+max_turns = 30                   # claude only; ignored by codex and opencode
 
 [prompt]
 template = ".romp/prompt.md"     # optional
@@ -147,7 +147,8 @@ too, so re-label the issue to retry it. `gc` reclaims leftover worktrees.
 - Don't run it against a repo with production credentials in the tree.
 - Branch protection on the default branch is strongly recommended.
 - Sandboxing is whatever the harness provides: Codex runs `--sandbox
-  workspace-write`, Claude `--permission-mode bypassPermissions`.
+  workspace-write`, Claude `--permission-mode bypassPermissions`, and OpenCode
+  runs `--dangerously-skip-permissions`.
 
 ## Non-goals
 

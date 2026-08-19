@@ -74,8 +74,10 @@ func TestRunDoctorFailure(t *testing.T) {
 func TestSummarizeHarnesses(t *testing.T) {
 	claudeOK := harnessProbe{name: "claude", detail: "2.1.0"}
 	codexOK := harnessProbe{name: "codex", detail: "0.146.0"}
+	opencodeOK := harnessProbe{name: "opencode", detail: "1.2.0"}
 	claudeBad := harnessProbe{name: "claude", err: fmt.Errorf("claude CLI not found on PATH")}
 	codexBad := harnessProbe{name: "codex", err: fmt.Errorf("codex CLI not found on PATH")}
+	opencodeBad := harnessProbe{name: "opencode", err: fmt.Errorf("opencode CLI not found on PATH")}
 
 	tests := []struct {
 		name    string
@@ -85,23 +87,23 @@ func TestSummarizeHarnesses(t *testing.T) {
 	}{
 		{
 			name:   "both healthy",
-			probes: []harnessProbe{claudeOK, codexOK},
-			want:   "claude 2.1.0; codex 0.146.0",
+			probes: []harnessProbe{claudeOK, codexOK, opencodeOK},
+			want:   "claude 2.1.0; codex 0.146.0; opencode 1.2.0",
 		},
 		{
 			name:   "only claude",
-			probes: []harnessProbe{claudeOK, codexBad},
-			want:   "claude 2.1.0 (codex: codex CLI not found on PATH)",
+			probes: []harnessProbe{claudeOK, codexBad, opencodeBad},
+			want:   "claude 2.1.0 (codex: codex CLI not found on PATH; opencode: opencode CLI not found on PATH)",
 		},
 		{
 			name:   "only codex",
-			probes: []harnessProbe{claudeBad, codexOK},
-			want:   "codex 0.146.0 (claude: claude CLI not found on PATH)",
+			probes: []harnessProbe{claudeBad, codexOK, opencodeBad},
+			want:   "codex 0.146.0 (claude: claude CLI not found on PATH; opencode: opencode CLI not found on PATH)",
 		},
 		{
 			name:    "neither",
-			probes:  []harnessProbe{claudeBad, codexBad},
-			wantErr: "need claude or codex: claude: claude CLI not found on PATH; codex: codex CLI not found on PATH",
+			probes:  []harnessProbe{claudeBad, codexBad, opencodeBad},
+			wantErr: "need claude, codex, or opencode: claude: claude CLI not found on PATH; codex: codex CLI not found on PATH; opencode: opencode CLI not found on PATH",
 		},
 	}
 	for _, tt := range tests {

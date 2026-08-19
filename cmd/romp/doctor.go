@@ -101,6 +101,7 @@ func checkHarness(ctx context.Context) (string, error) {
 	return summarizeHarnesses([]harnessProbe{
 		probeHarness(ctx, harness.Claude{}),
 		probeHarness(ctx, harness.Codex{}),
+		probeHarness(ctx, harness.OpenCode{}),
 	})
 }
 
@@ -128,7 +129,7 @@ func summarizeHarnesses(probes []harnessProbe) (string, error) {
 		ok = append(ok, p.name+" "+p.detail)
 	}
 	if len(ok) == 0 {
-		return "", fmt.Errorf("need claude or codex: %s", strings.Join(bad, "; "))
+		return "", fmt.Errorf("need claude, codex, or opencode: %s", strings.Join(bad, "; "))
 	}
 	if len(bad) == 0 {
 		return strings.Join(ok, "; "), nil

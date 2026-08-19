@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,6 +90,13 @@ func TestRunCmdVerifyDefaults(t *testing.T) {
 	}
 }
 
+func TestRunCmdHelpListsOpenCode(t *testing.T) {
+	cmd := newRunCmd(nil, nil)
+	if !strings.Contains(cmd.UsageString(), "claude, codex, or opencode") {
+		t.Errorf("run help does not list OpenCode:\n%s", cmd.UsageString())
+	}
+}
+
 func TestVerifyCommands(t *testing.T) {
 	cfg := &config.Config{
 		Verify: config.Verify{Build: "go build ./...", Test: "go test ./... -count=1", Lint: "golangci-lint run"},
@@ -128,6 +136,12 @@ func TestBuildHarness(t *testing.T) {
 		t.Errorf("buildHarness(codex) = %v", err)
 	} else if h.Name() != "codex" {
 		t.Errorf("buildHarness(codex).Name() = %q, want codex", h.Name())
+	}
+	h, err = buildHarness("opencode")
+	if err != nil {
+		t.Errorf("buildHarness(opencode) = %v", err)
+	} else if h.Name() != "opencode" {
+		t.Errorf("buildHarness(opencode).Name() = %q, want opencode", h.Name())
 	}
 	if _, err := buildHarness("bogus"); err == nil {
 		t.Error("buildHarness(bogus) = nil error, want unknown-harness")
