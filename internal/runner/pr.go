@@ -117,10 +117,13 @@ func withCloses(body string, num int) string {
 	return body + "\n\nCloses #" + strconv.Itoa(num)
 }
 
-func prBody(body string, num int) string {
-	body = withCloses(strings.TrimSpace(body), num)
+func withAttribution(body string) string {
 	if strings.Contains(body, prAttribution) {
 		return body
 	}
 	return body + "\n\n" + prAttribution
+}
+
+func prBody(body string, num int) string {
+	return withAttribution(withCloses(strings.TrimSpace(body), num))
 }

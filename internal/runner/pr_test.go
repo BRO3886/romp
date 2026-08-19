@@ -44,6 +44,16 @@ func TestWithCloses(t *testing.T) {
 	}
 }
 
+func TestWithAttribution(t *testing.T) {
+	const footer = "Created with [romp](https://romp.sidv.dev) 🦦"
+	if got := withAttribution("a body"); got != "a body\n\n"+footer {
+		t.Errorf("withAttribution = %q, want attribution footer", got)
+	}
+	if got := withAttribution("a body\n\n" + footer); got != "a body\n\n"+footer {
+		t.Errorf("withAttribution duplicated footer: %q", got)
+	}
+}
+
 func TestPRBody(t *testing.T) {
 	const footer = "Created with [romp](https://romp.sidv.dev) 🦦"
 	tests := []struct {
