@@ -69,7 +69,7 @@ operator concern, not a team convention.
 | `scope.ignore` | — | Paths the agent must not read. |
 | `harness.default` | `codex` | `claude`, `codex`, or `opencode`. |
 | `harness.model` | — | Specific model, or empty for the harness default. |
-| `harness.effort` | `high` | Reasoning budget (see below). |
+| `harness.effort` | `high` | Reasoning effort for Claude/Codex; model-specific OpenCode variant (see below). |
 | `harness.max_turns` | — | Turn cap, claude only. |
 | `prompt.template` | — | Custom goal-contract template. |
 | `prompt.brief` | — | File the agent reads first (e.g. `.romp/DESIGN.md`). |
@@ -87,7 +87,7 @@ of `[verify]` `build`, `test`, or `lint` must be non-empty. romp re-runs every
 non-empty verify command itself after the agent exits, in order, and opens the
 PR only when all of them pass.
 
-## Harness effort
+## Harness effort and variants
 
 The legal `effort` values depend on the harness. Shared names mean the same
 thing and pass through unchanged. Claude and Codex values are validated at

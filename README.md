@@ -61,7 +61,8 @@ Ctrl-C drains; twice kills.
 | `gc` | Remove stale worktrees and old history. Dry-run unless `--apply`. |
 | `doctor` | Check git, gh auth, harness, config. |
 
-`run` takes `--verify`, `--harness`, `--model`, `--effort` to override config.
+`run` takes `--verify`, `--harness`, `--model`, and `--effort` to override config.
+For OpenCode, `--effort` selects the model-specific `--variant` value.
 
 `cancel` talks to the live watcher over a socket — no watcher, nothing to
 cancel. `logs` reads log files directly and works either way.

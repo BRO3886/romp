@@ -77,7 +77,7 @@ machinery to claim, isolate, and verify work.
 romp/
 ├── cmd/romp/          # Cobra commands (init, watch, run, status, ...)
 ├── internal/
-│   ├── config/        # TOML layering, language detection, effort validation
+│   ├── config/        # TOML layering, language detection, effort/variant handling
 │   ├── harness/       # Claude, Codex, and OpenCode adapters behind a Run/Name interface
 │   ├── prompt/        # goal-contract template rendering
 │   ├── runner/        # job pipeline: worktree → agent → verify → PR/block

@@ -82,7 +82,8 @@ type Overrides struct {
 // Load merges, in order of increasing precedence, the built-in defaults, the
 // user config, romp.toml, .romp/local.toml, and o. A missing file is fine; a
 // malformed one is an error. After the merge it rejects an unknown harness
-// name or an effort that harness does not accept.
+// name or an unsupported effort value for a harness with a stable effort set.
+// OpenCode variants remain model-specific and pass through unchanged.
 func Load(root string, o Overrides) (*Config, error) {
 	cfg := Defaults()
 

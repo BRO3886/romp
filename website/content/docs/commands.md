@@ -33,7 +33,7 @@ romp run -i 17
 | `--verify` | Command that must pass in the worktree before a PR opens (overrides config). |
 | `--harness` | Harness to use (`claude`, `codex`, or `opencode`). |
 | `--model` | Model for the harness. |
-| `--effort` | Reasoning effort for the harness. |
+| `--effort` | Reasoning effort for Claude/Codex; model-specific variant for OpenCode. |
 | `--width` | Concurrent jobs (ignored by `run`). |
 
 `run` is a pure foreground bypass: no job row, no dedupe, absent from `status`,
