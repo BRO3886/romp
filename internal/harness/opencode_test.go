@@ -10,7 +10,7 @@ import (
 )
 
 func TestOpenCodeArgs(t *testing.T) {
-	base := []string{"run", "--dangerously-skip-permissions"}
+	base := []string{"run", "--auto"}
 
 	plain := opencodeArgs(Request{Prompt: "rendered prompt"}, nil)
 	want := append(append([]string{}, base...), "rendered prompt")
@@ -45,7 +45,7 @@ func TestOpenCodeRunCreatesResultArtifact(t *testing.T) {
 
 	writeOpenCodeScript(t, bin, `
 [ "$1" = run ] || exit 11
-[ "$2" = --dangerously-skip-permissions ] || exit 12
+[ "$2" = --auto ] || exit 12
 [ "$3" = --model ] || exit 13
 [ "$4" = openai/gpt-5 ] || exit 14
 [ "$5" = "rendered prompt" ] || exit 15

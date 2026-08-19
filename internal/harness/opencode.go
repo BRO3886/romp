@@ -36,7 +36,7 @@ func (o OpenCode) Run(ctx context.Context, req Request) (Result, error) {
 }
 
 func opencodeArgs(req Request, extra []string) []string {
-	args := []string{"run", "--dangerously-skip-permissions"}
+	args := []string{"run", "--auto"}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
