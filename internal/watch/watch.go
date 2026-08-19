@@ -296,7 +296,8 @@ func (w *Watcher) handleConn(conn net.Conn) {
 func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer func() { slots <- struct{}{} }()
-	defer w.release(ctx, iss)
+	unassign := true
+	defer func() { w.release(ctx, iss, unassign) }()
 
 	runCtx, cancel := context.WithCancel(ctx)
 	w.register(iss.Number, cancel)
@@ -304,6 +305,7 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{
 
 	prURL, err := w.RunJob(runCtx, iss.Number)
 	cancelled := w.wasCancelled(iss.Number)
+	unassign = cancelled || err != nil
 	outcome := classifyOutcome(err)
 	if cancelled {
 		outcome = "cancelled"
@@ -376,16 +378,17 @@ func detailOf(err error) string {
 	return err.Error()
 }
 
-// release drops the claim label, the assignee, and the in-flight row on
-// terminal state, using a context that survives cancellation so a
-// force-killed job still unclaims.
-func (w *Watcher) release(ctx context.Context, iss gh.Issue) {
+// release drops the claim label and in-flight row on every terminal state.
+// It removes the assignee unless the job opened a pull request successfully.
+func (w *Watcher) release(ctx context.Context, iss gh.Issue, unassign bool) {
 	ctx = context.WithoutCancel(ctx)
 	if err := w.GH.RemoveLabel(ctx, w.Repo, iss.Number, w.Claim); err != nil {
 		w.logf("#%d: removing claim label: %v", iss.Number, err)
 	}
-	if err := w.GH.Unassign(ctx, w.Repo, iss.Number); err != nil {
-		w.logf("#%d: unassigning: %v", iss.Number, err)
+	if unassign {
+		if err := w.GH.Unassign(ctx, w.Repo, iss.Number); err != nil {
+			w.logf("#%d: unassigning: %v", iss.Number, err)
+		}
 	}
 	if err := w.Store.Delete(ctx, w.Repo, iss.Number); err != nil {
 		w.logf("#%d: deleting job row: %v", iss.Number, err)
