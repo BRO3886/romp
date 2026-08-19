@@ -151,7 +151,7 @@ func TestCancelViaSocketRecordsCancelledAndCleansUp(t *testing.T) {
 		close(cleaned)
 		return nil
 	}
-	w.RunJob = func(ctx context.Context, issue int) (string, error) {
+	w.RunJob = func(ctx context.Context, issue int, _ int) (string, error) {
 		<-ctx.Done()
 		return "", ctx.Err()
 	}
@@ -163,11 +163,10 @@ func TestCancelViaSocketRecordsCancelledAndCleansUp(t *testing.T) {
 	defer ln.Close()
 	go w.serve(ln)
 
-	slots := make(chan struct{}, 1)
-	slots <- struct{}{}
+	slots := make(chan int, 1)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go w.runJob(context.Background(), gh.Issue{Number: 7}, slots, &wg)
+	go w.runJob(context.Background(), gh.Issue{Number: 7}, 0, slots, &wg)
 	waitRegistered(t, w, 7)
 
 	if err := CancelJob(w.Repo, 7); err != nil {
@@ -204,7 +203,7 @@ func TestCancelUnknownIssueReportsError(t *testing.T) {
 	ghc := &fakeGH{}
 	store := newFakeStore()
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
-	w.RunJob = func(context.Context, int) (string, error) { return "", nil }
+	w.RunJob = func(context.Context, int, int) (string, error) { return "", nil }
 
 	ln, err := listen(w.Repo)
 	if err != nil {
