@@ -9,7 +9,7 @@ One labelled issue worked from claim to terminal state.
 _Avoid_: task, run
 
 **Outcome**:
-The terminal state of a job: done, blocked, no-changes, red, timeout, cancelled, error.
+The terminal state of a job: done, blocked, no-changes, red, timeout, cancelled, interrupted, error.
 `rate-limited` names the in-job GitHub retry, not a produced outcome.
 _Avoid_: status, result
 
@@ -20,6 +20,10 @@ _Avoid_: failed, rejected
 **Cancel**:
 A user-initiated action that kills a running job, records the `cancelled` outcome, removes the claim and trigger labels, and cleans up the job's worktree and branch. Cancelling abandons the issue: it stays label-free until a human re-labels it.
 _Avoid_: kill, stop, abort
+
+**Interrupted**:
+An outcome recorded after the process that owned a job exits without completing cancellation. The worktree, branch, and trigger label remain available for inspection or retry.
+_Avoid_: cancelled, crashed, error
 
 ## Agent interface
 
@@ -67,9 +71,13 @@ _Avoid_: in-progress label, status label
 
 ## Runtime
 
+**Server**:
+The open-source `rompd` backend that owns persistence, logs, GitHub operations, scheduling, recovery, and the client protocol.
+_Avoid_: service, backend implementation, API process
+
 **Daemon**:
-The single machine-wide process that watches every registered repo and owns every in-flight job.
-_Avoid_: supervisor, watcher process, instance
+The server running persistently as a launchd user agent for the login session.
+_Avoid_: server, supervisor, watcher process, instance
 
 **Registry**:
 The set of GitHub origins the daemon is watching. Each origin is bound to exactly one local path.
@@ -84,7 +92,7 @@ Removing an origin from the registry. In-flight jobs drain; no new claims start.
 _Avoid_: stop, remove, disable
 
 **Client**:
-A process that talks to the daemon over the socket. The CLI, a menu bar app, and a desktop app are all clients. They do not read the job table themselves.
+A process that talks to the server over the socket. The CLI, menu-bar app, and future desktop interfaces are clients. They do not read the job table or logs themselves.
 _Avoid_: frontend, UI, instance
 
 ## Observability
