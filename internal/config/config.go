@@ -23,6 +23,10 @@ type Config struct {
 	Verify       Verify  `toml:"verify"`
 	Scope        Scope   `toml:"scope"`
 	Harness      Harness `toml:"harness"`
+	// HarnessEffortSource records the config file that supplied the effective
+	// harness effort. It is empty for the built-in default and command-line
+	// overrides.
+	HarnessEffortSource string `toml:"-"`
 	Prompt       Prompt  `toml:"prompt"`
 }
 
@@ -45,9 +49,6 @@ type Harness struct {
 	Model    string `toml:"model"`
 	Effort   string `toml:"effort"`
 	MaxTurns int    `toml:"max_turns"`
-	// EffortSource records the config file that supplied the effective effort.
-	// It is empty for the built-in default and command-line overrides.
-	EffortSource string `toml:"-"`
 }
 
 // Prompt points at optional custom goal-contract files.
@@ -103,7 +104,7 @@ func Load(root string, o Overrides) (*Config, error) {
 	}
 	if o.Effort != "" {
 		cfg.Harness.Effort = o.Effort
-		cfg.Harness.EffortSource = ""
+		cfg.HarnessEffortSource = ""
 	}
 	if o.Width != 0 {
 		cfg.Width = o.Width
@@ -131,7 +132,7 @@ func apply(dst *Config, path string, global bool) error {
 	}
 	overlay(dst, &src, global)
 	if src.Harness.Effort != "" {
-		dst.Harness.EffortSource = path
+		dst.HarnessEffortSource = path
 	}
 	return nil
 }

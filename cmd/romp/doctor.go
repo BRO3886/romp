@@ -142,11 +142,10 @@ func checkConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cfg, err := config.Load(root, config.Overrides{})
+	cfg, err := loadConfig(root, config.Overrides{}, os.Stderr)
 	if err != nil {
 		return "", err
 	}
-	warnOpenCodeVariant(os.Stderr, cfg)
 	verify, err := verifyCommands(cfg, "", false)
 	if err != nil {
 		return "", err

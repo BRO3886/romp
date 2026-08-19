@@ -104,16 +104,15 @@ func TestWarnOpenCodeVariant(t *testing.T) {
 		Default:      "opencode",
 		Model:        "openai/gpt-5",
 		Effort:       "high",
-		EffortSource: "/repo/romp.toml",
-	}})
+	}, HarnessEffortSource: "/repo/romp.toml"})
 	if got := out.String(); !strings.Contains(got, `OpenCode variant "high" may not be supported by openai/gpt-5`) {
 		t.Fatalf("warning = %q", got)
 	}
 
 	out.Reset()
 	warnOpenCodeVariant(&out, &config.Config{Harness: config.Harness{
-		Default: "codex", Effort: "high", EffortSource: "/repo/romp.toml",
-	}})
+		Default: "codex", Effort: "high",
+	}, HarnessEffortSource: "/repo/romp.toml"})
 	if out.Len() != 0 {
 		t.Fatalf("non-OpenCode warning = %q, want empty", out.String())
 	}

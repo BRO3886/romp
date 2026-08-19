@@ -36,11 +36,10 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := config.Load(root, config.Overrides{})
+	cfg, err := loadConfig(root, config.Overrides{}, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
-	warnOpenCodeVariant(cmd.ErrOrStderr(), cfg)
 	verify, err := verifyCommands(cfg, "", false)
 	if err != nil {
 		return err

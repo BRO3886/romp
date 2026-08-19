@@ -55,8 +55,8 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.Harness.Effort != "max" {
 		t.Errorf("Harness.Effort = %q, want max (local.toml)", cfg.Harness.Effort)
 	}
-	if cfg.Harness.EffortSource != filepath.Join(root, ".romp", "local.toml") {
-		t.Errorf("Harness.EffortSource = %q, want local.toml", cfg.Harness.EffortSource)
+	if cfg.HarnessEffortSource != filepath.Join(root, ".romp", "local.toml") {
+		t.Errorf("HarnessEffortSource = %q, want local.toml", cfg.HarnessEffortSource)
 	}
 	if cfg.Harness.Default != "codex" {
 		t.Errorf("Harness.Default = %q, want codex (default)", cfg.Harness.Default)
@@ -81,8 +81,8 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.Harness.Effort != "low" {
 		t.Errorf("Harness.Effort = %q, want low (flag wins)", cfg.Harness.Effort)
 	}
-	if cfg.Harness.EffortSource != "" {
-		t.Errorf("Harness.EffortSource = %q, want empty for flag override", cfg.Harness.EffortSource)
+	if cfg.HarnessEffortSource != "" {
+		t.Errorf("HarnessEffortSource = %q, want empty for flag override", cfg.HarnessEffortSource)
 	}
 }
 
@@ -102,8 +102,8 @@ func TestLoadEffortSourcePrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Harness.EffortSource != localConfig {
-		t.Fatalf("EffortSource = %q, want local config", cfg.Harness.EffortSource)
+	if cfg.HarnessEffortSource != localConfig {
+		t.Fatalf("HarnessEffortSource = %q, want local config", cfg.HarnessEffortSource)
 	}
 
 	if err := os.Remove(localConfig); err != nil {
@@ -113,8 +113,8 @@ func TestLoadEffortSourcePrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load without local effort: %v", err)
 	}
-	if cfg.Harness.EffortSource != rompConfig {
-		t.Fatalf("EffortSource = %q, want repo config", cfg.Harness.EffortSource)
+	if cfg.HarnessEffortSource != rompConfig {
+		t.Fatalf("HarnessEffortSource = %q, want repo config", cfg.HarnessEffortSource)
 	}
 
 	if err := os.Remove(rompConfig); err != nil {
@@ -124,8 +124,8 @@ func TestLoadEffortSourcePrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load with global effort: %v", err)
 	}
-	if cfg.Harness.EffortSource != userConfig {
-		t.Fatalf("EffortSource = %q, want global config", cfg.Harness.EffortSource)
+	if cfg.HarnessEffortSource != userConfig {
+		t.Fatalf("HarnessEffortSource = %q, want global config", cfg.HarnessEffortSource)
 	}
 }
 
