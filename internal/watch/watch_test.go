@@ -151,7 +151,11 @@ func TestClaimBatchDispatchesUnclaimedOnly(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	if err := w.claimBatch(context.Background(), make(chan struct{}, 10), &wg, context.Background()); err != nil {
+	slots := make(chan struct{}, 10)
+	for slot := 0; slot < cap(slots); slot++ {
+		slots <- struct{}{}
+	}
+	if err := w.claimBatch(context.Background(), slots, &wg, context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	jobWG.Wait()
@@ -192,7 +196,11 @@ func TestClaimBatchReconcilesOpenPR(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	if err := w.claimBatch(context.Background(), make(chan struct{}, 10), &wg, context.Background()); err != nil {
+	slots := make(chan struct{}, 10)
+	for slot := 0; slot < cap(slots); slot++ {
+		slots <- struct{}{}
+	}
+	if err := w.claimBatch(context.Background(), slots, &wg, context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	wg.Wait()
@@ -223,7 +231,9 @@ func TestClaimBatchStopsAtWidth(t *testing.T) {
 	w.RunJob = func(context.Context, int) (string, error) { return "", nil }
 
 	var wg sync.WaitGroup
-	if err := w.claimBatch(context.Background(), make(chan struct{}, 1), &wg, context.Background()); err != nil {
+	slots := make(chan struct{}, 1)
+	slots <- struct{}{}
+	if err := w.claimBatch(context.Background(), slots, &wg, context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -333,7 +343,9 @@ func TestRunJobLogsTimeout(t *testing.T) {
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
 	var logMsg string
 	w.Logf = func(format string, a ...any) { logMsg = fmt.Sprintf(format, a...) }
-	w.RunJob = func(context.Context, int) (string, error) { return "", fmt.Errorf("%w: killed", runner.ErrTimeout) }
+	w.RunJob = func(context.Context, int) (string, error) {
+		return "", fmt.Errorf("%w: killed", runner.ErrTimeout)
+	}
 
 	w.runJobSync(t, 7)
 
@@ -388,12 +400,45 @@ func TestRunJobRecordsBlockedOutcome(t *testing.T) {
 	}
 }
 
-// runJobSync runs runJob synchronously with a pre-acquired slot so the test
-// does not need goroutine synchronization.
+func TestColorizerMapsWatchTokens(t *testing.T) {
+	c := newColorizer(true, "sunny_naruto")
+	got := c.colorize("12:34:56  [sunny_naruto] warning: PR: https://github.com/o/r/pull/1 #1: done #2: blocked #3: timeout #4: red\n")
+	want := "\x1b[2m12:34:56\x1b[0m  \x1b[36m[sunny_naruto]\x1b[0m \x1b[33mwarning\x1b[0m: PR: \x1b[33mhttps://github.com/o/r/pull/1\x1b[0m #1: \x1b[1;32mdone\x1b[0m #2: \x1b[1;33mblocked\x1b[0m #3: \x1b[1;31mtimeout\x1b[0m #4: \x1b[1;31mred\x1b[0m\n"
+	if got != want {
+		t.Errorf("colorize = %q, want %q", got, want)
+	}
+}
+
+func TestColorizerUsesDeterministicNameColors(t *testing.T) {
+	name := "sunny_naruto"
+	got := newColorizer(true, name).colorize("12:34:56  [" + name + "] running codex\n")
+	want := newColorizer(true, name).colorize("12:34:56  [" + name + "] running codex\n")
+	if got != want || !strings.Contains(got, "\x1b[") {
+		t.Errorf("colorize(%q) = %q, want deterministic colored output", name, got)
+	}
+}
+
+func TestColorizerDisablesColorWhenNotInteractive(t *testing.T) {
+	line := "12:34:56  [sunny_naruto] done\n"
+	if got := newColorizer(false, "sunny_naruto").colorize(line); got != line {
+		t.Errorf("colorize = %q, want unmodified line %q", got, line)
+	}
+	if colorEnabled(false) {
+		t.Fatal("colorEnabled = true, want false for non-interactive stderr")
+	}
+}
+
+func TestColorEnabledRespectsNOColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	if colorEnabled(true) {
+		t.Fatal("colorEnabled = true, want false when NO_COLOR is set")
+	}
+}
+
+// runJobSync runs runJob synchronously so the test does not need goroutine synchronization.
 func (w *Watcher) runJobSync(t *testing.T, issue int) {
 	t.Helper()
 	slots := make(chan struct{}, 1)
-	slots <- struct{}{}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	w.runJob(context.Background(), gh.Issue{Number: issue}, slots, &wg)

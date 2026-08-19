@@ -86,9 +86,10 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 				return "", err
 			}
 			r.Codename = jobName
-			r.Stderr = io.MultiWriter(os.Stderr, f)
+			r.Stderr = io.MultiWriter(watch.NewColorWriter(os.Stderr, jobName), f)
 			return r.Run(ctx, issue)
 		},
+		Stderr: watch.NewColorWriter(os.Stderr, ""),
 		CleanJob: func(ctx context.Context, issue int) error {
 			cache, err := os.UserCacheDir()
 			if err != nil {

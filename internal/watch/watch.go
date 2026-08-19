@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -56,6 +57,7 @@ type Watcher struct {
 	// not need git access.
 	CleanJob func(ctx context.Context, issue int) error
 	Logf     func(format string, a ...any)
+	Stderr   io.Writer
 
 	mu        sync.Mutex
 	cancels   map[int]context.CancelFunc
@@ -68,7 +70,11 @@ func (w *Watcher) logf(format string, a ...any) {
 		w.Logf("%s", msg)
 		return
 	}
-	fmt.Fprintln(os.Stderr, msg)
+	stderr := w.Stderr
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+	fmt.Fprintln(stderr, msg)
 }
 
 // Run clears stale in-flight rows, then polls and dispatches until the first
@@ -91,6 +97,9 @@ func (w *Watcher) Run(ctx context.Context) error {
 	defer cancelAll()
 
 	slots := make(chan struct{}, w.Width)
+	for i := 0; i < w.Width; i++ {
+		slots <- struct{}{}
+	}
 	var wg sync.WaitGroup
 
 	w.logf("watching label %q every %s (width %d)", w.Trigger, w.Interval, w.Width)
@@ -169,9 +178,9 @@ func (w *Watcher) claimBatch(ctx context.Context, slots chan struct{}, wg *sync.
 			continue
 		}
 		select {
-		case slots <- struct{}{}:
+		case <-slots:
 			if !w.claim(ctx, iss) {
-				<-slots
+				slots <- struct{}{}
 				continue
 			}
 			wg.Add(1)
@@ -284,9 +293,9 @@ func (w *Watcher) handleConn(conn net.Conn) {
 	_ = json.NewEncoder(conn).Encode(CancelResponse{OK: true})
 }
 
-func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan struct{}, wg *sync.WaitGroup) {
+func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer func() { <-slots }()
+	defer func() { slots <- struct{}{} }()
 	defer w.release(ctx, iss)
 
 	runCtx, cancel := context.WithCancel(ctx)

@@ -164,7 +164,6 @@ func TestCancelViaSocketRecordsCancelledAndCleansUp(t *testing.T) {
 	go w.serve(ln)
 
 	slots := make(chan struct{}, 1)
-	slots <- struct{}{}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go w.runJob(context.Background(), gh.Issue{Number: 7}, slots, &wg)
