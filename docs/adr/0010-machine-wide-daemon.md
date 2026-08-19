@@ -1,34 +1,74 @@
-# One machine-wide daemon, one socket, HTTP clients
+# One open-source machine-wide daemon, one protocol, multiple clients
 
 Status: accepted
 
 ## Context
 
-The README and ADR 0009 described one `romp watch` process per repo, each with its own Unix socket and a one-shot JSON cancel verb. That shape cannot enforce a machine-wide limit: each process has its own width semaphore, so N repos at width M become N×M harness processes and the machine OOMs. A supervisor of hidden per-repo children has the same bug. The end state is a login-session runtime that a CLI, a menu bar, and a desktop app can all talk to, without the user owning a watch process.
+The README and ADR 0009 described one `romp watch` process per repo, each with its own Unix socket and a one-shot JSON cancel verb. That shape cannot enforce a machine-wide limit: each process has its own width semaphore, so N repos at width M become N×M harness processes and the machine can run out of memory. A supervisor of hidden per-repo children has the same defect.
 
-launchd does not load an interactive shell, so it does not see Homebrew or `~/.local/bin`. romp finds `git`, `gh`, and the harness with `exec.LookPath` on `PATH`. A doctor run in the terminal will pass on a machine where the daemon then fails with `claude CLI not found`.
+romp also has two intended interfaces. Developers must be able to install and use an open-source CLI without buying another product. People who want automatic setup, notifications, and a native menu-bar workflow can buy a directly distributed macOS app. These interfaces must not grow separate implementations of persistence, scheduling, logs, recovery, or errors.
+
+The resulting boundary is an open-source local server consumed by multiple clients. The CLI and the paid app differ in convenience and presentation, not in backend capability.
+
+launchd does not load an interactive shell, so it does not inherit Homebrew, version-manager, or user-local paths. A doctor run in a terminal can pass on a machine where the daemon later fails with `claude CLI not found`. Installation and runtime health must therefore describe the daemon's environment, not the client's environment.
 
 ## Decision
 
-The daemon is the watcher. One launchd user agent polls every repo in the registry, claims work, and is the parent of every harness child. `romp watch` enrolls the current repo and returns. The CLI, a menu bar, and a desktop app are HTTP clients of one Unix socket at `~/.local/state/romp/romp.sock`. The backend does not import UI.
+### Server and process ownership
 
-`romp daemon install` writes the user-agent plist (`RunAtLoad`, `KeepAlive`) and kickstarts it. The process binds the socket itself. Clients never spawn a detached daemon and never rewrite the plist; if the socket is down they `launchctl kickstart` the existing agent, and if the agent is not installed they error. `romp daemon --foreground` fails if the socket is already owned.
+`rompd` is the open-source backend server. One machine-wide `rompd` process polls every repo in the registry, claims work, owns every harness child, and is the only process that opens `romp.db` or reads and writes job logs. It contains no UI code.
 
-Install resolves `romp`, `git`, `gh`, and the harness with the installing shell's `LookPath`. The plist `Program` is the absolute path to `romp`. `EnvironmentVariables.PATH` is the unique parent directories of those binaries, plus `/usr/bin:/bin` — not a dump of the interactive `PATH`. Re-run install after a binary moves. `romp doctor` must ask the running daemon what *it* can resolve; a CLI-only doctor is not sufficient.
+The CLI and menu-bar app are protocol clients. `watch`, `unwatch`, `rebind`, `status`, `history`, `cancel`, `logs`, `doctor`, `gc`, and foreground `run` behavior go through `rompd`; clients do not contain offline database or file fallbacks. `romp run -i N` remains outside registry polling and label-triggered admission, as decided in ADR 0006, but the server owns its execution.
 
-Admission is macOS memory pressure, not a job count and not free RAM. Claim only when pressure is normal, and at most one new job per poll tick. Warning or critical: stop claiming, do not kill running jobs. No TOML field, no user override. Width still bounds one repo.
+`rompd` runs as a launchd user agent with `RunAtLoad` and `KeepAlive`. Quitting the menu-bar app disconnects that client and does not stop the daemon or its jobs. `romp daemon stop` and the app's explicit **Stop romp** action use one two-phase lifecycle contract: request cancellation through the server, wait until every active job has recorded its `cancelled` outcome and completed the cleanup from ADR 0009, then boot the launchd agent out of the current login session. Exiting `rompd` without booting out the agent is not a stop because `KeepAlive` restarts it. Uninstall is a separate action that removes the plist and canonical daemon binary.
 
-A registry row is one GitHub origin bound to one absolute path. Origin is the identity. Path is required. A second checkout of an origin already in the registry is an error. A vanished path keeps the row; the daemon skips that origin until a client rebinds it. Unwatch removes the origin and stops new claims; in-flight jobs drain.
+An abnormal exit cannot perform cancellation cleanup. On restart, `rompd` moves stale in-flight rows to a new `interrupted` outcome and preserves their worktrees, branches, and trigger labels for inspection or retry. A crash, forced kill, power loss, or machine restart is never reported as a user cancellation.
 
-Live control goes through the socket: watch, unwatch, status, cancel, logs. The wire is HTTP+JSON. `gc`, `doctor`, and `history` are a closed CLI allowlist and may open `romp.db`; they must not write claims. `romp run -i N` stays a foreground bypass (ADR 0006).
+### Distribution and installation
 
-This supersedes ADR 0009. Claim semantics (ADR 0005) and the shared SQLite file (ADR 0008) are unchanged.
+The open-source distribution contains the `romp` CLI and `rompd`. CLI users install it independently and manage the daemon with `romp daemon install`, `start`, `stop`, `restart`, `status`, and `version`.
+
+The directly distributed, notarized macOS app bundles the same open-source `romp` and `rompd` artifacts. First launch installs and starts the daemon without requiring a terminal command. The app also makes its bundled CLI available to app users without overwriting an existing `romp` command. The app may remain proprietary and charge for installation, lifecycle management, notifications, updates, and native UI; the backend and CLI remain usable without it.
+
+Both distributions atomically install one canonical daemon binary at `~/Library/Application Support/romp/bin/rompd`. The launchd plist always points to this stable path, never into an app bundle, Homebrew prefix, Go bin directory, or other client-owned location. Installers refuse accidental downgrades. A newer compatible binary can be staged while jobs run, but daemon restart waits until no jobs are active. An incompatible client reports the version mismatch and requires that client to be updated; it never replaces the daemon with an older build.
+
+Only the open-source daemon installer writes or updates the launchd plist. The app invokes that installer contract instead of implementing a second plist writer.
+
+Install resolves `git`, `gh`, configured harnesses, and the execution environment from the initiating user's login environment, then persists the absolute program paths and effective `PATH` used by the daemon. The plist `Program` is the canonical absolute path to `rompd`. Re-running installation refreshes paths after tools move. `doctor` asks the running daemon what it can resolve and execute; a client-only doctor is insufficient.
+
+### Protocol
+
+Clients communicate with `rompd` through a versioned JSON-RPC 2.0 protocol over one Unix socket at `~/.local/state/romp/romp.sock`. The state directory is mode `0700`, the socket is mode `0600`, and the server rejects peers whose effective user ID differs from its own.
+
+Every connection begins with `initialize`. The request includes the client name, client version, supported protocol range, and capabilities. The response includes the daemon version, selected protocol version, server capabilities, and runtime health. No other request is accepted before initialization.
+
+The protocol covers:
+
+- daemon health, version, shutdown preparation, and restart readiness;
+- registry list, watch, unwatch, and path rebind;
+- active jobs and recent outcomes;
+- foreground run and cancellation;
+- log snapshots and subscriptions;
+- doctor checks; and
+- gc planning and application.
+
+Server notifications publish job changes, log records, registry health, memory-pressure state, and daemon shutdown. JSON Schema in the open-source repository is the protocol source of truth and generates Go and Swift client types. A protocol compatibility test runs every released CLI and app client fixture against the supported daemon versions.
+
+### Registry and scheduling
+
+A registry row is one GitHub origin bound to one absolute path. Origin is the identity. Path is required. A second checkout of an origin already in the registry is an error. A vanished path keeps the row; the daemon reports it unhealthy and skips that origin until a client rebinds it. Unwatch removes the origin and stops new claims; in-flight jobs drain.
+
+Admission uses macOS memory pressure, not a job count or free-RAM estimate. The daemon claims only while pressure is normal and admits at most one new job per global poll tick. Warning or critical pressure stops new claims without killing running jobs. There is no TOML field or user override. Width still bounds concurrent jobs within one repo. The daemon rotates the first repo considered on each tick so a busy repo cannot starve later registry entries.
+
+This supersedes ADR 0009. Claim semantics from ADR 0005 and the shared SQLite file from ADR 0008 remain, except that only `rompd` may access the database and `interrupted` joins the outcome taxonomy.
 
 ## Consequences
 
-- One panic stops every repo. Acceptable because the poll loop is thin, the memory hog is the harness child, and launchd restarts the agent.
-- First-run has one extra command (`romp daemon install`). That is the real service, not a rehearsal for a later plist.
-- A quiet 64GB machine ramps one job per poll tick. That is the cost of no job-count knob.
-- Two readers of `romp.db` exist (the daemon, and the gc/doctor/history allowlist). Adding a command to that list is a decision. The menu bar never opens the db.
-- A harness installed only inside nvm, or moved after install, is invisible until install is re-run. Dumping the full interactive PATH was rejected because those entries rot.
-- The ADR 0009 per-repo cancel socket is an interim on main; the daemon replaces it, it does not sit beside it.
+- The CLI and paid app consume one backend contract. A new interface does not get a second storage or scheduling implementation.
+- App users install one app and receive both the GUI and CLI. CLI-only users retain the complete open-source backend and automation surface.
+- One daemon panic affects every repo. launchd restarts the server, and restart reconciliation records truthful `interrupted` outcomes instead of silently clearing jobs.
+- The menu-bar app can quit without terminating work. Stopping all work is a separate, deliberate action.
+- Two distributions can carry `rompd`, but neither owns the live installation path. Atomic installation, downgrade protection, capability negotiation, and idle restart prevent last-installer-wins behavior.
+- JSON-RPC notifications give the app live state and logs without a separate polling or SSE contract. The cost is maintaining protocol framing, schemas, generated clients, and compatibility fixtures.
+- A harness or tool installed through a version manager can move after installation. The daemon reports the stale absolute path until installation refreshes its environment.
+- The ADR 0009 per-repo cancel socket is an interim implementation on main. The machine-wide protocol replaces it rather than running beside it.
