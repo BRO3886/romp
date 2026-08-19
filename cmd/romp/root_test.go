@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,6 +91,41 @@ func TestRunCmdVerifyDefaults(t *testing.T) {
 	}
 }
 
+func TestRunCmdHelpListsOpenCode(t *testing.T) {
+	cmd := newRunCmd(nil, nil)
+	if !strings.Contains(cmd.UsageString(), "claude, codex, or opencode") {
+		t.Errorf("run help does not list OpenCode:\n%s", cmd.UsageString())
+	}
+}
+
+func TestWarnOpenCodeVariant(t *testing.T) {
+	var out bytes.Buffer
+	warnOpenCodeVariant(&out, &config.Config{Harness: config.Harness{
+		Default:      "opencode",
+		Model:        "openai/gpt-5",
+		Effort:       "high",
+	}, HarnessEffortSource: "/repo/romp.toml"})
+	if got := out.String(); !strings.Contains(got, `OpenCode variant "high" may not be supported by openai/gpt-5`) {
+		t.Fatalf("warning = %q", got)
+	}
+
+	out.Reset()
+	warnOpenCodeVariant(&out, &config.Config{Harness: config.Harness{
+		Default: "codex", Effort: "high",
+	}, HarnessEffortSource: "/repo/romp.toml"})
+	if out.Len() != 0 {
+		t.Fatalf("non-OpenCode warning = %q, want empty", out.String())
+	}
+
+	out.Reset()
+	warnOpenCodeVariant(&out, &config.Config{Harness: config.Harness{
+		Default: "opencode", Effort: "high",
+	}})
+	if out.Len() != 0 {
+		t.Fatalf("default warning = %q, want empty", out.String())
+	}
+}
+
 func TestVerifyCommands(t *testing.T) {
 	cfg := &config.Config{
 		Verify: config.Verify{Build: "go build ./...", Test: "go test ./... -count=1", Lint: "golangci-lint run"},
@@ -128,6 +165,12 @@ func TestBuildHarness(t *testing.T) {
 		t.Errorf("buildHarness(codex) = %v", err)
 	} else if h.Name() != "codex" {
 		t.Errorf("buildHarness(codex).Name() = %q, want codex", h.Name())
+	}
+	h, err = buildHarness("opencode")
+	if err != nil {
+		t.Errorf("buildHarness(opencode) = %v", err)
+	} else if h.Name() != "opencode" {
+		t.Errorf("buildHarness(opencode).Name() = %q, want opencode", h.Name())
 	}
 	if _, err := buildHarness("bogus"); err == nil {
 		t.Error("buildHarness(bogus) = nil error, want unknown-harness")

@@ -55,6 +55,9 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.Harness.Effort != "max" {
 		t.Errorf("Harness.Effort = %q, want max (local.toml)", cfg.Harness.Effort)
 	}
+	if cfg.HarnessEffortSource != filepath.Join(root, ".romp", "local.toml") {
+		t.Errorf("HarnessEffortSource = %q, want local.toml", cfg.HarnessEffortSource)
+	}
 	if cfg.Harness.Default != "codex" {
 		t.Errorf("Harness.Default = %q, want codex (default)", cfg.Harness.Default)
 	}
@@ -77,6 +80,52 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.Harness.Effort != "low" {
 		t.Errorf("Harness.Effort = %q, want low (flag wins)", cfg.Harness.Effort)
+	}
+	if cfg.HarnessEffortSource != "" {
+		t.Errorf("HarnessEffortSource = %q, want empty for flag override", cfg.HarnessEffortSource)
+	}
+}
+
+func TestLoadEffortSourcePrecedence(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", user)
+	userConfig := filepath.Join(user, "romp", "config.toml")
+	write(t, userConfig, "[harness]\neffort = \"low\"\n")
+
+	root := t.TempDir()
+	rompConfig := filepath.Join(root, "romp.toml")
+	write(t, rompConfig, "[harness]\neffort = \"medium\"\n")
+	localConfig := filepath.Join(root, ".romp", "local.toml")
+	write(t, localConfig, "[harness]\neffort = \"high\"\n")
+
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.HarnessEffortSource != localConfig {
+		t.Fatalf("HarnessEffortSource = %q, want local config", cfg.HarnessEffortSource)
+	}
+
+	if err := os.Remove(localConfig); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load without local effort: %v", err)
+	}
+	if cfg.HarnessEffortSource != rompConfig {
+		t.Fatalf("HarnessEffortSource = %q, want repo config", cfg.HarnessEffortSource)
+	}
+
+	if err := os.Remove(rompConfig); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load with global effort: %v", err)
+	}
+	if cfg.HarnessEffortSource != userConfig {
+		t.Fatalf("HarnessEffortSource = %q, want global config", cfg.HarnessEffortSource)
 	}
 }
 
@@ -102,7 +151,7 @@ func TestLoadRejectsUnknownHarness(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load() = nil error, want unknown harness")
 	}
-	want := `unknown harness "bogus" (want claude or codex)`
+	want := `unknown harness "bogus" (want claude, codex, or opencode)`
 	if err.Error() != want {
 		t.Errorf("err = %q, want %q", err, want)
 	}
@@ -125,6 +174,11 @@ func TestLoadEffortByHarness(t *testing.T) {
 			name: "shared high on codex",
 			toml: "[harness]\ndefault = \"codex\"\neffort = \"high\"\n",
 			want: "high",
+		},
+		{
+			name: "OpenCode accepts model-specific variant",
+			toml: "[harness]\ndefault = \"opencode\"\neffort = \"experimental\"\n",
+			want: "experimental",
 		},
 		{
 			name: "codex-only ultra",

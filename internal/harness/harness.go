@@ -1,6 +1,6 @@
 // Package harness defines the interface romp uses to drive a coding agent.
 // A harness runs a rendered goal prompt in a worktree and returns what the
-// agent produced. Adapters (claude, codex, ...) implement this interface.
+// agent produced. Adapters (claude, codex, opencode, ...) implement this interface.
 package harness
 
 import "context"
@@ -15,11 +15,11 @@ type Request struct {
 	// harness default.
 	Model string
 	// Effort, when non-empty, is a thinking budget already accepted for
-	// this harness at config load (claude --effort, Codex
-	// model_reasoning_effort). Empty leaves the harness default in place.
+	// this harness at config load. Empty leaves the harness default in place.
+	// OpenCode passes this value as its model-specific --variant setting.
 	Effort string
 	// MaxTurns, when positive, caps the agent's turn budget (claude's
-	// --max-turns). Codex has no equivalent and ignores this field.
+	// --max-turns). Codex and OpenCode have no equivalent and ignore this field.
 	// Zero leaves the harness default in place.
 	MaxTurns int
 }

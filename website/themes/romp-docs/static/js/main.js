@@ -156,7 +156,7 @@
     var NOUN = ['naruto', 'sasuke', 'sakura', 'kakashi', 'itachi', 'jiraiya', 'tsunade',
       'gaara', 'hinata', 'shikamaru', 'neji', 'minato', 'tenten', 'ino', 'konan',
       'kisame', 'deidara', 'zabuza', 'haku', 'asuma', 'iruka'];
-    var HARNESS = ['codex', 'claude'];
+    var HARNESS = ['codex', 'claude', 'opencode'];
     var VERIFY = ['go test ./... -count=1', 'make check', 'go build ./... && go test ./...'];
 
     var WIDTH = 3;              // matches the `width 3` in the header line

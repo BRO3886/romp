@@ -12,7 +12,7 @@ Config is TOML (the format the README already promises), parsed with `github.com
 
 `history_days` is the one field exempt from the additive rule: it is copied only from the user config file, and values written in `romp.toml` or `.romp/local.toml` are ignored. Retention is an operator concern, not a team convention — a repo should not dictate how long another machine keeps its history — so the carve-out is intentional (see ADR 0008).
 
-After the merge, `Load` validates `[harness]`: `default` must be `claude` or `codex`, and `effort` must be a name that harness accepts. Claude's live set is `low | medium | high | xhigh | max`; Codex adds `none | minimal | ultra`. Shared names pass through unchanged. The check runs after flags so `romp run --harness claude` with `effort = "ultra"` fails at load, not inside the agent.
+After the merge, `Load` validates `[harness]`: `default` must be `claude`, `codex`, or `opencode`. Claude's live set is `low | medium | high | xhigh | max`; Codex adds `none | minimal | ultra`. OpenCode passes `effort` through as the model-specific `--variant` value and does not validate it. Shared names pass through unchanged. The check runs after flags, so `romp run --harness claude` with `effort = "ultra"` fails at load, while an OpenCode variant remains the model's responsibility.
 
 ## Consequences
 

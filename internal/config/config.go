@@ -23,6 +23,10 @@ type Config struct {
 	Verify       Verify  `toml:"verify"`
 	Scope        Scope   `toml:"scope"`
 	Harness      Harness `toml:"harness"`
+	// HarnessEffortSource records the config file that supplied the effective
+	// harness effort. It is empty for the built-in default and command-line
+	// overrides.
+	HarnessEffortSource string `toml:"-"`
 	Prompt       Prompt  `toml:"prompt"`
 }
 
@@ -78,7 +82,8 @@ type Overrides struct {
 // Load merges, in order of increasing precedence, the built-in defaults, the
 // user config, romp.toml, .romp/local.toml, and o. A missing file is fine; a
 // malformed one is an error. After the merge it rejects an unknown harness
-// name or an effort that harness does not accept.
+// name or an unsupported effort value for a harness with a stable effort set.
+// OpenCode variants remain model-specific and pass through unchanged.
 func Load(root string, o Overrides) (*Config, error) {
 	cfg := Defaults()
 
@@ -100,6 +105,7 @@ func Load(root string, o Overrides) (*Config, error) {
 	}
 	if o.Effort != "" {
 		cfg.Harness.Effort = o.Effort
+		cfg.HarnessEffortSource = ""
 	}
 	if o.Width != 0 {
 		cfg.Width = o.Width
@@ -126,6 +132,9 @@ func apply(dst *Config, path string, global bool) error {
 		return fmt.Errorf("parsing %s: %w", path, err)
 	}
 	overlay(dst, &src, global)
+	if src.Harness.Effort != "" {
+		dst.HarnessEffortSource = path
+	}
 	return nil
 }
 

@@ -4,14 +4,14 @@
 
 **Label an issue. Get a pull request.**
 
-`romp` watches a GitHub repo for labelled issues, runs your local coding agent on each in an isolated git worktree, independently re-runs your test commands, and opens a PR. It uses your existing Claude Code or Codex login — no API keys, no cloud runner.
+`romp` watches a GitHub repo for labelled issues, runs your local coding agent on each in an isolated git worktree, independently re-runs your test commands, and opens a PR. It uses your existing Claude Code, Codex, or OpenCode login — no API keys, no cloud runner.
 
 > **Pre-alpha.** Breaking changes expected. Do not point this at a repo you can't afford a bad branch on.
 
 ## Requirements
 
 - `git` 2.35+, `gh` (authenticated via `gh auth login`)
-- `codex` or `claude`, logged in
+- `codex`, `claude`, or `opencode`, logged in
 - Go 1.25+ to build, or a release binary
 
 ## Install
@@ -61,7 +61,8 @@ Ctrl-C drains; twice kills.
 | `gc` | Remove stale worktrees and old history. Dry-run unless `--apply`. |
 | `doctor` | Check git, gh auth, harness, config. |
 
-`run` takes `--verify`, `--harness`, `--model`, `--effort` to override config.
+`run` takes `--verify`, `--harness`, `--model`, and `--effort` to override config.
+For OpenCode, `--effort` selects the model-specific `--variant` value.
 
 `cancel` talks to the live watcher over a socket — no watcher, nothing to
 cancel. `logs` reads log files directly and works either way.
@@ -88,15 +89,20 @@ protected = ["testdata/**", "internal/testutil/**", ".github/**"]
 ignore    = ["vendor/**", "node_modules/**"]
 
 [harness]
-default   = "codex"              # claude | codex
+default   = "codex"              # claude | codex | opencode
 model     = ""
-effort    = "high"               # claude: low..max; codex: + none, minimal, ultra
-max_turns = 30                   # claude only
+effort    = "high"               # claude/codex: reasoning effort; opencode: model-specific variant
+max_turns = 30                   # claude only; ignored by codex and opencode
 
 [prompt]
 template = ".romp/prompt.md"     # optional
 brief    = ".romp/DESIGN.md"     # optional
 ```
+
+For OpenCode, `harness.effort` is passed as `opencode run --variant`. Variant
+names are model-specific, so Romp prints one warning at startup when an
+effective variant comes from configuration. A command-line `--effort` override
+does not produce this configuration warning.
 
 Precedence: flags → `.romp/local.toml` (gitignored) → `romp.toml` →
 `~/.config/romp/config.toml` → defaults. Commit `romp.toml` and `.romp/*.md`;
@@ -147,7 +153,8 @@ too, so re-label the issue to retry it. `gc` reclaims leftover worktrees.
 - Don't run it against a repo with production credentials in the tree.
 - Branch protection on the default branch is strongly recommended.
 - Sandboxing is whatever the harness provides: Codex runs `--sandbox
-  workspace-write`, Claude `--permission-mode bypassPermissions`.
+  workspace-write`, Claude `--permission-mode bypassPermissions`, and OpenCode
+  runs `--auto` to auto-approve permissions that are not explicitly denied.
 
 ## Non-goals
 

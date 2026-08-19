@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -101,6 +102,7 @@ func checkHarness(ctx context.Context) (string, error) {
 	return summarizeHarnesses([]harnessProbe{
 		probeHarness(ctx, harness.Claude{}),
 		probeHarness(ctx, harness.Codex{}),
+		probeHarness(ctx, harness.OpenCode{}),
 	})
 }
 
@@ -128,7 +130,7 @@ func summarizeHarnesses(probes []harnessProbe) (string, error) {
 		ok = append(ok, p.name+" "+p.detail)
 	}
 	if len(ok) == 0 {
-		return "", fmt.Errorf("need claude or codex: %s", strings.Join(bad, "; "))
+		return "", fmt.Errorf("need claude, codex, or opencode: %s", strings.Join(bad, "; "))
 	}
 	if len(bad) == 0 {
 		return strings.Join(ok, "; "), nil
@@ -141,7 +143,7 @@ func checkConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cfg, err := config.Load(root, config.Overrides{})
+	cfg, err := loadConfig(root, config.Overrides{}, os.Stderr)
 	if err != nil {
 		return "", err
 	}

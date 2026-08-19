@@ -6,7 +6,7 @@ weight: 5
 
 romp hands the agent a finish line, not a task description. The rendered prompt
 is the single contract between romp and the agent, and it is harness-agnostic:
-claude and codex receive the same structure.
+Claude, Codex, and OpenCode receive the same structure.
 
 ## The four sections
 

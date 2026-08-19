@@ -42,7 +42,7 @@ func runGc(cmd *cobra.Command, apply bool, historyDays int) error {
 		return fmt.Errorf("resolve origin: %w", err)
 	}
 
-	cfg, err := config.Load(root, config.Overrides{})
+	cfg, err := loadConfig(root, config.Overrides{}, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}

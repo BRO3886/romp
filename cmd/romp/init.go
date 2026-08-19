@@ -48,7 +48,7 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("stat %s: %w", path, err)
 	}
 
-	cfg, err := config.Load(root, config.Overrides{})
+	cfg, err := loadConfig(root, config.Overrides{}, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}

@@ -32,6 +32,7 @@ romp does not add its own sandbox. It relies on whatever the harness provides:
 
 - Codex runs with `--sandbox workspace-write`
 - Claude runs with `--permission-mode bypassPermissions`
+- OpenCode runs with `--auto`, which auto-approves permissions that are not explicitly denied
 
 Neither is a substitute for not putting secrets in the repo.
 
