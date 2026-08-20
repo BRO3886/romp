@@ -311,6 +311,7 @@ func TestDiscoverCollectsStructuredProjectFiles(t *testing.T) {
 	write(t, filepath.Join(root, "Makefile"), "test lint:\n\t@true\n")
 	write(t, filepath.Join(root, "package.json"), `{"scripts":{"check":"go test ./..."}}`)
 	write(t, filepath.Join(root, "go.mod"), "module example\n")
+	write(t, filepath.Join(root, ".github", "workflows", "test.yml"), "jobs:\n  test:\n    steps:\n      - run: docker build .\n")
 	write(t, filepath.Join(root, "README.md"), "```sh\nmake test\n```\n")
 
 	got := Discover(root)
@@ -338,13 +339,13 @@ func TestDiscoverIncludesAllMakeTargets(t *testing.T) {
 	}
 }
 
-func TestDiscoverCollectsNestedPackageScriptsAndMultilineCI(t *testing.T) {
+func TestDiscoverCollectsNestedPackageScriptsAndExcludesCI(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "frontend", "package.json"), `{"scripts":{"check":"echo check"}}`)
 	write(t, filepath.Join(root, ".github", "workflows", "test.yml"), "jobs:\n  test:\n    steps:\n      - run: |\n          make test\n          make lint\n")
 
 	got := Discover(root)
-	want := []string{"npm --prefix frontend run check", "make test", "make lint"}
+	want := []string{"npm --prefix frontend run check"}
 	if len(got) != len(want) {
 		t.Fatalf("Discover = %+v, want %d candidates", got, len(want))
 	}

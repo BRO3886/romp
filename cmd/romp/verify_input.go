@@ -85,7 +85,7 @@ func (m *verifyInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		command := m.input.Value()
-		if suggestion := m.input.CurrentSuggestion(); suggestion != "" {
+		if suggestion := m.input.CurrentSuggestion(); suggestion != "" && strings.TrimSpace(command) == suggestion {
 			command = suggestion
 		}
 		command = strings.TrimSpace(command)

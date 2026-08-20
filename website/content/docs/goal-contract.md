@@ -13,7 +13,7 @@ Claude, Codex, and OpenCode receive the same structure.
 - **GATE** — reject the issue before touching code if it's ambiguous,
   contradictory, or under-scoped. Don't invent missing criteria.
 - **DONE** — every acceptance criterion met, on a clean tree.
-- **PROVE IT** — run the verify command and show the fresh passing output.
+- **PROVE IT** — run every configured verification command in order and show the fresh passing output for each.
 - **CONSTRAINTS** — no deleted, skipped, or weakened tests, no hardcoded
   expected values, no out-of-scope files, no `git commit`/`git push`.
 

@@ -69,7 +69,13 @@ them during initialization.
 | `Makefile` | `make test`, `make lint` |
 | `package.json` | `npm test`, `npm run lint` |
 | `go.mod` | `go test ./...` |
-| CI workflow | Commands found in `run` steps |
+| `Cargo.toml` | `cargo test` |
+| `pyproject.toml` | `pytest` |
+
+GitHub Actions workflow files are not discovery sources because their `run`
+steps can depend on CI orchestration, containers, or environment-specific
+setup. Add those commands explicitly if they are also valid for local
+verification.
 
 The resulting configuration uses an ordered `[verify].commands` list:
 
