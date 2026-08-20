@@ -29,7 +29,7 @@ var ErrTimeout = errors.New("timeout")
 // ErrNoChanges is returned when the agent finished without touching the repo.
 var ErrNoChanges = errors.New("no-changes")
 
-// ErrRed is returned when the verify command fails after the agent finished.
+// ErrRed is returned when a verification command fails after the agent finished.
 var ErrRed = errors.New("red")
 
 // GitOps is the git surface a run needs: read the remote and the default
@@ -249,7 +249,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	return url, nil
 }
 
-// verify re-runs each test command itself in the worktree, in order. The
+// verify re-runs each verification command itself in the worktree, in order. The
 // agent's own claim that tests pass is not proof.
 func (r *Runner) verify(ctx context.Context, dir string) error {
 	for _, v := range r.Verify {

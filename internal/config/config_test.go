@@ -32,7 +32,7 @@ func TestLoadPrecedence(t *testing.T) {
 	write(t, filepath.Join(user, "romp", "config.toml"), "label = \"from-user\"\nwidth = 1\n")
 
 	root := t.TempDir()
-	write(t, filepath.Join(root, "romp.toml"), "label = \"from-romp\"\n[verify]\ntest = \"go test ./...\"\n")
+	write(t, filepath.Join(root, "romp.toml"), "label = \"from-romp\"\n[verify]\ncommands = [\"go test ./...\"]\n")
 	write(t, filepath.Join(root, ".romp", "local.toml"), "[harness]\nmodel = \"opus\"\neffort = \"max\"\n")
 
 	cfg, err := Load(root, Overrides{})
@@ -46,8 +46,8 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.Width != 1 {
 		t.Errorf("Width = %d, want 1 (from user, not overridden by romp.toml)", cfg.Width)
 	}
-	if cfg.Verify.Test != "go test ./..." {
-		t.Errorf("Verify.Test = %q, want go test ./...", cfg.Verify.Test)
+	if len(cfg.Verify.Commands) != 1 || cfg.Verify.Commands[0] != "go test ./..." {
+		t.Errorf("Verify.Commands = %q, want go test ./...", cfg.Verify.Commands)
 	}
 	if cfg.Harness.Model != "opus" {
 		t.Errorf("Harness.Model = %q, want opus (local.toml)", cfg.Harness.Model)
@@ -306,47 +306,50 @@ func TestLoadMalformed(t *testing.T) {
 	}
 }
 
-func TestDetect(t *testing.T) {
-	tests := []struct {
-		name      string
-		file      string
-		wantBuild string
-		wantTest  string
-		wantLang  string
-	}{
-		{"go", "go.mod", "go build ./...", "go test ./... -count=1", "go"},
-		{"rust", "Cargo.toml", "cargo build", "cargo test", "rust"},
-		{"node", "package.json", "", "npm test", "node"},
-		{"python", "pyproject.toml", "", "pytest", "python"},
-		{"make", "Makefile", "", "make test", "make"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
-			write(t, filepath.Join(root, tt.file), "")
-			build, test, lang := Detect(root)
-			if build != tt.wantBuild || test != tt.wantTest || lang != tt.wantLang {
-				t.Errorf("Detect = (%q, %q, %q), want (%q, %q, %q)", build, test, lang, tt.wantBuild, tt.wantTest, tt.wantLang)
-			}
-		})
-	}
-}
-
-func TestDetectPrefersMakefileOverPackageJSON(t *testing.T) {
+func TestDiscoverCollectsAndMergesSources(t *testing.T) {
 	root := t.TempDir()
-	write(t, filepath.Join(root, "Makefile"), "")
-	write(t, filepath.Join(root, "package.json"), "{}")
+	write(t, filepath.Join(root, "Makefile"), "test lint:\n\t@true\n")
+	write(t, filepath.Join(root, "package.json"), `{"scripts":{"check":"go test ./..."}}`)
+	write(t, filepath.Join(root, "go.mod"), "module example\n")
+	write(t, filepath.Join(root, "README.md"), "```sh\nmake test\n```\n")
 
-	build, test, lang := Detect(root)
-	if build != "" || test != "make test" || lang != "make" {
-		t.Errorf("Detect = (%q, %q, %q), want (empty, %q, %q)", build, test, lang, "make test", "make")
+	got := Discover(root)
+	if len(got) != 4 {
+		t.Fatalf("Discover = %+v, want four candidates", got)
+	}
+	for _, candidate := range got {
+		if candidate.Command == "make test" && len(candidate.Sources) != 2 {
+			t.Errorf("make test sources = %v, want Makefile and README", candidate.Sources)
+		}
+	}
+	if got[0].Command != "make test" || got[1].Command != "make lint" || got[2].Command != "npm run check" || got[3].Command != "go test ./..." {
+		t.Errorf("Discover order = %+v", got)
 	}
 }
 
-func TestDetectUnknown(t *testing.T) {
-	build, test, lang := Detect(t.TempDir())
-	if build != "" || test != "" || lang != "" {
-		t.Errorf("Detect(empty) = (%q, %q, %q), want empty", build, test, lang)
+func TestDiscoverIncludesAllMakeTargets(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "Makefile"), "dragon:\n\t@true\n")
+	got := Discover(root)
+	if len(got) != 1 || got[0].Command != "make dragon" {
+		t.Errorf("Discover = %+v, want make dragon", got)
+	}
+}
+
+func TestDiscoverCollectsNestedPackageScriptsAndMultilineCI(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "frontend", "package.json"), `{"scripts":{"check":"echo check"}}`)
+	write(t, filepath.Join(root, ".github", "workflows", "test.yml"), "jobs:\n  test:\n    steps:\n      - run: |\n          make test\n          make lint\n")
+
+	got := Discover(root)
+	want := []string{"npm --prefix frontend run check", "make test", "make lint"}
+	if len(got) != len(want) {
+		t.Fatalf("Discover = %+v, want %d candidates", got, len(want))
+	}
+	for i, candidate := range got {
+		if candidate.Command != want[i] {
+			t.Errorf("candidate %d = %q, want %q", i, candidate.Command, want[i])
+		}
 	}
 }
 

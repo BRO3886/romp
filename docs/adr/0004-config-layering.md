@@ -20,4 +20,4 @@ After the merge, `Load` validates `[harness]`: `default` must be `claude`, `code
 - The `history_days` carve-out is the only asymmetry. It exists because the default layering would otherwise let a committed file (shared with the team) change machine-local behavior; keeping one field global-only is cheaper than adding a separate global config file.
 - A field can never be explicitly set to its zero value — `width = 0` reads as "unset, use default". That is exactly romp's intended semantics for every configurable field today, so nothing is lost; a future field whose meaningful value includes zero would need a pointer or sentinel instead.
 - koanf and viper were rejected: romp reads flat files once at startup and never needs env expansion, watching, or a multi-source provider registry, so the extra surface buys only indirection.
-- `romp init` seeds `[verify]` from one-time language detection and writes it into `romp.toml`; runtime detection stays rejected (see ADR 0001).
+- `romp init` writes the user-selected `[verify].commands` list; runtime discovery stays rejected (see ADR 0011).

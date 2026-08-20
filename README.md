@@ -28,13 +28,34 @@ go install github.com/BRO3886/romp/cmd/romp@latest
 cd ~/code/your-project
 
 romp doctor        # verify git, gh, harness, config
-romp init          # write romp.toml, create labels, update .gitignore
+romp init          # choose verification commands, then write romp.toml
 romp run -i 17     # run one issue in the foreground
 romp watch         # then let it run
 ```
 
-`init` detects the language (go, rust, node, python, Makefile) and seeds the
-verify command. If nothing is detected, add one to `romp.toml` yourself.
+`init` reads project files and shows discovered commands from Makefiles, package
+manifests, CI workflows, and documentation. Select commands or type your own.
+Use repeatable `--verify` flags in non-interactive environments.
+
+In an interactive terminal, `init` shows the selected commands and a filtered
+candidate list. Enter adds the highlighted or typed command. Submit an empty
+input to finish. The order in which you add commands is the order Romp uses.
+
+```text
+Verification commands
+Selected commands:
+  1. make test
+
+verify> make l▌
+  make lint                         Makefile target "lint"
+  npm --prefix frontend run lint    frontend/package.json script "lint"
+```
+
+For automation, pass the commands explicitly:
+
+```bash
+romp init --verify "make test" --verify "make lint"
+```
 
 ```
 $ romp watch
@@ -61,7 +82,7 @@ Ctrl-C drains; twice kills.
 | `gc` | Remove stale worktrees and old history. Dry-run unless `--apply`. |
 | `doctor` | Check git, gh auth, harness, config. |
 
-`run` takes `--verify`, `--harness`, `--model`, and `--effort` to override config.
+`run` takes repeatable `--verify`, `--harness`, `--model`, and `--effort` flags to override config.
 For OpenCode, `--effort` selects the model-specific `--variant` value.
 
 `cancel` talks to the live watcher over a socket — no watcher, nothing to
@@ -80,9 +101,11 @@ width          = 3
 timeout        = "25m"
 
 [verify]
-build = "go build ./..."
-test  = "go test ./... -count=1"
-lint  = "golangci-lint run"      # optional
+commands = [
+  "go build ./...",
+  "go test ./... -count=1",
+  "golangci-lint run",
+]
 
 [scope]
 protected = ["testdata/**", "internal/testutil/**", ".github/**"]
@@ -118,7 +141,7 @@ State lives outside the repo: `~/.local/state/romp/romp.db` (shared job table),
 - **GATE** — reject the issue before touching code if it's ambiguous,
   contradictory, or under-scoped. Don't invent missing criteria.
 - **DONE** — every acceptance criterion met, on a clean tree.
-- **PROVE IT** — run the verify command and show the fresh passing output.
+- **PROVE IT** — run the verification commands and show the fresh passing output.
 - **CONSTRAINTS** — no deleted/skipped/weakened tests, no hardcoded expected
   values, no out-of-scope files, no `git commit`/`git push`.
 
@@ -161,8 +184,8 @@ worktrees.
 
 ## Non-goals
 
-Interactive sessions, live steering, cloud execution, merging/deploying, or
-being a general agent framework. Use the agent CLI, T3 Code, or Codex Cloud for
+Interactive agent sessions, live steering, cloud execution, merging/deploying,
+or being a general agent framework. Use the agent CLI, T3 Code, or Codex Cloud for
 those.
 
 ## Contributing

@@ -41,8 +41,8 @@ _Avoid_: output file, result file
 
 ## Isolation and queue
 
-**Verify command**:
-The per-repo command that must pass for a job to be done, run independently by romp after the agent exits.
+**Verify commands**:
+The ordered per-repo commands that must pass for a job to be done, run independently by romp after the agent exits.
 _Avoid_: test command, build command
 
 **Worktree**:

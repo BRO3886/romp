@@ -41,7 +41,7 @@ func newRootCmd() *cobra.Command {
 // runFactory assembles a Runner from the merged config plus the --verify
 // flag. It is the seam between flag parsing and the git/gh/harness wiring so
 // tests can inject a fake.
-type runFactory func(ctx context.Context, o config.Overrides, verifyFlag string, verifySet bool) (*runner.Runner, error)
+type runFactory func(ctx context.Context, o config.Overrides, verifyFlags []string, verifySet bool) (*runner.Runner, error)
 
 // runFunc is the seam between the assembled Runner and the job itself, so
 // tests can inspect the Runner without running the pipeline.
@@ -50,7 +50,7 @@ type runFunc func(ctx context.Context, r *runner.Runner, issue int) error
 func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 	var (
 		issue       int
-		verify      string
+		verify      []string
 		harnessName string
 		model       string
 		effort      string
@@ -74,7 +74,7 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVarP(&issue, "issue", "i", 0, "issue number to run")
-	cmd.Flags().StringVar(&verify, "verify", "", "command that must pass in the worktree before a PR opens (overrides config)")
+	cmd.Flags().StringArrayVar(&verify, "verify", nil, "command that must pass in the worktree before a PR opens (repeatable; overrides config)")
 	cmd.Flags().StringVar(&harnessName, "harness", "", "harness to use (claude, codex, or opencode)")
 	cmd.Flags().StringVar(&model, "model", "", "model for the harness")
 	cmd.Flags().StringVar(&effort, "effort", "", "reasoning effort for the harness")
@@ -83,7 +83,7 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 	return cmd
 }
 
-func newRunner(ctx context.Context, o config.Overrides, verifyFlag string, verifySet bool) (*runner.Runner, error) {
+func newRunner(ctx context.Context, o config.Overrides, verifyFlags []string, verifySet bool) (*runner.Runner, error) {
 	root, err := repoRoot(ctx)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlag string, verif
 		return nil, err
 	}
 
-	verify, err := verifyCommands(cfg, verifyFlag, verifySet)
+	verify, err := verifyCommands(cfg, verifyFlags, verifySet)
 	if err != nil {
 		return nil, err
 	}
@@ -185,20 +185,14 @@ func repoRoot(ctx context.Context) (string, error) {
 // verifyCommands resolves the verify list: the --verify flag when it was
 // passed, otherwise the non-empty [verify] commands from config. It refuses
 // to guess (see ADR 0001).
-func verifyCommands(cfg *config.Config, flag string, flagSet bool) ([]string, error) {
+func verifyCommands(cfg *config.Config, flags []string, flagSet bool) ([]string, error) {
 	if flagSet {
-		return []string{flag}, nil
+		return append([]string(nil), flags...), nil
 	}
-	var out []string
-	for _, c := range []string{cfg.Verify.Build, cfg.Verify.Test, cfg.Verify.Lint} {
-		if c != "" {
-			out = append(out, c)
-		}
-	}
-	if len(out) == 0 {
+	if len(cfg.Verify.Commands) == 0 {
 		return nil, fmt.Errorf("no verify command configured: run `romp init` or pass --verify")
 	}
-	return out, nil
+	return append([]string(nil), cfg.Verify.Commands...), nil
 }
 
 func buildHarness(name string) (harness.Harness, error) {

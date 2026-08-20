@@ -18,12 +18,12 @@ import (
 func TestRunCmdFlags(t *testing.T) {
 	var (
 		gotOverrides config.Overrides
-		gotVerify    string
+		gotVerify    []string
 		gotVerifySet bool
 		gotIssue     int
 		ran          bool
 	)
-	factory := func(_ context.Context, o config.Overrides, verifyFlag string, verifySet bool) (*runner.Runner, error) {
+	factory := func(_ context.Context, o config.Overrides, verifyFlag []string, verifySet bool) (*runner.Runner, error) {
 		gotOverrides, gotVerify, gotVerifySet = o, verifyFlag, verifySet
 		return &runner.Runner{}, nil
 	}
@@ -33,7 +33,7 @@ func TestRunCmdFlags(t *testing.T) {
 	}
 
 	cmd := newRunCmd(factory, run)
-	cmd.SetArgs([]string{"--verify", "go build ./...", "--harness", "codex", "--model", "opus", "--effort", "low", "--width", "1", "-i", "7"})
+	cmd.SetArgs([]string{"--verify", "go build ./...", "--verify", "go test ./...", "--harness", "codex", "--model", "opus", "--effort", "low", "--width", "1", "-i", "7"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -46,8 +46,8 @@ func TestRunCmdFlags(t *testing.T) {
 	if !gotVerifySet {
 		t.Error("verifySet = false, want true")
 	}
-	if gotVerify != "go build ./..." {
-		t.Errorf("verifyFlag = %q, want go build ./...", gotVerify)
+	if len(gotVerify) != 2 || gotVerify[0] != "go build ./..." || gotVerify[1] != "go test ./..." {
+		t.Errorf("verifyFlags = %q, want two commands", gotVerify)
 	}
 	if gotOverrides.Harness != "codex" {
 		t.Errorf("overrides.Harness = %q, want codex", gotOverrides.Harness)
@@ -66,10 +66,10 @@ func TestRunCmdFlags(t *testing.T) {
 func TestRunCmdVerifyDefaults(t *testing.T) {
 	var (
 		gotOverrides config.Overrides
-		gotVerify    string
+		gotVerify    []string
 		gotVerifySet bool
 	)
-	factory := func(_ context.Context, o config.Overrides, verifyFlag string, verifySet bool) (*runner.Runner, error) {
+	factory := func(_ context.Context, o config.Overrides, verifyFlag []string, verifySet bool) (*runner.Runner, error) {
 		gotOverrides, gotVerify, gotVerifySet = o, verifyFlag, verifySet
 		return &runner.Runner{}, nil
 	}
@@ -83,8 +83,8 @@ func TestRunCmdVerifyDefaults(t *testing.T) {
 	if gotVerifySet {
 		t.Error("verifySet = true, want false when --verify is absent")
 	}
-	if gotVerify != "" {
-		t.Errorf("verifyFlag = %q, want empty", gotVerify)
+	if len(gotVerify) != 0 {
+		t.Errorf("verifyFlags = %q, want empty", gotVerify)
 	}
 	if gotOverrides.Effort != "" {
 		t.Errorf("overrides.Effort = %q, want empty when --effort is absent", gotOverrides.Effort)
@@ -101,9 +101,9 @@ func TestRunCmdHelpListsOpenCode(t *testing.T) {
 func TestWarnOpenCodeVariant(t *testing.T) {
 	var out bytes.Buffer
 	warnOpenCodeVariant(&out, &config.Config{Harness: config.Harness{
-		Default:      "opencode",
-		Model:        "openai/gpt-5",
-		Effort:       "high",
+		Default: "opencode",
+		Model:   "openai/gpt-5",
+		Effort:  "high",
 	}, HarnessEffortSource: "/repo/romp.toml"})
 	if got := out.String(); !strings.Contains(got, `OpenCode variant "high" may not be supported by openai/gpt-5`) {
 		t.Fatalf("warning = %q", got)
@@ -128,10 +128,10 @@ func TestWarnOpenCodeVariant(t *testing.T) {
 
 func TestVerifyCommands(t *testing.T) {
 	cfg := &config.Config{
-		Verify: config.Verify{Build: "go build ./...", Test: "go test ./... -count=1", Lint: "golangci-lint run"},
+		Verify: config.Verify{Commands: []string{"go build ./...", "go test ./... -count=1", "golangci-lint run"}},
 	}
 
-	got, err := verifyCommands(cfg, "", false)
+	got, err := verifyCommands(cfg, nil, false)
 	if err != nil {
 		t.Fatalf("verifyCommands: %v", err)
 	}
@@ -140,15 +140,15 @@ func TestVerifyCommands(t *testing.T) {
 		t.Errorf("verifyCommands = %v, want %v", got, want)
 	}
 
-	got, err = verifyCommands(cfg, "go build ./...", true)
+	got, err = verifyCommands(cfg, []string{"go build ./...", "go test ./..."}, true)
 	if err != nil {
 		t.Fatalf("verifyCommands flag: %v", err)
 	}
-	if len(got) != 1 || got[0] != "go build ./..." {
-		t.Errorf("verifyCommands flag = %v, want [go build ./...]", got)
+	if len(got) != 2 || got[0] != "go build ./..." || got[1] != "go test ./..." {
+		t.Errorf("verifyCommands flags = %v, want two commands", got)
 	}
 
-	if _, err := verifyCommands(&config.Config{}, "", false); err == nil {
+	if _, err := verifyCommands(&config.Config{}, nil, false); err == nil {
 		t.Error("verifyCommands() empty = nil error, want error")
 	}
 }

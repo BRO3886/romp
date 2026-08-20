@@ -6,8 +6,10 @@ width          = 3
 timeout        = "25m"
 
 [verify]
-build = "go build ./..."
-test  = "go test ./... -count=1"
+commands = [
+  "go build ./...",
+  "go test ./... -count=1",
+]
 
 [harness]
 default = "codex"
