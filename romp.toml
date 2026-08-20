@@ -6,8 +6,8 @@ timeout        = "25m"
 
 [verify]
 commands = [
-	"make build",
-	"make test",
+  "make build",
+  "make test",
 ]
 
 [harness]
