@@ -119,6 +119,9 @@ Checks four things and prints a table:
 romp init
 ```
 
-Writes `romp.toml` (seeded from language detection), creates the three labels
-on the repo, and appends `.romp/local.toml` to `.gitignore`. If `romp.toml`
-already exists it is left untouched.
+In an interactive terminal, inspects project configuration files and lets you
+select or type one or more ordered verification commands before writing
+`romp.toml`. It creates the three labels on the repo and appends
+`.romp/local.toml` to `.gitignore`. If `romp.toml` already exists it is left
+untouched. In non-interactive use, pass one or more repeatable `--verify` flags;
+Romp does not guess commands.

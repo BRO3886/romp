@@ -37,6 +37,19 @@ func TestVerifyInputAddsTypedCommandAndFinishesOnEmptyEnter(t *testing.T) {
 	}
 }
 
+func TestVerifyInputPrefersTypedCommandOverPrefixSuggestion(t *testing.T) {
+	input := textinput.New()
+	input.ShowSuggestions = true
+	input.SetSuggestions([]string{"make test"})
+	input.SetValue("make t")
+	input.Focus()
+	m := &verifyInputModel{input: input}
+
+	if _, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); len(m.selected) != 1 || m.selected[0] != "make t" {
+		t.Fatalf("selected = %v, want typed command", m.selected)
+	}
+}
+
 func TestVerifyInputViewShowsCandidatesAndSources(t *testing.T) {
 	input := textinput.New()
 	input.Focus()
