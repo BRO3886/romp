@@ -33,8 +33,9 @@ romp run -i 17     # run one issue in the foreground
 romp watch         # then let it run
 ```
 
-`init` reads project configuration files and shows discovered commands from
-Makefiles, package manifests, language manifests, and CI workflows. Select
+`init` reads local project configuration and manifest files and shows discovered
+commands from Makefiles, package manifests, and language manifests. It does not
+use GitHub Actions workflow commands as local verification candidates. Select
 commands or type your own. Use repeatable `--verify` flags in non-interactive
 environments.
 

@@ -1,9 +1,7 @@
 package config
 
 import (
-	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -63,7 +61,6 @@ func Discover(root string) []Candidate {
 		add("pytest", "pyproject.toml")
 	}
 
-	collectCI(root, add)
 	return found
 }
 
@@ -153,57 +150,6 @@ func collectPackageJSON(root, path string, add func(string, string)) {
 		}
 		source := filepath.ToSlash(filepath.Join(dir, "package.json")) + ` script "` + name + `"`
 		add(command, source)
-	}
-}
-
-func collectCI(root string, add func(string, string)) {
-	dir := filepath.Join(root, ".github", "workflows")
-	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
-			return nil
-		}
-		collectRunLines(path, add)
-		return nil
-	})
-}
-
-func collectRunLines(path string, add func(string, string)) {
-	file, err := os.Open(path)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	blockIndent := -1
-	for line := 1; scanner.Scan(); line++ {
-		raw := scanner.Text()
-		indent := len(raw) - len(strings.TrimLeft(raw, " "))
-		text := strings.TrimSpace(raw)
-		if blockIndent >= 0 {
-			if text == "" {
-				continue
-			}
-			if indent > blockIndent {
-				add(text, fmt.Sprintf("%s:%d", filepath.ToSlash(filepath.Join(".github", "workflows", filepath.Base(path))), line))
-				continue
-			}
-			blockIndent = -1
-		}
-		runPrefix := ""
-		switch {
-		case strings.HasPrefix(text, "run:"):
-			runPrefix = "run:"
-		case strings.HasPrefix(text, "- run:"):
-			runPrefix = "- run:"
-		}
-		if runPrefix != "" {
-			command := strings.TrimSpace(strings.TrimPrefix(text, runPrefix))
-			if command == "|" || command == ">-" || command == ">" {
-				blockIndent = indent
-			} else {
-				add(command, fmt.Sprintf("%s:%d", filepath.ToSlash(filepath.Join(".github", "workflows", filepath.Base(path))), line))
-			}
-		}
 	}
 }
 
