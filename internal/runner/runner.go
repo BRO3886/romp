@@ -253,11 +253,10 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 // agent's own claim that tests pass is not proof.
 func (r *Runner) verify(ctx context.Context, dir string) error {
 	for _, v := range r.Verify {
-		fields := strings.Fields(v)
-		if len(fields) == 0 {
+		if strings.TrimSpace(v) == "" {
 			return fmt.Errorf("empty verify command")
 		}
-		cmd := exec.CommandContext(ctx, fields[0], fields[1:]...)
+		cmd := exec.CommandContext(ctx, "sh", "-c", v)
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		if err != nil {
