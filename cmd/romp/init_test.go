@@ -10,10 +10,11 @@ import (
 )
 
 func TestSeedConfig(t *testing.T) {
-	got := seedConfig("go build ./...", "go test ./... -count=1", "go")
+	got := seedConfig([]string{"go build ./...", "go test ./... -count=1"})
 	for _, want := range []string{
-		`build = "go build ./..."`,
-		`test  = "go test ./... -count=1"`,
+		`commands = [`,
+		`"go build ./...",`,
+		`"go test ./... -count=1",`,
 		`default = "codex"`,
 		`claimed_label  = "romp:claimed"`,
 		`blocked_label  = "romp:blocked"`,
@@ -32,7 +33,7 @@ func TestSeedConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seedConfig output does not parse: %v", err)
 	}
-	if cfg.Verify.Build != "go build ./..." || cfg.Verify.Test != "go test ./... -count=1" {
+	if len(cfg.Verify.Commands) != 2 || cfg.Verify.Commands[0] != "go build ./..." || cfg.Verify.Commands[1] != "go test ./... -count=1" {
 		t.Errorf("round-trip verify = %+v", cfg.Verify)
 	}
 	if cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" {
@@ -41,12 +42,9 @@ func TestSeedConfig(t *testing.T) {
 }
 
 func TestSeedConfigNoBuild(t *testing.T) {
-	got := seedConfig("", "npm test", "node")
-	if strings.Contains(got, "build") {
-		t.Errorf("seedConfig should omit build when empty:\n%s", got)
-	}
-	if !strings.Contains(got, `test  = "npm test"`) {
-		t.Errorf("seedConfig missing test:\n%s", got)
+	got := seedConfig([]string{"npm test"})
+	if !strings.Contains(got, `"npm test",`) {
+		t.Errorf("seedConfig missing command:\n%s", got)
 	}
 }
 

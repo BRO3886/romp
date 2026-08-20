@@ -27,14 +27,12 @@ type Config struct {
 	// harness effort. It is empty for the built-in default and command-line
 	// overrides.
 	HarnessEffortSource string `toml:"-"`
-	Prompt       Prompt  `toml:"prompt"`
+	Prompt              Prompt `toml:"prompt"`
 }
 
 // Verify holds the commands romp re-runs itself before opening a PR.
 type Verify struct {
-	Build string `toml:"build"`
-	Test  string `toml:"test"`
-	Lint  string `toml:"lint"`
+	Commands []string `toml:"commands"`
 }
 
 // Scope holds path globs the agent must not touch (protected) or read (ignore).
@@ -163,14 +161,8 @@ func overlay(dst *Config, src *Config, global bool) {
 	if global && src.HistoryDays != 0 {
 		dst.HistoryDays = src.HistoryDays
 	}
-	if src.Verify.Build != "" {
-		dst.Verify.Build = src.Verify.Build
-	}
-	if src.Verify.Test != "" {
-		dst.Verify.Test = src.Verify.Test
-	}
-	if src.Verify.Lint != "" {
-		dst.Verify.Lint = src.Verify.Lint
+	if src.Verify.Commands != nil {
+		dst.Verify.Commands = append([]string(nil), src.Verify.Commands...)
 	}
 	if src.Scope.Protected != nil {
 		dst.Scope.Protected = src.Scope.Protected

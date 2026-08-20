@@ -15,9 +15,11 @@ width          = 3
 timeout        = "25m"
 
 [verify]
-build = "go build ./..."
-test  = "go test ./... -count=1"
-lint  = "golangci-lint run"      # optional
+commands = [
+  "go build ./...",
+  "go test ./... -count=1",
+  "golangci-lint run",
+]
 
 [scope]
 protected = ["testdata/**", "internal/testutil/**", ".github/**"]
@@ -62,9 +64,7 @@ operator concern, not a team convention.
 | `base` | repo default branch | Branch worktrees fork from. |
 | `width` | `3` | Max concurrent jobs in this repo. |
 | `timeout` | `25m` | Per-job deadline. |
-| `verify.build` | — | Build command. |
-| `verify.test` | — | Test command. |
-| `verify.lint` | — | Optional lint command. |
+| `verify.commands` | — | Ordered commands that Romp runs independently after the agent exits. |
 | `scope.protected` | — | Paths the agent must not touch. |
 | `scope.ignore` | — | Paths the agent must not read. |
 | `harness.default` | `codex` | `claude`, `codex`, or `opencode`. |
@@ -82,10 +82,11 @@ does not produce this configuration warning.
 
 ## Verify
 
-romp refuses to run without a verify command — it never guesses. At least one
-of `[verify]` `build`, `test`, or `lint` must be non-empty. romp re-runs every
-non-empty verify command itself after the agent exits, in order, and opens the
-PR only when all of them pass.
+romp refuses to run without a verify command — it never guesses. `commands` must
+contain at least one command. romp re-runs each command through the project
+shell after the agent exits, in order, and opens the PR only when all of them
+pass. Commands may include shell syntax such as pipes, redirects, and
+environment assignments.
 
 ## Harness effort and variants
 

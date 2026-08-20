@@ -75,9 +75,9 @@ Only if the GATE passed, continue.
 
 DONE means all of the following hold on a clean working tree:
 1. Every acceptance criterion in the issue is met. Criteria come from the issue, not from you.
-2. This command passes: {{.Verify}}
+2. Every verification command passes: {{.Verify}}
 
-PROVE IT: run ` + "`{{.Verify}}`" + ` yourself before you stop, and show the fresh passing output in your final message. Failing tests are not a stopping condition; fix them and re-run.
+PROVE IT: run ` + "`{{.Verify}}`" + ` yourself before you stop, and show the fresh passing output for every command in your final message. Failing tests are not a stopping condition; fix them and re-run.
 
 CONSTRAINTS:
 - Do not delete, skip, or weaken any existing test.

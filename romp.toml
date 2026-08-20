@@ -1,4 +1,3 @@
-# go project
 label          = "romp"
 claimed_label  = "romp:claimed"
 blocked_label  = "romp:blocked"
@@ -6,10 +5,10 @@ width          = 3
 timeout        = "25m"
 
 [verify]
-build = "go build ./..."
-test  = "go test ./... -count=1"
+commands = [
+  "make build",
+  "make test",
+]
 
 [harness]
 default = "codex"
-model   = "gpt-5.6-luna"
-effort  = "medium"

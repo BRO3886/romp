@@ -179,6 +179,17 @@ func TestRunRemovesTriggerLabelOnSuccess(t *testing.T) {
 	}
 }
 
+func TestVerifyRunsCommandsThroughShell(t *testing.T) {
+	r := &Runner{
+		Verify: []string{`test "$(printf '%s' 'hello world')" = "hello world"`},
+		Stderr: io.Discard,
+	}
+
+	if err := r.verify(context.Background(), t.TempDir()); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+}
+
 func TestRunRemovesConfiguredTriggerLabel(t *testing.T) {
 	g := &fakeGit{changed: true, onAdd: writePR}
 	c := &fakeGH{}

@@ -337,12 +337,18 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{
 		w.logf("#%d: %v", iss.Number, err)
 	}
 
-	// Abandon (ADR 0009): a cancelled job is dropped, not retried, so its
-	// trigger label goes too and its worktree and branch are cleaned up.
-	if cancelled {
+	// Failed jobs are dropped from the pending queue so the next poll does not
+	// immediately repeat the same failure. Blocked jobs keep the trigger label
+	// because the blocked label excludes them while leaving the issue visible.
+	if cancelled || (err != nil && !errors.Is(err, runner.ErrBlocked)) {
 		if err := w.GH.RemoveLabel(context.WithoutCancel(ctx), w.Repo, iss.Number, w.Trigger); err != nil {
 			w.logf("#%d: removing trigger label: %v", iss.Number, err)
 		}
+	}
+
+	// Abandon (ADR 0009): a cancelled job is dropped, not retried, so its
+	// worktree and branch are cleaned up.
+	if cancelled {
 		if w.CleanJob != nil {
 			if err := w.CleanJob(context.WithoutCancel(ctx), iss.Number); err != nil {
 				w.logf("#%d: cleaning up job: %v", iss.Number, err)

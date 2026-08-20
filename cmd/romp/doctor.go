@@ -147,7 +147,7 @@ func checkConfig(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	verify, err := verifyCommands(cfg, "", false)
+	verify, err := verifyCommands(cfg, nil, false)
 	if err != nil {
 		return "", err
 	}

@@ -59,17 +59,31 @@ romp run -i 17     # run one issue in the foreground
 romp watch         # then let it run
 ```
 
-`init` detects the language and seeds the verify command:
+In an interactive terminal, `init` inspects project files and shows candidate
+commands. Select or type one or more commands in the order Romp should run
+them. The candidates are suggestions only; Romp does not validate or execute
+them during initialization.
 
-| Manifest | Seeded verify |
+| Source | Example candidates |
 | --- | --- |
-| `go.mod` | `go build ./...` + `go test ./... -count=1` |
-| `Cargo.toml` | `cargo build` + `cargo test` |
-| `package.json` | `npm test` |
-| `pyproject.toml` | `pytest` |
-| `Makefile` | `make test` |
+| `Makefile` | `make test`, `make lint` |
+| `package.json` | `npm test`, `npm run lint` |
+| `go.mod` | `go test ./...` |
+| CI workflow | Commands found in `run` steps |
 
-If nothing is detected, add a `[verify]` command to `romp.toml` yourself.
+The resulting configuration uses an ordered `[verify].commands` list:
+
+```toml
+[verify]
+commands = ["make test", "make lint"]
+```
+
+For scripts, pass repeatable flags instead. Non-interactive initialization does
+not guess commands:
+
+```bash
+romp init --verify "make test" --verify "make lint"
+```
 
 `init` also creates three labels — the trigger label (`romp`), the claim label
 (`romp:claimed`), and the blocked label (`romp:blocked`) — and appends

@@ -358,6 +358,27 @@ func TestRunJobLogsTimeout(t *testing.T) {
 	if !contains(removed, "7:romp:claimed") {
 		t.Errorf("claim label not released on timeout: %v", removed)
 	}
+	if !contains(removed, "7:romp") {
+		t.Errorf("trigger label not removed on timeout: %v", removed)
+	}
+}
+
+func TestRunJobRemovesTriggerOnRed(t *testing.T) {
+	ghc := &fakeGH{}
+	store := newFakeStore()
+	store.rows[7] = true
+
+	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
+	w.RunJob = func(context.Context, int) (string, error) {
+		return "", fmt.Errorf("%w: verify failed", runner.ErrRed)
+	}
+
+	w.runJobSync(t, 7)
+
+	_, removed := ghc.snapshot()
+	if !contains(removed, "7:romp:claimed") || !contains(removed, "7:romp") {
+		t.Errorf("removed labels = %v, want claim and trigger labels", removed)
+	}
 }
 
 func TestRunJobRecordsHistory(t *testing.T) {

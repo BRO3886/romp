@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
 	"github.com/BRO3886/romp/internal/config"
@@ -16,30 +17,49 @@ import (
 const gitignoreEntry = ".romp/local.toml"
 
 func newInitCmd() *cobra.Command {
-	return &cobra.Command{
+	var verify []string
+	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Write romp.toml, create the label, and update .gitignore",
+		Short: "Choose verification commands, write romp.toml, and create labels",
 		Args:  cobra.NoArgs,
-		RunE:  runInit,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runInit(cmd, verify)
+		},
 	}
+	cmd.Flags().StringArrayVar(&verify, "verify", nil, "verification command (repeatable)")
+	return cmd
 }
 
-func runInit(cmd *cobra.Command, _ []string) error {
+func runInit(cmd *cobra.Command, verifyFlags []string) error {
 	ctx := cmd.Context()
 	root, err := repoRoot(ctx)
 	if err != nil {
 		return err
 	}
 
-	build, test, lang := config.Detect(root)
-
 	path := filepath.Join(root, "romp.toml")
 	if _, err := os.Stat(path); err == nil {
 		cmd.Printf("romp.toml already exists; leaving it untouched\n")
 	} else if os.IsNotExist(err) {
-		if test == "" {
-			cmd.Printf("could not detect the language; add a [verify] test command to %s manually\n", path)
-		} else if err := os.WriteFile(path, []byte(seedConfig(build, test, lang)), 0o644); err != nil {
+		commands := verifyFlags
+		interactive := isInteractive(cmd)
+		if interactive {
+			var err error
+			commands, err = chooseVerifyCommands(cmd.InOrStdin(), cmd.OutOrStdout(), config.Discover(root), verifyFlags)
+			if err != nil {
+				return err
+			}
+		} else if len(commands) == 0 {
+			return fmt.Errorf("non-interactive init requires at least one --verify command")
+		}
+		if len(commands) == 0 {
+			return fmt.Errorf("at least one verification command is required")
+		}
+		commands, err = normalizeVerifyCommands(commands)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(seedConfig(commands)), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		} else {
 			cmd.Printf("wrote %s\n", path)
@@ -74,19 +94,29 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func seedConfig(build, test, lang string) string {
+func isInteractive(cmd *cobra.Command) bool {
+	in := cmd.InOrStdin()
+	out := cmd.OutOrStdout()
+	inFile, inOK := in.(*os.File)
+	outFile, outOK := out.(*os.File)
+	return inOK && outOK &&
+		(isatty.IsTerminal(inFile.Fd()) || isatty.IsCygwinTerminal(inFile.Fd())) &&
+		(isatty.IsTerminal(outFile.Fd()) || isatty.IsCygwinTerminal(outFile.Fd()))
+}
+
+func seedConfig(commands []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s project\n", lang)
 	b.WriteString("label          = \"romp\"\n")
 	b.WriteString("claimed_label  = \"romp:claimed\"\n")
 	b.WriteString("blocked_label  = \"romp:blocked\"\n")
 	b.WriteString("width          = 3\n")
 	b.WriteString("timeout        = \"25m\"\n\n")
 	b.WriteString("[verify]\n")
-	if build != "" {
-		fmt.Fprintf(&b, "build = %q\n", build)
+	b.WriteString("commands = [\n")
+	for _, command := range commands {
+		fmt.Fprintf(&b, "  %q,\n", command)
 	}
-	fmt.Fprintf(&b, "test  = %q\n\n", test)
+	b.WriteString("]\n\n")
 	b.WriteString("[harness]\ndefault = \"codex\"\n")
 	return b.String()
 }
