@@ -20,8 +20,8 @@ type Candidate struct {
 
 var makeTargetPattern = regexp.MustCompile(`^([A-Za-z0-9_./% -]+):`)
 
-// Discover returns commands found in common project entry-point files and
-// documentation. It reads files only and never executes a discovered command.
+// Discover returns commands found in project configuration and entry-point
+// files. It reads files only and never executes a discovered command.
 func Discover(root string) []Candidate {
 	var found []Candidate
 	add := func(command, source string) {
@@ -64,7 +64,6 @@ func Discover(root string) []Candidate {
 	}
 
 	collectCI(root, add)
-	collectMarkdown(root, add)
 	return found
 }
 
@@ -205,49 +204,6 @@ func collectRunLines(path string, add func(string, string)) {
 				add(command, fmt.Sprintf("%s:%d", filepath.ToSlash(filepath.Join(".github", "workflows", filepath.Base(path))), line))
 			}
 		}
-	}
-}
-
-func collectMarkdown(root string, add func(string, string)) {
-	paths := []string{filepath.Join(root, "README.md"), filepath.Join(root, "CONTRIBUTING.md")}
-	docs := filepath.Join(root, "docs")
-	_ = filepath.WalkDir(docs, func(path string, entry os.DirEntry, err error) error {
-		if err == nil && !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	for _, path := range paths {
-		collectMarkdownFile(root, path, add)
-	}
-}
-
-func collectMarkdownFile(root, path string, add func(string, string)) {
-	file, err := os.Open(path)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	inFence := false
-	scanner := bufio.NewScanner(file)
-	for line := 1; scanner.Scan(); line++ {
-		text := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(text, "```") {
-			inFence = !inFence
-			continue
-		}
-		if !inFence || text == "" {
-			continue
-		}
-		text = strings.TrimSpace(strings.TrimPrefix(text, "$"))
-		if strings.HasPrefix(text, "#") {
-			continue
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			rel = path
-		}
-		add(text, fmt.Sprintf("%s:%d", filepath.ToSlash(rel), line))
 	}
 }
 

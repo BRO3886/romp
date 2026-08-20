@@ -69,7 +69,7 @@ them during initialization.
 | `Makefile` | `make test`, `make lint` |
 | `package.json` | `npm test`, `npm run lint` |
 | `go.mod` | `go test ./...` |
-| CI workflow or Markdown | Commands found in fenced examples or `run` steps |
+| CI workflow | Commands found in `run` steps |
 
 The resulting configuration uses an ordered `[verify].commands` list:
 

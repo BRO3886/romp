@@ -306,7 +306,7 @@ func TestLoadMalformed(t *testing.T) {
 	}
 }
 
-func TestDiscoverCollectsAndMergesSources(t *testing.T) {
+func TestDiscoverCollectsStructuredProjectFiles(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "Makefile"), "test lint:\n\t@true\n")
 	write(t, filepath.Join(root, "package.json"), `{"scripts":{"check":"go test ./..."}}`)
@@ -318,8 +318,10 @@ func TestDiscoverCollectsAndMergesSources(t *testing.T) {
 		t.Fatalf("Discover = %+v, want four candidates", got)
 	}
 	for _, candidate := range got {
-		if candidate.Command == "make test" && len(candidate.Sources) != 2 {
-			t.Errorf("make test sources = %v, want Makefile and README", candidate.Sources)
+		if candidate.Command == "make test" {
+			if len(candidate.Sources) != 1 {
+				t.Errorf("Discover included Markdown candidate: %+v", candidate)
+			}
 		}
 	}
 	if got[0].Command != "make test" || got[1].Command != "make lint" || got[2].Command != "npm run check" || got[3].Command != "go test ./..." {

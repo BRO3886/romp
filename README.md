@@ -33,9 +33,10 @@ romp run -i 17     # run one issue in the foreground
 romp watch         # then let it run
 ```
 
-`init` reads project files and shows discovered commands from Makefiles, package
-manifests, CI workflows, and documentation. Select commands or type your own.
-Use repeatable `--verify` flags in non-interactive environments.
+`init` reads project configuration files and shows discovered commands from
+Makefiles, package manifests, language manifests, and CI workflows. Select
+commands or type your own. Use repeatable `--verify` flags in non-interactive
+environments.
 
 In an interactive terminal, `init` shows the selected commands and a filtered
 candidate list. Enter adds the highlighted or typed command. Submit an empty
