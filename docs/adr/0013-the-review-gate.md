@@ -47,7 +47,18 @@ The reviewer writes `.romp/review.md`, the existing outcome-artifact convention:
 
 One round by default: a fresh builder run in the same worktree with unresolved blocking findings embedded as constraints, followed by re-verification (the previous green is stale) and re-review. Session resume is available only behind the undocumented `ROMP_FIX_MODE=resume` for experimentation; adjacent evidence (weak intrinsic self-correction, context rot, Reflexion's distilled-feedback retries) favors fresh context with findings embedded. If fix rounds prove common enough that re-read cost matters, promote to documented config with data.
 
-On exhausted rounds the job records `changes-requested`: distinct from red because verify passed — the code works but does not meet the bar. Worktree kept for inspection.
+On exhausted rounds the job records `changes-requested`: distinct from red because verify passed — the code works but does not meet the bar.
+
+### Worktree and branch cleanup
+
+The worktree's inspection value exists only while its contents match what the gates actually judged. Cleanup follows the terminal outcome:
+
+- **Removed** when the pipeline completes: any route to `done` (clean approve, approve with nits, docs-only skip, fix round ending in an approved re-review and an opened PR), plus `blocked`. Also removed on `no-changes`, which today leaks the directory; since such jobs never committed, the zero-commit `romp-N` branch ref is deleted with it.
+- **Kept** whenever a human needs to inspect what failed: `red` (the tree is exactly what failed verify), `changes-requested` (the final tree equals what the reviewer rejected, even though the fixer mutated it mid-job), `timeout`, `interrupted`, and errors including a missing or malformed review artifact.
+
+Branches are separate from worktrees and follow their own rule: `done` keeps the branch (it is the PR head), `blocked` and `no-changes` delete it, everything kept-for-inspection keeps both.
+
+Worktrees accumulate across kept outcomes, so gc planning (ADR 0010) eventually owns reclaiming them; until then removal discipline above bounds growth to failure paths only.
 
 ### Configurability
 
