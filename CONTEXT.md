@@ -9,13 +9,33 @@ One labelled issue worked from claim to terminal state.
 _Avoid_: task, run
 
 **Outcome**:
-The terminal state of a job: done, blocked, no-changes, red, timeout, cancelled, interrupted, error.
+The terminal state of a job: done, blocked, no-changes, red, changes-requested, timeout, cancelled, interrupted, error.
 `rate-limited` names the in-job GitHub retry, not a produced outcome.
 _Avoid_: status, result
 
 **Blocked**:
 An outcome where the agent stops without writing code because the issue is ambiguous, contradictory, or under-scoped; romp relabels the issue `romp:blocked` and posts the specific gap.
 _Avoid_: failed, rejected
+
+**Red**:
+An outcome where a verify command failed after the agent finished; the worktree is kept for inspection. Mechanical, not judgment: the PROVE IT commands are objective fact.
+_Avoid_: failed, broken
+
+**Changes requested**:
+An outcome where the review gate found blocking findings that were not cleared within the fix-round budget; distinct from red because verify passed — the code works but does not meet the review bar.
+_Avoid_: red, review-failed, rejected
+
+**Review gate**:
+The check between verify and push where a read-only reviewer run evaluates the diff against the issue and repo standards; a single reviewer receives the lens plan romp computed from the changed files.
+_Avoid_: code review, QA, critic
+
+**Findings**:
+The individual issues a reviewer reports, each with a severity of blocking, non-blocking, or nit.
+_Avoid_: comments, issues, feedback
+
+**Fix round**:
+One builder re-run in the same worktree with unresolved blocking findings embedded as constraints, followed by re-verification and re-review. Capped at one per job by default.
+_Avoid_: retry, iteration
 
 **Cancel**:
 A user-initiated action that kills a running job, records the `cancelled` outcome, removes the claim and trigger labels, and cleans up the job's worktree and branch. Cancelling abandons the issue: it stays label-free until a human re-labels it.
@@ -100,3 +120,7 @@ _Avoid_: frontend, UI, instance
 **Codename**:
 An `adjective_name` pair (e.g. `sunny_naruto`) that identifies a job in logs and status, derived deterministically from the repo and issue number.
 _Avoid_: id, name, agent-N
+
+**Session ID**:
+The harness-specific identifier of the agent conversation that produced a job's changes, recorded on the job row and in job logs. Recorded truth, not a resumability guarantee: the session may no longer exist.
+_Avoid_: thread, conversation id, resume key
