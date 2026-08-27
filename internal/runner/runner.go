@@ -56,9 +56,15 @@ type GHOps interface {
 	CreatePR(ctx context.Context, repo, title, body, head, base string) (string, error)
 }
 
+// SessionStore records a successful harness run on its in-flight job.
+type SessionStore interface {
+	SetSessionID(ctx context.Context, repo string, issue int, sessionID string) error
+}
+
 // Runner wires the ports together for a single one-shot job.
 type Runner struct {
 	Harness      harness.Harness
+	Sessions     SessionStore
 	Git          GitOps
 	GH           GHOps
 	Prompt       *prompt.Renderer
@@ -172,12 +178,20 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		runCtx, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
-	_, err = r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
+	result, err := r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
 	if err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("%w: %v", ErrTimeout, err)
 		}
 		return "", err
+	}
+	if result.SessionID != "" {
+		r.logf("session %s", result.SessionID)
+		if r.Sessions != nil {
+			if err := r.Sessions.SetSessionID(context.WithoutCancel(ctx), repo, issueNum, result.SessionID); err != nil {
+				return "", fmt.Errorf("recording session: %w", err)
+			}
+		}
 	}
 	r.logf("agent took %s", time.Since(start).Round(time.Second))
 

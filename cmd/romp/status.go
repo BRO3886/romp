@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -39,7 +40,7 @@ func runStatus(ctx context.Context, all bool) error {
 		if err != nil {
 			return err
 		}
-		printJobs(jobs, true)
+		printJobs(os.Stdout, jobs, true)
 		return nil
 	}
 	owner, name, err := currentRepo(ctx)
@@ -50,28 +51,35 @@ func runStatus(ctx context.Context, all bool) error {
 	if err != nil {
 		return err
 	}
-	printJobs(jobs, false)
+	printJobs(os.Stdout, jobs, false)
 	return nil
 }
 
-func printJobs(jobs []job.Job, withRepo bool) {
+func printJobs(out io.Writer, jobs []job.Job, withRepo bool) {
 	if len(jobs) == 0 {
-		fmt.Println("no in-flight jobs")
+		fmt.Fprintln(out, "no in-flight jobs")
 		return
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if withRepo {
-		fmt.Fprintln(w, "REPO\tCODENAME\tISSUE\tBRANCH\tELAPSED")
+		fmt.Fprintln(w, "REPO\tCODENAME\tISSUE\tBRANCH\tELAPSED\tSESSION")
 		for _, j := range jobs {
-			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", j.Repo, codename.For(j.Repo, j.Issue), j.Issue, j.Branch, elapsed(j.ClaimedAt, time.Now()))
+			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n", j.Repo, codename.For(j.Repo, j.Issue), j.Issue, j.Branch, elapsed(j.ClaimedAt, time.Now()), valueOrDash(j.SessionID))
 		}
 	} else {
-		fmt.Fprintln(w, "CODENAME\tISSUE\tBRANCH\tELAPSED")
+		fmt.Fprintln(w, "CODENAME\tISSUE\tBRANCH\tELAPSED\tSESSION")
 		for _, j := range jobs {
-			fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", codename.For(j.Repo, j.Issue), j.Issue, j.Branch, elapsed(j.ClaimedAt, time.Now()))
+			fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n", codename.For(j.Repo, j.Issue), j.Issue, j.Branch, elapsed(j.ClaimedAt, time.Now()), valueOrDash(j.SessionID))
 		}
 	}
 	w.Flush()
+}
+
+func valueOrDash(value string) string {
+	if value == "" {
+		return "-"
+	}
+	return value
 }
 
 // elapsed renders the time since a claim timestamp, or "?" when unparseable.

@@ -1,8 +1,11 @@
 package harness
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -28,15 +31,57 @@ func (o OpenCode) Check(ctx context.Context) (string, error) {
 func (o OpenCode) Run(ctx context.Context, req Request) (Result, error) {
 	cmd := exec.CommandContext(ctx, "opencode", opencodeArgs(req, o.Args)...)
 	cmd.Dir = req.Dir
-	out, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	result, parseErr := parseOpenCodeResult(stdout.Bytes())
 	if err != nil {
-		return Result{Output: string(out)}, fmt.Errorf("opencode: %w\n%s", err, out)
+		return result, diagnosticError("opencode", err, stdout.Bytes(), stderr.Bytes())
 	}
-	return Result{Output: string(out)}, nil
+	if parseErr != nil {
+		return Result{}, diagnosticError("opencode", fmt.Errorf("parsing structured output: %w", parseErr), stdout.Bytes(), stderr.Bytes())
+	}
+	return result, nil
+}
+
+func parseOpenCodeResult(out []byte) (Result, error) {
+	decoder := json.NewDecoder(bytes.NewReader(out))
+	var result Result
+	var textParts []string
+	for {
+		var event struct {
+			SessionID string `json:"sessionID"`
+			Part      struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"part"`
+		}
+		if err := decoder.Decode(&event); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return Result{}, err
+		}
+		if result.SessionID == "" {
+			result.SessionID = event.SessionID
+		}
+		if event.SessionID != "" && event.SessionID != result.SessionID {
+			return Result{}, fmt.Errorf("event stream changed sessionID from %q to %q", result.SessionID, event.SessionID)
+		}
+		if event.Part.Type == "text" {
+			textParts = append(textParts, event.Part.Text)
+		}
+	}
+	if result.SessionID == "" {
+		return Result{}, fmt.Errorf("event stream has no sessionID")
+	}
+	result.Output = strings.Join(textParts, "\n")
+	return result, nil
 }
 
 func opencodeArgs(req Request, extra []string) []string {
-	args := []string{"run", "--auto"}
+	args := []string{"run", "--auto", "--format", "json"}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}

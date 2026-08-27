@@ -10,7 +10,7 @@ import (
 )
 
 func TestOpenCodeArgs(t *testing.T) {
-	base := []string{"run", "--auto"}
+	base := []string{"run", "--auto", "--format", "json"}
 
 	plain := opencodeArgs(Request{Prompt: "rendered prompt"}, nil)
 	want := append(append([]string{}, base...), "rendered prompt")
@@ -36,10 +36,27 @@ func TestOpenCodeArgs(t *testing.T) {
 		t.Errorf("with model and variant = %v, want %v", withModelAndVariant, want)
 	}
 
-	withLegacySettings := opencodeArgs(Request{Prompt: "rendered prompt", MaxTurns: 30}, []string{"--format", "json"})
-	want = append(append([]string{}, base...), "--format", "json", "rendered prompt")
+	withLegacySettings := opencodeArgs(Request{Prompt: "rendered prompt", MaxTurns: 30}, nil)
+	want = append(append([]string{}, base...), "rendered prompt")
 	if !reflect.DeepEqual(withLegacySettings, want) {
 		t.Errorf("with legacy settings = %v, want %v (no OpenCode turn flag)", withLegacySettings, want)
+	}
+}
+
+func TestParseOpenCodeResultRecordedOutput(t *testing.T) {
+	out, err := os.ReadFile("testdata/opencode-1.18.18-success.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := parseOpenCodeResult(out)
+	if err != nil {
+		t.Fatalf("parseOpenCodeResult: %v", err)
+	}
+	if result.SessionID != "ses_65b3acf58ffeLSa4dfj1RVoPpW" {
+		t.Errorf("SessionID = %q", result.SessionID)
+	}
+	if result.Output != "Applied the requested changes.\nOpenCode completed the task." {
+		t.Errorf("Output = %q, want final assistant text", result.Output)
 	}
 }
 
@@ -55,16 +72,19 @@ func TestOpenCodeRunCreatesResultArtifact(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("EXPECTED_DIR", worktree)
 
-	writeOpenCodeScript(t, bin, `
+	writeHarnessScript(t, bin, "opencode", `
 [ "$1" = run ] || exit 11
 [ "$2" = --auto ] || exit 12
-[ "$3" = --model ] || exit 13
-[ "$4" = openai/gpt-5 ] || exit 14
-[ "$5" = "rendered prompt" ] || exit 15
+[ "$3" = --format ] || exit 13
+[ "$4" = json ] || exit 14
+[ "$5" = --model ] || exit 15
+[ "$6" = openai/gpt-5 ] || exit 16
+[ "$7" = "rendered prompt" ] || exit 17
 [ "$PWD" = "$EXPECTED_DIR" ] || exit 16
 mkdir -p .romp
 printf '%s\n' '---' 'title: OpenCode result' 'commit: feat: add result' '---' '' 'OpenCode completed the task.' > .romp/pull-request.md
-printf '%s\n' 'OpenCode completed the task.'
+printf '%s\n' '{"type":"step_start","sessionID":"ses_test","part":{"type":"step-start"}}' '{"type":"text","sessionID":"ses_test","part":{"type":"text","text":"OpenCode completed the task."}}' '{"type":"step_finish","sessionID":"ses_test","part":{"type":"step-finish"}}'
+printf '%s\n' 'OpenCode warning on stderr' >&2
 `)
 
 	result, err := (OpenCode{}).Run(context.Background(), Request{
@@ -75,8 +95,11 @@ printf '%s\n' 'OpenCode completed the task.'
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if result.Output != "OpenCode completed the task.\n" {
+	if result.Output != "OpenCode completed the task." {
 		t.Errorf("Output = %q, want command output", result.Output)
+	}
+	if result.SessionID != "ses_test" {
+		t.Errorf("SessionID = %q, want ses_test", result.SessionID)
 	}
 	if _, err := os.Stat(filepath.Join(worktree, ".romp", "pull-request.md")); err != nil {
 		t.Fatalf("result artifact: %v", err)
@@ -86,7 +109,7 @@ printf '%s\n' 'OpenCode completed the task.'
 func TestOpenCodeRunReturnsOutputOnFailure(t *testing.T) {
 	bin := t.TempDir()
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	writeOpenCodeScript(t, bin, "printf '%s\\n' 'agent failed' >&2\nexit 17")
+	writeHarnessScript(t, bin, "opencode", "printf '%s\\n' 'agent failed' >&2\nexit 17")
 
 	result, err := (OpenCode{}).Run(context.Background(), Request{Dir: t.TempDir(), Prompt: "rendered prompt"})
 	if err == nil {
@@ -95,14 +118,14 @@ func TestOpenCodeRunReturnsOutputOnFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "exit status 17") || !strings.Contains(err.Error(), "agent failed") {
 		t.Errorf("Run error = %q, want exit status and output", err)
 	}
-	if result.Output != "agent failed\n" {
-		t.Errorf("Output = %q, want command output", result.Output)
+	if result.Output != "" {
+		t.Errorf("Output = %q, want no structured assistant output", result.Output)
 	}
 }
 
-func writeOpenCodeScript(t *testing.T, dir, body string) {
+func writeHarnessScript(t *testing.T, dir, name, body string) {
 	t.Helper()
-	path := filepath.Join(dir, "opencode")
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
 		t.Fatal(err)
 	}

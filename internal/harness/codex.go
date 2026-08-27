@@ -1,8 +1,11 @@
 package harness
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -42,15 +45,53 @@ func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 	// stdin as piped input and appends it to an argv prompt, so the
 	// goal contract goes on stdin and stays off argv.
 	cmd.Stdin = strings.NewReader(req.Prompt)
-	out, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	result, parseErr := parseCodexResult(stdout.Bytes())
 	if err != nil {
-		return Result{Output: string(out)}, fmt.Errorf("codex: %w\n%s", err, out)
+		return result, diagnosticError("codex", err, stdout.Bytes(), stderr.Bytes())
 	}
-	return Result{Output: string(out)}, nil
+	if parseErr != nil {
+		return Result{}, diagnosticError("codex", fmt.Errorf("parsing structured output: %w", parseErr), stdout.Bytes(), stderr.Bytes())
+	}
+	return result, nil
+}
+
+func parseCodexResult(out []byte) (Result, error) {
+	decoder := json.NewDecoder(bytes.NewReader(out))
+	var result Result
+	for {
+		var event struct {
+			Type     string `json:"type"`
+			ThreadID string `json:"thread_id"`
+			Item     struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"item"`
+		}
+		if err := decoder.Decode(&event); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return Result{}, err
+		}
+		switch {
+		case event.Type == "thread.started":
+			result.SessionID = event.ThreadID
+		case event.Type == "item.completed" && event.Item.Type == "agent_message":
+			result.Output = event.Item.Text
+		}
+	}
+	if result.SessionID == "" {
+		return Result{}, fmt.Errorf("event stream has no thread.started.thread_id")
+	}
+	return result, nil
 }
 
 func codexArgs(req Request, extra []string) []string {
-	args := []string{"exec", "--sandbox", "workspace-write", "--color", "never"}
+	args := []string{"exec", "--json", "--sandbox", "workspace-write", "--color", "never"}
 	if req.Dir != "" {
 		args = append(args, "--cd", req.Dir)
 	}

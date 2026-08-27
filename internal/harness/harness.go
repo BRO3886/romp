@@ -3,7 +3,10 @@
 // agent produced. Adapters (claude, codex, opencode, ...) implement this interface.
 package harness
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Request is a single agent run.
 type Request struct {
@@ -29,6 +32,19 @@ type Request struct {
 type Result struct {
 	// Output is the agent's final text output, if any.
 	Output string
+	// SessionID identifies the conversation created by the harness run.
+	SessionID string
+}
+
+func diagnosticError(name string, err error, stdout, stderr []byte) error {
+	detail := ""
+	if len(stdout) > 0 {
+		detail += "\nstdout:\n" + string(stdout)
+	}
+	if len(stderr) > 0 {
+		detail += "\nstderr:\n" + string(stderr)
+	}
+	return fmt.Errorf("%s: %w%s", name, err, detail)
 }
 
 // Harness drives a coding agent. Implementations are expected to block until

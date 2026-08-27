@@ -22,6 +22,21 @@ func TestWriteHistorySingleRepoOmitsRepoColumn(t *testing.T) {
 	if col := tableColumn(t, got, "ISSUE", 0); col != "7" {
 		t.Errorf("ISSUE = %q, want 7\n%s", col, got)
 	}
+	if col := tableColumn(t, got, "SESSION", 0); col != "-" {
+		t.Errorf("SESSION = %q, want -\n%s", col, got)
+	}
+}
+
+func TestWriteHistoryExposesSessionID(t *testing.T) {
+	var out bytes.Buffer
+	if err := writeHistory(&out, []job.Outcome{
+		{Repo: "a/b", Issue: 7, Outcome: "red", FinishedAt: "2026-08-18T12:00:00Z", SessionID: "session-7"},
+	}, false); err != nil {
+		t.Fatalf("writeHistory: %v", err)
+	}
+	if got := tableColumn(t, out.String(), "SESSION", 0); got != "session-7" {
+		t.Errorf("SESSION = %q, want session-7\n%s", got, out.String())
+	}
 }
 
 func TestWriteHistoryAllIncludesEveryRepo(t *testing.T) {
