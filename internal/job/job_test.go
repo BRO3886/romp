@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -119,6 +120,9 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 	if ok, err := s.Claim(ctx, "o/r", 7, "romp-7"); err != nil || !ok {
 		t.Fatalf("Claim: ok=%v err=%v", ok, err)
 	}
+	if err := s.SetSessionID(ctx, "o/r", 7, "session-7"); err != nil {
+		t.Fatalf("SetSessionID: %v", err)
+	}
 
 	if err := s.Finish(ctx, Outcome{
 		Repo: "o/r", Issue: 7, Outcome: "done", Branch: "romp-7",
@@ -151,6 +155,100 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 	}
 	if o.FinishedAt != "2026-08-18T12:00:00Z" {
 		t.Errorf("FinishedAt = %q, want the recorded time", o.FinishedAt)
+	}
+	if o.SessionID != "session-7" {
+		t.Errorf("SessionID = %q, want session-7", o.SessionID)
+	}
+}
+
+func TestSetSessionIDExposesActiveJob(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	if ok, err := s.Claim(ctx, "o/r", 7, "romp-7"); err != nil || !ok {
+		t.Fatalf("Claim: ok=%v err=%v", ok, err)
+	}
+	if err := s.SetSessionID(ctx, "o/r", 7, "session-7"); err != nil {
+		t.Fatalf("SetSessionID: %v", err)
+	}
+	jobs, err := s.List(ctx, "o/r")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].SessionID != "session-7" {
+		t.Fatalf("jobs = %+v, want active session-7", jobs)
+	}
+}
+
+func TestOpenMigratesLegacyDatabaseWithoutDataLoss(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "romp.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	legacySchema := `
+CREATE TABLE jobs (
+	id TEXT PRIMARY KEY, repo TEXT NOT NULL, issue INTEGER NOT NULL,
+	branch TEXT NOT NULL, claimed_at TEXT NOT NULL, UNIQUE(repo, issue)
+);
+CREATE TABLE outcomes (
+	id INTEGER PRIMARY KEY AUTOINCREMENT, repo TEXT NOT NULL, issue INTEGER NOT NULL,
+	outcome TEXT NOT NULL, branch TEXT NOT NULL, pr_url TEXT, detail TEXT,
+	started_at TEXT NOT NULL, finished_at TEXT NOT NULL
+);
+INSERT INTO jobs (id, repo, issue, branch, claimed_at)
+	VALUES ('old-job', 'o/r', 7, 'romp-7', '2026-08-18T11:00:00Z');
+INSERT INTO outcomes (repo, issue, outcome, branch, started_at, finished_at)
+	VALUES ('o/r', 6, 'done', 'romp-6', '2026-08-18T09:00:00Z', '2026-08-18T10:00:00Z');`
+	if _, err := db.Exec(legacySchema); err != nil {
+		db.Close()
+		t.Fatalf("creating legacy database: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("closing legacy database: %v", err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open migrated database: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ctx := context.Background()
+	jobs, err := s.List(ctx, "o/r")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].Issue != 7 || jobs[0].SessionID != "" {
+		t.Fatalf("legacy jobs = %+v", jobs)
+	}
+	outcomes, err := s.History(ctx, "o/r", 10)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Issue != 6 || outcomes[0].SessionID != "" {
+		t.Fatalf("legacy outcomes = %+v", outcomes)
+	}
+	if err := s.SetSessionID(ctx, "o/r", 7, "migrated-session"); err != nil {
+		t.Fatalf("SetSessionID after migration: %v", err)
+	}
+	if err := s.Finish(ctx, Outcome{
+		Repo: "o/r", Issue: 7, Outcome: "red", Branch: "romp-7", FinishedAt: "2026-08-18T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("Finish after migration: %v", err)
+	}
+	outcomes, err = s.History(ctx, "o/r", 10)
+	if err != nil {
+		t.Fatalf("History after Finish: %v", err)
+	}
+	if len(outcomes) != 2 || outcomes[0].SessionID != "migrated-session" || outcomes[1].Issue != 6 {
+		t.Fatalf("migrated outcomes = %+v", outcomes)
+	}
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("second idempotent Open: %v", err)
+	}
+	if err := s2.Close(); err != nil {
+		t.Fatalf("closing second store: %v", err)
 	}
 }
 

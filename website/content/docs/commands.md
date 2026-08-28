@@ -59,8 +59,10 @@ romp history           # recently finished jobs in this repo
 romp history --all     # recently finished jobs across every repo
 ```
 
-`status` shows each in-flight job's codename, issue, branch, and elapsed time.
-`history` lists recently finished jobs with their outcome, branch, and PR URL.
+`status` shows each in-flight job's codename, issue, branch, elapsed time, and
+optional `SESSION` identifier. `history` lists recently finished jobs with
+their outcome, branch, PR URL, and optional `SESSION` identifier. A missing
+session identifier appears as `-`.
 
 ## `romp logs`
 

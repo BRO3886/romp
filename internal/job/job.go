@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -23,6 +24,7 @@ type Job struct {
 	Issue     int
 	Branch    string
 	ClaimedAt string
+	SessionID string
 }
 
 // Outcome is one finished job, appended to history on terminal state.
@@ -35,6 +37,7 @@ type Outcome struct {
 	Detail     string
 	StartedAt  string
 	FinishedAt string
+	SessionID  string
 }
 
 // Store is a thin handle over the SQLite job table.
@@ -59,6 +62,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("creating schema: %w", err)
 	}
+	if err := migrateSessionID(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrating schema: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 
@@ -69,6 +76,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 	issue      INTEGER NOT NULL,
 	branch     TEXT NOT NULL,
 	claimed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+	session_id TEXT,
 	UNIQUE(repo, issue)
 );
 CREATE TABLE IF NOT EXISTS outcomes (
@@ -80,8 +88,48 @@ CREATE TABLE IF NOT EXISTS outcomes (
 	pr_url      TEXT,
 	detail      TEXT,
 	started_at  TEXT NOT NULL,
-	finished_at TEXT NOT NULL
+	finished_at TEXT NOT NULL,
+	session_id  TEXT
 );`
+
+func migrateSessionID(db *sql.DB) error {
+	for _, table := range []string{"jobs", "outcomes"} {
+		hasColumn, err := tableHasColumn(db, table, "session_id")
+		if err != nil {
+			return err
+		}
+		if hasColumn {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN session_id TEXT`); err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+				continue
+			}
+			return fmt.Errorf("adding %s.session_id: %w", table, err)
+		}
+	}
+	return nil
+}
+
+func tableHasColumn(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, dataType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
 
 // Close releases the underlying connection.
 func (s *Store) Close() error { return s.db.Close() }
@@ -107,6 +155,26 @@ func (s *Store) Claim(ctx context.Context, repo string, issue int, branch string
 	return n == 1, nil
 }
 
+// SetSessionID records the harness conversation on an in-flight job.
+func (s *Store) SetSessionID(ctx context.Context, repo string, issue int, sessionID string) error {
+	if sessionID == "" {
+		return fmt.Errorf("session ID is empty")
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET session_id = ? WHERE repo = ? AND issue = ?`, sessionID, repo, issue)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("in-flight job %s#%d not found", repo, issue)
+	}
+	return nil
+}
+
 // Delete removes the in-flight row for issue, marking it terminal.
 func (s *Store) Delete(ctx context.Context, repo string, issue int) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM jobs WHERE repo = ? AND issue = ?`, repo, issue)
@@ -125,7 +193,7 @@ func (s *Store) ClearRunning(ctx context.Context, repo string) error {
 // List returns the in-flight rows for repo, or every repo when repo is empty,
 // ordered by repo then issue.
 func (s *Store) List(ctx context.Context, repo string) ([]Job, error) {
-	query := `SELECT repo, issue, branch, claimed_at FROM jobs`
+	query := `SELECT repo, issue, branch, claimed_at, COALESCE(session_id, '') FROM jobs`
 	var args []any
 	if repo != "" {
 		query += ` WHERE repo = ?`
@@ -140,7 +208,7 @@ func (s *Store) List(ctx context.Context, repo string) ([]Job, error) {
 	var out []Job
 	for rows.Next() {
 		var j Job
-		if err := rows.Scan(&j.Repo, &j.Issue, &j.Branch, &j.ClaimedAt); err != nil {
+		if err := rows.Scan(&j.Repo, &j.Issue, &j.Branch, &j.ClaimedAt, &j.SessionID); err != nil {
 			return nil, err
 		}
 		out = append(out, j)
@@ -159,8 +227,9 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 	defer tx.Rollback()
 
 	var startedAt string
+	var sessionID sql.NullString
 	err = tx.QueryRowContext(ctx,
-		`SELECT claimed_at FROM jobs WHERE repo = ? AND issue = ?`, o.Repo, o.Issue).Scan(&startedAt)
+		`SELECT claimed_at, session_id FROM jobs WHERE repo = ? AND issue = ?`, o.Repo, o.Issue).Scan(&startedAt, &sessionID)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -169,8 +238,8 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO outcomes (repo, issue, outcome, branch, pr_url, detail, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		o.Repo, o.Issue, o.Outcome, o.Branch, nullable(o.PRURL), nullable(o.Detail), startedAt, o.FinishedAt); err != nil {
+		`INSERT INTO outcomes (repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		o.Repo, o.Issue, o.Outcome, o.Branch, nullable(o.PRURL), nullable(o.Detail), startedAt, o.FinishedAt, nullable(sessionID.String)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -183,7 +252,7 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 // History returns the most recent limit finished jobs for repo, newest first.
 // An empty repo returns outcomes from every repository.
 func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome, error) {
-	query := `SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at FROM outcomes`
+	query := `SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, COALESCE(session_id, '') FROM outcomes`
 	var args []any
 	if repo != "" {
 		query += ` WHERE repo = ?`
@@ -200,7 +269,7 @@ func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome,
 	for rows.Next() {
 		var o Outcome
 		var prURL, detail sql.NullString
-		if err := rows.Scan(&o.Repo, &o.Issue, &o.Outcome, &o.Branch, &prURL, &detail, &o.StartedAt, &o.FinishedAt); err != nil {
+		if err := rows.Scan(&o.Repo, &o.Issue, &o.Outcome, &o.Branch, &prURL, &detail, &o.StartedAt, &o.FinishedAt, &o.SessionID); err != nil {
 			return nil, err
 		}
 		o.PRURL, o.Detail = prURL.String, detail.String

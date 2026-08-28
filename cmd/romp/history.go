@@ -54,9 +54,9 @@ func runHistory(cmd *cobra.Command, all bool) error {
 func writeHistory(out io.Writer, outcomes []job.Outcome, all bool) error {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if all {
-		fmt.Fprintln(w, "CODENAME\tREPO\tISSUE\tOUTCOME\tPR\tFINISHED")
+		fmt.Fprintln(w, "CODENAME\tREPO\tISSUE\tOUTCOME\tPR\tFINISHED\tSESSION")
 	} else {
-		fmt.Fprintln(w, "CODENAME\tISSUE\tOUTCOME\tPR\tFINISHED")
+		fmt.Fprintln(w, "CODENAME\tISSUE\tOUTCOME\tPR\tFINISHED\tSESSION")
 	}
 	for _, o := range outcomes {
 		pr := o.PRURL
@@ -64,11 +64,11 @@ func writeHistory(out io.Writer, outcomes []job.Outcome, all bool) error {
 			pr = "-"
 		}
 		if all {
-			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n",
-				codename.For(o.Repo, o.Issue), o.Repo, o.Issue, o.Outcome, pr, o.FinishedAt)
+			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+				codename.For(o.Repo, o.Issue), o.Repo, o.Issue, o.Outcome, pr, o.FinishedAt, valueOrDash(o.SessionID))
 		} else {
-			fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
-				codename.For(o.Repo, o.Issue), o.Issue, o.Outcome, pr, o.FinishedAt)
+			fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\n",
+				codename.For(o.Repo, o.Issue), o.Issue, o.Outcome, pr, o.FinishedAt, valueOrDash(o.SessionID))
 		}
 	}
 	return w.Flush()

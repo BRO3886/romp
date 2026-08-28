@@ -1,7 +1,9 @@
 package harness
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -41,15 +43,40 @@ func (c Claude) Check(ctx context.Context) (string, error) {
 func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 	cmd := exec.CommandContext(ctx, "claude", claudeArgs(req, c.Args)...)
 	cmd.Dir = req.Dir
-	out, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		return Result{Output: string(out)}, fmt.Errorf("claude: %w\n%s", err, out)
+		return Result{}, diagnosticError("claude", err, stdout.Bytes(), stderr.Bytes())
 	}
-	return Result{Output: string(out)}, nil
+	result, parseErr := parseClaudeResult(stdout.Bytes())
+	if parseErr != nil {
+		return Result{}, diagnosticError("claude", fmt.Errorf("parsing structured output: %w", parseErr), stdout.Bytes(), stderr.Bytes())
+	}
+	return result, nil
+}
+
+func parseClaudeResult(out []byte) (Result, error) {
+	var payload struct {
+		Type      string `json:"type"`
+		Result    string `json:"result"`
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		return Result{}, err
+	}
+	if payload.Type != "result" {
+		return Result{}, fmt.Errorf("unexpected payload type %q", payload.Type)
+	}
+	if payload.SessionID == "" {
+		return Result{}, fmt.Errorf("result payload has no session_id")
+	}
+	return Result{Output: payload.Result, SessionID: payload.SessionID}, nil
 }
 
 func claudeArgs(req Request, extra []string) []string {
-	args := []string{"-p", "--output-format", "text", "--permission-mode", "bypassPermissions"}
+	args := []string{"-p", "--output-format", "json", "--permission-mode", "bypassPermissions"}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}

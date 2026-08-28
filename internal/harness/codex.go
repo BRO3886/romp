@@ -1,8 +1,11 @@
 package harness
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -42,15 +45,84 @@ func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 	// stdin as piped input and appends it to an argv prompt, so the
 	// goal contract goes on stdin and stays off argv.
 	cmd.Stdin = strings.NewReader(req.Prompt)
-	out, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		return Result{Output: string(out)}, fmt.Errorf("codex: %w\n%s", err, out)
+		return Result{}, diagnosticError("codex", err, stdout.Bytes(), stderr.Bytes())
 	}
-	return Result{Output: string(out)}, nil
+	result, parseErr := parseCodexResult(stdout.Bytes())
+	if parseErr != nil {
+		return Result{}, diagnosticError("codex", fmt.Errorf("parsing structured output: %w", parseErr), stdout.Bytes(), stderr.Bytes())
+	}
+	return result, nil
+}
+
+func parseCodexResult(out []byte) (Result, error) {
+	decoder := json.NewDecoder(bytes.NewReader(out))
+	var sessionID string
+	var currentMessage string
+	var completedMessage string
+	var sawCompletedTurn bool
+	for {
+		var event struct {
+			Type     string `json:"type"`
+			ThreadID string `json:"thread_id"`
+			Message  string `json:"message"`
+			Error    struct {
+				Message string `json:"message"`
+			} `json:"error"`
+			Item struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"item"`
+		}
+		if err := decoder.Decode(&event); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return Result{}, err
+		}
+		switch {
+		case event.Type == "thread.started":
+			sessionID = event.ThreadID
+		case event.Type == "error":
+			return Result{}, fmt.Errorf("event stream contains error: %s", codexEventMessage(event.Message, event.Error.Message))
+		case event.Type == "turn.failed":
+			return Result{}, fmt.Errorf("event stream contains turn.failed: %s", codexEventMessage(event.Message, event.Error.Message))
+		case event.Type == "item.completed" && event.Item.Type == "agent_message":
+			currentMessage = event.Item.Text
+		case event.Type == "turn.completed":
+			sawCompletedTurn = true
+			completedMessage = currentMessage
+			currentMessage = ""
+		}
+	}
+	if sessionID == "" {
+		return Result{}, fmt.Errorf("event stream has no thread.started.thread_id")
+	}
+	if !sawCompletedTurn {
+		return Result{}, fmt.Errorf("event stream has no completed turn")
+	}
+	if strings.TrimSpace(completedMessage) == "" {
+		return Result{}, fmt.Errorf("completed turn has no non-empty completed agent message")
+	}
+	return Result{Output: completedMessage, SessionID: sessionID}, nil
+}
+
+func codexEventMessage(message, nested string) string {
+	if message != "" {
+		return message
+	}
+	if nested != "" {
+		return nested
+	}
+	return "unknown failure"
 }
 
 func codexArgs(req Request, extra []string) []string {
-	args := []string{"exec", "--sandbox", "workspace-write", "--color", "never"}
+	args := []string{"exec", "--json", "--sandbox", "workspace-write", "--color", "never"}
 	if req.Dir != "" {
 		args = append(args, "--cd", req.Dir)
 	}

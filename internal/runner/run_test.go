@@ -14,16 +14,18 @@ import (
 
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/harness"
+	"github.com/BRO3886/romp/internal/job"
 	"github.com/BRO3886/romp/internal/prompt"
 )
 
 type fakeGit struct {
-	changed  bool
-	worktree string
-	onAdd    func(dir string) error
-	pushed   []string
-	removed  []string
-	deleted  []string
+	changed      bool
+	worktree     string
+	onAdd        func(dir string) error
+	onHasChanges func()
+	pushed       []string
+	removed      []string
+	deleted      []string
 }
 
 func (f *fakeGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
@@ -52,6 +54,9 @@ func (f *fakeGit) DeleteBranch(_ context.Context, branch string) error {
 }
 
 func (f *fakeGit) HasChanges(context.Context, string, string) (bool, error) {
+	if f.onHasChanges != nil {
+		f.onHasChanges()
+	}
 	return f.changed, nil
 }
 
@@ -103,14 +108,32 @@ func (f *fakeGH) CreatePR(_ context.Context, _, title, body, _, _ string) (strin
 	return "https://github.com/o/r/pull/1", nil
 }
 
-type fakeHarness struct{}
+type fakeHarness struct {
+	result harness.Result
+	err    error
+}
 
 func (fakeHarness) Name() string { return "fake" }
 
 func (fakeHarness) Check(context.Context) (string, error) { return "fake", nil }
 
-func (fakeHarness) Run(context.Context, harness.Request) (harness.Result, error) {
-	return harness.Result{}, nil
+func (f fakeHarness) Run(context.Context, harness.Request) (harness.Result, error) {
+	return f.result, f.err
+}
+
+type fakeSessionStore struct {
+	repo      string
+	issue     int
+	sessionID string
+	calls     int
+}
+
+func (f *fakeSessionStore) SetSessionID(_ context.Context, repo string, issue int, sessionID string) error {
+	f.repo = repo
+	f.issue = issue
+	f.sessionID = sessionID
+	f.calls++
+	return nil
 }
 
 // blockingHarness never finishes on its own; it returns when its context is
@@ -176,6 +199,141 @@ func TestRunRemovesTriggerLabelOnSuccess(t *testing.T) {
 	}
 	if len(c.removed) != 1 || c.removed[0] != "7:romp" {
 		t.Errorf("labels removed = %v, want [7:romp]", c.removed)
+	}
+}
+
+func TestRunRecordsAndLogsSessionAfterHarnessSuccess(t *testing.T) {
+	g := &fakeGit{changed: true, onAdd: writePR}
+	c := &fakeGH{}
+	sessions := &fakeSessionStore{}
+	var logs strings.Builder
+	r := newTestRunner(t, g, c, []string{"true"})
+	r.Harness = fakeHarness{result: harness.Result{Output: "done", SessionID: "session-7"}}
+	r.Sessions = sessions
+	r.Codename = "sunny_naruto"
+	r.Stderr = &logs
+
+	if _, err := r.Run(context.Background(), 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if sessions.calls != 1 || sessions.repo != "o/r" || sessions.issue != 7 || sessions.sessionID != "session-7" {
+		t.Errorf("session write = %+v", sessions)
+	}
+	if !strings.Contains(logs.String(), "[sunny_naruto] session session-7") {
+		t.Errorf("logs missing session line:\n%s", logs.String())
+	}
+}
+
+func TestRunDoesNotRecordSessionWhenHarnessFails(t *testing.T) {
+	g := &fakeGit{changed: true, onAdd: writePR}
+	c := &fakeGH{}
+	sessions := &fakeSessionStore{}
+	var logs strings.Builder
+	r := newTestRunner(t, g, c, []string{"true"})
+	r.Harness = fakeHarness{
+		result: harness.Result{SessionID: "session-from-failed-cli"},
+		err:    errors.New("CLI failed: stdout and stderr"),
+	}
+	r.Sessions = sessions
+	r.Stderr = &logs
+
+	if _, err := r.Run(context.Background(), 7); err == nil {
+		t.Fatal("Run error = nil, want harness failure")
+	}
+	if sessions.calls != 0 {
+		t.Errorf("session writes = %d, want none", sessions.calls)
+	}
+	if strings.Contains(logs.String(), "session session-from-failed-cli") {
+		t.Errorf("failed session was logged:\n%s", logs.String())
+	}
+}
+
+func TestHarnessFailureLeavesPersistedSessionEmptyThroughFinish(t *testing.T) {
+	store, err := job.Open(filepath.Join(t.TempDir(), "romp.db"))
+	if err != nil {
+		t.Fatalf("job.Open: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ctx := context.Background()
+	if ok, err := store.Claim(ctx, "o/r", 7, "romp-7"); err != nil || !ok {
+		t.Fatalf("Claim: ok=%v err=%v", ok, err)
+	}
+	r := newTestRunner(t, &fakeGit{changed: true, onAdd: writePR}, &fakeGH{}, []string{"true"})
+	r.Harness = fakeHarness{
+		result: harness.Result{SessionID: "session-from-failed-cli"},
+		err:    errors.New("CLI failed with useful diagnostics"),
+	}
+	r.Sessions = store
+	if _, err := r.Run(ctx, 7); err == nil {
+		t.Fatal("Run error = nil, want harness failure")
+	}
+	jobs, err := store.List(ctx, "o/r")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].SessionID != "" {
+		t.Fatalf("active jobs after failure = %+v", jobs)
+	}
+	if err := store.Finish(ctx, job.Outcome{
+		Repo: "o/r", Issue: 7, Outcome: "error", Branch: "romp-7", FinishedAt: "2026-08-18T12:00:00Z",
+	}); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	outcomes, err := store.History(ctx, "o/r", 10)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(outcomes) != 1 || outcomes[0].SessionID != "" || outcomes[0].Outcome != "error" {
+		t.Fatalf("outcomes after failure = %+v", outcomes)
+	}
+}
+
+func TestRunExposesSessionOnActiveJobBeforeFinish(t *testing.T) {
+	store, err := job.Open(filepath.Join(t.TempDir(), "romp.db"))
+	if err != nil {
+		t.Fatalf("job.Open: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if ok, err := store.Claim(context.Background(), "o/r", 7, "romp-7"); err != nil || !ok {
+		t.Fatalf("Claim: ok=%v err=%v", ok, err)
+	}
+	reachedDownstream := make(chan struct{})
+	continueRun := make(chan struct{})
+	g := &fakeGit{
+		changed: true,
+		onAdd:   writePR,
+		onHasChanges: func() {
+			close(reachedDownstream)
+			<-continueRun
+		},
+	}
+	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+	r.Harness = fakeHarness{result: harness.Result{SessionID: "active-session"}}
+	r.Sessions = store
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := r.Run(context.Background(), 7)
+		runErr <- err
+	}()
+	select {
+	case <-reachedDownstream:
+	case <-time.After(2 * time.Second):
+		close(continueRun)
+		t.Fatal("runner did not reach the downstream pause")
+	}
+	jobs, err := store.List(context.Background(), "o/r")
+	if err != nil {
+		close(continueRun)
+		t.Fatalf("List: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].SessionID != "active-session" {
+		close(continueRun)
+		t.Fatalf("active jobs = %+v", jobs)
+	}
+	close(continueRun)
+	if err := <-runErr; err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 }
 

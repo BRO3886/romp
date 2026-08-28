@@ -1,12 +1,16 @@
 package harness
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 func TestCodexArgs(t *testing.T) {
-	base := []string{"exec", "--sandbox", "workspace-write", "--color", "never"}
+	base := []string{"exec", "--json", "--sandbox", "workspace-write", "--color", "never"}
 
 	plain := codexArgs(Request{Prompt: "hello"}, nil)
 	if !reflect.DeepEqual(plain, base) {
@@ -41,6 +45,78 @@ func TestCodexArgs(t *testing.T) {
 	withTurns := codexArgs(Request{Prompt: "hello", MaxTurns: 30}, nil)
 	if !reflect.DeepEqual(withTurns, base) {
 		t.Errorf("with max turns = %v, want %v (no max-turns flag)", withTurns, base)
+	}
+}
+
+func TestCodexRunParsesStructuredOutputWithStderrDiagnostic(t *testing.T) {
+	bin := t.TempDir()
+	fixture, err := filepath.Abs("testdata/codex-0.147.0-success.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FIXTURE", fixture)
+	writeHarnessScript(t, bin, "codex", `
+test -n "$(cat)" || exit 12
+while IFS= read -r line || [ -n "$line" ]; do printf '%s\n' "$line"; done < "$FIXTURE"
+printf '%s\n' 'Codex warning on stderr' >&2
+`)
+
+	result, err := (Codex{}).Run(context.Background(), Request{Dir: t.TempDir(), Prompt: "rendered prompt"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Output != "Codex completed the task." || result.SessionID != "019d1c0a-0137-73f3-bf4a-88c90739150c" {
+		t.Errorf("result = %+v", result)
+	}
+}
+
+func TestParseCodexResultRecordedOutput(t *testing.T) {
+	out, err := os.ReadFile("testdata/codex-0.147.0-success.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := parseCodexResult(out)
+	if err != nil {
+		t.Fatalf("parseCodexResult: %v", err)
+	}
+	if result.SessionID != "019d1c0a-0137-73f3-bf4a-88c90739150c" {
+		t.Errorf("SessionID = %q", result.SessionID)
+	}
+	if result.Output != "Codex completed the task." {
+		t.Errorf("Output = %q, want final assistant text", result.Output)
+	}
+}
+
+func TestParseCodexResultRejectsIncompleteOrFailedStreams(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		wantErr string
+	}{
+		{name: "thread only", fixture: "codex-0.147.0-thread-only.jsonl", wantErr: "completed"},
+		{name: "turn completed without message", fixture: "codex-0.147.0-turn-completed-no-message.jsonl", wantErr: "agent message"},
+		{name: "empty completed message", fixture: "codex-0.147.0-empty-agent-message.jsonl", wantErr: "agent message"},
+		{name: "turn failed", fixture: "codex-0.147.0-turn-failed.jsonl", wantErr: "turn.failed"},
+		{name: "top-level error", fixture: "codex-0.147.0-error.jsonl", wantErr: "error"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := os.ReadFile(filepath.Join("testdata", tt.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := parseCodexResult(out)
+			if err == nil {
+				t.Fatalf("parseCodexResult = %+v, nil error; want rejection", result)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("parseCodexResult error = %q, want %q", err, tt.wantErr)
+			}
+			if result != (Result{}) {
+				t.Errorf("parseCodexResult result = %+v, want empty result", result)
+			}
+		})
 	}
 }
 
