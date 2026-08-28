@@ -49,10 +49,10 @@ func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	result, parseErr := parseCodexResult(stdout.Bytes())
 	if err != nil {
-		return result, diagnosticError("codex", err, stdout.Bytes(), stderr.Bytes())
+		return Result{}, diagnosticError("codex", err, stdout.Bytes(), stderr.Bytes())
 	}
+	result, parseErr := parseCodexResult(stdout.Bytes())
 	if parseErr != nil {
 		return Result{}, diagnosticError("codex", fmt.Errorf("parsing structured output: %w", parseErr), stdout.Bytes(), stderr.Bytes())
 	}
@@ -61,12 +61,19 @@ func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
 
 func parseCodexResult(out []byte) (Result, error) {
 	decoder := json.NewDecoder(bytes.NewReader(out))
-	var result Result
+	var sessionID string
+	var currentMessage string
+	var completedMessage string
+	var sawCompletedTurn bool
 	for {
 		var event struct {
 			Type     string `json:"type"`
 			ThreadID string `json:"thread_id"`
-			Item     struct {
+			Message  string `json:"message"`
+			Error    struct {
+				Message string `json:"message"`
+			} `json:"error"`
+			Item struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"item"`
@@ -79,15 +86,39 @@ func parseCodexResult(out []byte) (Result, error) {
 		}
 		switch {
 		case event.Type == "thread.started":
-			result.SessionID = event.ThreadID
+			sessionID = event.ThreadID
+		case event.Type == "error":
+			return Result{}, fmt.Errorf("event stream contains error: %s", codexEventMessage(event.Message, event.Error.Message))
+		case event.Type == "turn.failed":
+			return Result{}, fmt.Errorf("event stream contains turn.failed: %s", codexEventMessage(event.Message, event.Error.Message))
 		case event.Type == "item.completed" && event.Item.Type == "agent_message":
-			result.Output = event.Item.Text
+			currentMessage = event.Item.Text
+		case event.Type == "turn.completed":
+			sawCompletedTurn = true
+			completedMessage = currentMessage
+			currentMessage = ""
 		}
 	}
-	if result.SessionID == "" {
+	if sessionID == "" {
 		return Result{}, fmt.Errorf("event stream has no thread.started.thread_id")
 	}
-	return result, nil
+	if !sawCompletedTurn {
+		return Result{}, fmt.Errorf("event stream has no completed turn")
+	}
+	if strings.TrimSpace(completedMessage) == "" {
+		return Result{}, fmt.Errorf("completed turn has no non-empty completed agent message")
+	}
+	return Result{Output: completedMessage, SessionID: sessionID}, nil
+}
+
+func codexEventMessage(message, nested string) string {
+	if message != "" {
+		return message
+	}
+	if nested != "" {
+		return nested
+	}
+	return "unknown failure"
 }
 
 func codexArgs(req Request, extra []string) []string {

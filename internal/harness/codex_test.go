@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -84,6 +85,38 @@ func TestParseCodexResultRecordedOutput(t *testing.T) {
 	}
 	if result.Output != "Codex completed the task." {
 		t.Errorf("Output = %q, want final assistant text", result.Output)
+	}
+}
+
+func TestParseCodexResultRejectsIncompleteOrFailedStreams(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		wantErr string
+	}{
+		{name: "thread only", fixture: "codex-0.147.0-thread-only.jsonl", wantErr: "completed"},
+		{name: "turn completed without message", fixture: "codex-0.147.0-turn-completed-no-message.jsonl", wantErr: "agent message"},
+		{name: "empty completed message", fixture: "codex-0.147.0-empty-agent-message.jsonl", wantErr: "agent message"},
+		{name: "turn failed", fixture: "codex-0.147.0-turn-failed.jsonl", wantErr: "turn.failed"},
+		{name: "top-level error", fixture: "codex-0.147.0-error.jsonl", wantErr: "error"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := os.ReadFile(filepath.Join("testdata", tt.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := parseCodexResult(out)
+			if err == nil {
+				t.Fatalf("parseCodexResult = %+v, nil error; want rejection", result)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("parseCodexResult error = %q, want %q", err, tt.wantErr)
+			}
+			if result != (Result{}) {
+				t.Errorf("parseCodexResult result = %+v, want empty result", result)
+			}
+		})
 	}
 }
 

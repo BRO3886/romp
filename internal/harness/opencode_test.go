@@ -60,6 +60,33 @@ func TestParseOpenCodeResultRecordedOutput(t *testing.T) {
 	}
 }
 
+func TestParseOpenCodeResultRejectsIncompleteStreams(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+	}{
+		{name: "session only", fixture: "opencode-1.18.18-session-only.jsonl"},
+		{name: "step only", fixture: "opencode-1.18.18-step-only.jsonl"},
+		{name: "text without completed step", fixture: "opencode-1.18.18-text-only.jsonl"},
+		{name: "empty text", fixture: "opencode-1.18.18-empty-text.jsonl"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := os.ReadFile(filepath.Join("testdata", tt.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := parseOpenCodeResult(out)
+			if err == nil {
+				t.Fatalf("parseOpenCodeResult = %+v, nil error; want rejection", result)
+			}
+			if result != (Result{}) {
+				t.Errorf("parseOpenCodeResult result = %+v, want empty result", result)
+			}
+		})
+	}
+}
+
 func TestOpenCodeName(t *testing.T) {
 	if got := (OpenCode{}).Name(); got != "opencode" {
 		t.Errorf("Name() = %q, want opencode", got)

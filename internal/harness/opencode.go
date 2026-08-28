@@ -35,10 +35,10 @@ func (o OpenCode) Run(ctx context.Context, req Request) (Result, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	result, parseErr := parseOpenCodeResult(stdout.Bytes())
 	if err != nil {
-		return result, diagnosticError("opencode", err, stdout.Bytes(), stderr.Bytes())
+		return Result{}, diagnosticError("opencode", err, stdout.Bytes(), stderr.Bytes())
 	}
+	result, parseErr := parseOpenCodeResult(stdout.Bytes())
 	if parseErr != nil {
 		return Result{}, diagnosticError("opencode", fmt.Errorf("parsing structured output: %w", parseErr), stdout.Bytes(), stderr.Bytes())
 	}
@@ -49,8 +49,10 @@ func parseOpenCodeResult(out []byte) (Result, error) {
 	decoder := json.NewDecoder(bytes.NewReader(out))
 	var result Result
 	var textParts []string
+	var completedStep bool
 	for {
 		var event struct {
+			Type      string `json:"type"`
 			SessionID string `json:"sessionID"`
 			Part      struct {
 				Type string `json:"type"`
@@ -69,14 +71,20 @@ func parseOpenCodeResult(out []byte) (Result, error) {
 		if event.SessionID != "" && event.SessionID != result.SessionID {
 			return Result{}, fmt.Errorf("event stream changed sessionID from %q to %q", result.SessionID, event.SessionID)
 		}
-		if event.Part.Type == "text" {
+		if event.Type == "text" && event.Part.Type == "text" {
 			textParts = append(textParts, event.Part.Text)
+		}
+		if event.Type == "step_finish" {
+			completedStep = true
 		}
 	}
 	if result.SessionID == "" {
 		return Result{}, fmt.Errorf("event stream has no sessionID")
 	}
 	result.Output = strings.Join(textParts, "\n")
+	if !completedStep || strings.TrimSpace(result.Output) == "" {
+		return Result{}, fmt.Errorf("event stream has no completed non-empty assistant text")
+	}
 	return result, nil
 }
 

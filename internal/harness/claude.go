@@ -47,10 +47,10 @@ func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	result, parseErr := parseClaudeResult(stdout.Bytes())
 	if err != nil {
-		return result, diagnosticError("claude", err, stdout.Bytes(), stderr.Bytes())
+		return Result{}, diagnosticError("claude", err, stdout.Bytes(), stderr.Bytes())
 	}
+	result, parseErr := parseClaudeResult(stdout.Bytes())
 	if parseErr != nil {
 		return Result{}, diagnosticError("claude", fmt.Errorf("parsing structured output: %w", parseErr), stdout.Bytes(), stderr.Bytes())
 	}
