@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // Repo is the main checkout romp was started in.
 type Repo struct {
-	Root string
+	Root   string
+	syncMu sync.Mutex
 }
 
 func (r *Repo) run(ctx context.Context, dir string, args ...string) (string, error) {
@@ -88,19 +90,53 @@ func parseRemote(url string) (owner, name string, err error) {
 	return parts[0], parts[1], nil
 }
 
-// Fetch updates the origin remote-tracking refs.
-func (r *Repo) Fetch(ctx context.Context) error {
-	_, err := r.run(ctx, "", "fetch", "origin")
-	return err
+// SyncBase resolves and refreshes the branch a job will use, then returns its
+// name and exact fetched commit.
+func (r *Repo) SyncBase(ctx context.Context, configured string) (string, string, error) {
+	r.syncMu.Lock()
+	defer r.syncMu.Unlock()
+
+	base := configured
+	if base == "" {
+		var err error
+		base, err = r.remoteDefaultBranch(ctx)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	if _, err := r.run(ctx, "", "check-ref-format", "--branch", base); err != nil {
+		return "", "", fmt.Errorf("invalid base branch %q: %w", base, err)
+	}
+
+	remoteRef := "refs/heads/" + base
+	trackingRef := "refs/remotes/origin/" + base
+	refspec := "+" + remoteRef + ":" + trackingRef
+	if _, err := r.run(ctx, "", "fetch", "--no-tags", "origin", refspec); err != nil {
+		return "", "", fmt.Errorf("refreshing origin/%s: %w", base, err)
+	}
+	commit, err := r.run(ctx, "", "rev-parse", "--verify", trackingRef+"^{commit}")
+	if err != nil {
+		return "", "", fmt.Errorf("resolving refreshed origin/%s: %w", base, err)
+	}
+	return base, commit, nil
 }
 
-// DefaultBranch returns the remote default branch name (e.g. "main").
-func (r *Repo) DefaultBranch(ctx context.Context) (string, error) {
-	out, err := r.run(ctx, "", "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+func (r *Repo) remoteDefaultBranch(ctx context.Context) (string, error) {
+	out, err := r.run(ctx, "", "ls-remote", "--symref", "origin", "HEAD")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolving remote default branch: %w", err)
 	}
-	return strings.TrimPrefix(out, "origin/"), nil
+	for line := range strings.SplitSeq(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || fields[0] != "ref:" || fields[2] != "HEAD" {
+			continue
+		}
+		const heads = "refs/heads/"
+		if strings.HasPrefix(fields[1], heads) {
+			return strings.TrimPrefix(fields[1], heads), nil
+		}
+	}
+	return "", fmt.Errorf("remote HEAD does not identify a default branch; configure base explicitly")
 }
 
 // AddWorktree creates a fresh branch off base in a new worktree at dir. It

@@ -21,6 +21,8 @@ import (
 type fakeGit struct {
 	changed      bool
 	worktree     string
+	worktreeBase string
+	syncErr      error
 	onAdd        func(dir string) error
 	onHasChanges func()
 	pushed       []string
@@ -29,11 +31,19 @@ type fakeGit struct {
 }
 
 func (f *fakeGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
-func (f *fakeGit) Fetch(context.Context) error                    { return nil }
-func (f *fakeGit) DefaultBranch(context.Context) (string, error)  { return "main", nil }
+func (f *fakeGit) SyncBase(_ context.Context, configured string) (string, string, error) {
+	if f.syncErr != nil {
+		return "", "", f.syncErr
+	}
+	if configured != "" {
+		return configured, "configured-commit", nil
+	}
+	return "main", "default-commit", nil
+}
 
-func (f *fakeGit) AddWorktree(_ context.Context, _, dir, _ string) error {
+func (f *fakeGit) AddWorktree(_ context.Context, _, dir, base string) error {
 	f.worktree = dir
+	f.worktreeBase = base
 	if err := os.MkdirAll(filepath.Join(dir, ".romp"), 0o755); err != nil {
 		return err
 	}
@@ -111,6 +121,7 @@ func (f *fakeGH) CreatePR(_ context.Context, _, title, body, _, _ string) (strin
 type fakeHarness struct {
 	result harness.Result
 	err    error
+	calls  *int
 }
 
 func (fakeHarness) Name() string { return "fake" }
@@ -118,6 +129,9 @@ func (fakeHarness) Name() string { return "fake" }
 func (fakeHarness) Check(context.Context) (string, error) { return "fake", nil }
 
 func (f fakeHarness) Run(context.Context, harness.Request) (harness.Result, error) {
+	if f.calls != nil {
+		*f.calls++
+	}
 	return f.result, f.err
 }
 
@@ -199,6 +213,38 @@ func TestRunRemovesTriggerLabelOnSuccess(t *testing.T) {
 	}
 	if len(c.removed) != 1 || c.removed[0] != "7:romp" {
 		t.Errorf("labels removed = %v, want [7:romp]", c.removed)
+	}
+	if g.worktreeBase != "default-commit" {
+		t.Errorf("worktree base = %q, want exact synced commit", g.worktreeBase)
+	}
+}
+
+func TestRunStopsBeforeHarnessWhenBaseRefreshFails(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "fetch", err: errors.New("refreshing origin/main: unavailable")},
+		{name: "default branch", err: errors.New("remote HEAD does not identify a default branch")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			g := &fakeGit{syncErr: tt.err}
+			r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+			r.Harness = fakeHarness{calls: &calls}
+
+			_, err := r.Run(context.Background(), 7)
+			if err == nil || !strings.Contains(err.Error(), "refresh base") || !strings.Contains(err.Error(), tt.err.Error()) {
+				t.Fatalf("Run error = %v, want actionable base refresh error", err)
+			}
+			if calls != 0 {
+				t.Errorf("harness calls = %d, want none", calls)
+			}
+			if g.worktree != "" {
+				t.Errorf("worktree = %q, want none", g.worktree)
+			}
+		})
 	}
 }
 

@@ -36,8 +36,7 @@ var ErrRed = errors.New("red")
 // branch, manage the job worktree and branch, and publish the result.
 type GitOps interface {
 	Origin(ctx context.Context) (owner, name string, err error)
-	Fetch(ctx context.Context) error
-	DefaultBranch(ctx context.Context) (string, error)
+	SyncBase(ctx context.Context, configured string) (name, commit string, err error)
 	AddWorktree(ctx context.Context, branch, dir, base string) error
 	RemoveWorktree(ctx context.Context, dir string) error
 	DeleteBranch(ctx context.Context, branch string) error
@@ -125,15 +124,9 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	repo := owner + "/" + name
 	r.logf("repo %s, issue #%d", repo, issueNum)
 
-	if err := r.Git.Fetch(ctx); err != nil {
-		return "", fmt.Errorf("fetch: %w", err)
-	}
-	base := r.Base
-	if base == "" {
-		base, err = r.Git.DefaultBranch(ctx)
-		if err != nil {
-			return "", fmt.Errorf("default branch: %w", err)
-		}
+	base, baseCommit, err := r.Git.SyncBase(ctx, r.Base)
+	if err != nil {
+		return "", fmt.Errorf("refresh base: %w", err)
 	}
 
 	issue, err := r.GH.Issue(ctx, repo, issueNum)
@@ -147,7 +140,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		return "", err
 	}
 
-	if err := r.Git.AddWorktree(ctx, branch, dir, "origin/"+base); err != nil {
+	if err := r.Git.AddWorktree(ctx, branch, dir, baseCommit); err != nil {
 		return "", fmt.Errorf("worktree: %w", err)
 	}
 
@@ -223,7 +216,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		return "", err
 	}
 
-	changed, err := r.Git.HasChanges(ctx, dir, "origin/"+base)
+	changed, err := r.Git.HasChanges(ctx, dir, baseCommit)
 	if err != nil {
 		return "", err
 	}
