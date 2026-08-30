@@ -109,12 +109,12 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlags []string, ve
 		return nil, fmt.Errorf("parsing timeout %q: %w", cfg.Timeout, err)
 	}
 
-	return buildRunner(root, cfg, verify, h, timeout)
+	return buildRunner(root, cfg, verify, h, timeout, &git.Repo{Root: root})
 }
 
 // buildRunner assembles a Runner from already-resolved config and options so
 // both the run and watch commands share one construction path.
-func buildRunner(root string, cfg *config.Config, verify []string, h harness.Harness, timeout time.Duration) (*runner.Runner, error) {
+func buildRunner(root string, cfg *config.Config, verify []string, h harness.Harness, timeout time.Duration, repository runner.GitOps) (*runner.Runner, error) {
 	templateText, err := loadTemplate(root, cfg.Prompt.Template)
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func buildRunner(root string, cfg *config.Config, verify []string, h harness.Har
 	}
 	return &runner.Runner{
 		Harness:      h,
-		Git:          &git.Repo{Root: root},
+		Git:          repository,
 		GH:           &gh.Client{},
 		Prompt:       &prompt.Renderer{Template: templateText},
 		Verify:       verify,
@@ -141,6 +141,12 @@ func buildRunner(root string, cfg *config.Config, verify []string, h harness.Har
 		BlockedLabel: cfg.BlockedLabel,
 		Stderr:       os.Stderr,
 	}, nil
+}
+
+func newWatchRunnerFactory(root string, cfg *config.Config, verify []string, h harness.Harness, timeout time.Duration, repository runner.GitOps) func() (*runner.Runner, error) {
+	return func() (*runner.Runner, error) {
+		return buildRunner(root, cfg, verify, h, timeout, repository)
+	}
 }
 
 // loadTemplate returns the goal-contract template text: the configured file

@@ -36,7 +36,8 @@ var ErrRed = errors.New("red")
 // branch, manage the job worktree and branch, and publish the result.
 type GitOps interface {
 	Origin(ctx context.Context) (owner, name string, err error)
-	SyncBase(ctx context.Context, configured string) (name, commit string, err error)
+	DefaultBranch(ctx context.Context) (string, error)
+	RefreshBranch(ctx context.Context, branch string) (commit string, err error)
 	AddWorktree(ctx context.Context, branch, dir, base string) error
 	RemoveWorktree(ctx context.Context, dir string) error
 	DeleteBranch(ctx context.Context, branch string) error
@@ -124,7 +125,14 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	repo := owner + "/" + name
 	r.logf("repo %s, issue #%d", repo, issueNum)
 
-	base, baseCommit, err := r.Git.SyncBase(ctx, r.Base)
+	base := r.Base
+	if base == "" {
+		base, err = r.Git.DefaultBranch(ctx)
+		if err != nil {
+			return "", fmt.Errorf("default branch: %w", err)
+		}
+	}
+	baseCommit, err := r.Git.RefreshBranch(ctx, base)
 	if err != nil {
 		return "", fmt.Errorf("refresh base: %w", err)
 	}

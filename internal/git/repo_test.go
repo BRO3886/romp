@@ -107,9 +107,17 @@ type jobStart struct {
 
 func startTestJob(t *testing.T, repo *Repo, issue int, configuredBase string) jobStart {
 	t.Helper()
-	base, commit, err := repo.SyncBase(context.Background(), configuredBase)
+	base := configuredBase
+	if base == "" {
+		var err error
+		base, err = repo.DefaultBranch(context.Background())
+		if err != nil {
+			t.Fatalf("DefaultBranch: %v", err)
+		}
+	}
+	commit, err := repo.RefreshBranch(context.Background(), base)
 	if err != nil {
-		t.Fatalf("SyncBase: %v", err)
+		t.Fatalf("RefreshBranch: %v", err)
 	}
 	dir := filepath.Join(t.TempDir(), "worktree")
 	if err := repo.AddWorktree(context.Background(), "romp-test-"+strconv.Itoa(issue), dir, commit); err != nil {
@@ -181,26 +189,26 @@ func TestConfiguredBaseOverridesRemoteDefaultAtLatestCommit(t *testing.T) {
 	}
 }
 
-func TestSyncBaseReportsDefaultBranchResolutionFailure(t *testing.T) {
+func TestDefaultBranchReportsRemoteResolutionFailure(t *testing.T) {
 	f := newRemoteFixture(t, "trunk")
 	runGit(t, filepath.Dir(f.remote), "--git-dir", f.remote, "symbolic-ref", "HEAD", "refs/heads/missing")
 
-	_, _, err := f.repo.SyncBase(context.Background(), "")
+	_, err := f.repo.DefaultBranch(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "remote HEAD does not identify a default branch") || !strings.Contains(err.Error(), "configure base explicitly") {
-		t.Fatalf("SyncBase error = %v, want actionable default-branch error", err)
+		t.Fatalf("DefaultBranch error = %v, want actionable default-branch error", err)
 	}
 }
 
-func TestSyncBaseReportsFetchFailure(t *testing.T) {
+func TestRefreshBranchReportsFetchFailure(t *testing.T) {
 	f := newRemoteFixture(t, "trunk")
 
-	_, _, err := f.repo.SyncBase(context.Background(), "missing")
+	_, err := f.repo.RefreshBranch(context.Background(), "missing")
 	if err == nil || !strings.Contains(err.Error(), "refreshing origin/missing") {
-		t.Fatalf("SyncBase error = %v, want actionable fetch error", err)
+		t.Fatalf("RefreshBranch error = %v, want actionable fetch error", err)
 	}
 }
 
-func TestConcurrentBaseRefreshesSucceed(t *testing.T) {
+func TestConcurrentBranchRefreshesSucceed(t *testing.T) {
 	f := newRemoteFixture(t, "trunk")
 	const jobs = 12
 	errCh := make(chan string, jobs)
@@ -209,20 +217,20 @@ func TestConcurrentBaseRefreshesSucceed(t *testing.T) {
 	for range jobs {
 		go func() {
 			defer wg.Done()
-			base, commit, err := f.repo.SyncBase(context.Background(), "")
+			commit, err := f.repo.RefreshBranch(context.Background(), "trunk")
 			if err != nil {
 				errCh <- err.Error()
 				return
 			}
-			if base != "trunk" || commit != f.initial {
-				errCh <- "got base " + base + " at " + commit
+			if commit != f.initial {
+				errCh <- "got commit " + commit
 			}
 		}()
 	}
 	wg.Wait()
 	close(errCh)
 	for err := range errCh {
-		t.Errorf("concurrent SyncBase: %v", err)
+		t.Errorf("concurrent RefreshBranch: %v", err)
 	}
 }
 

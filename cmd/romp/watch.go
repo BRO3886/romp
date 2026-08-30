@@ -53,11 +53,13 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("parsing timeout %q: %w", cfg.Timeout, err)
 	}
 
-	owner, name, err := (&git.Repo{Root: root}).Origin(ctx)
+	repository := &git.Repo{Root: root}
+	owner, name, err := repository.Origin(ctx)
 	if err != nil {
 		return fmt.Errorf("resolve origin: %w", err)
 	}
 	repo := owner + "/" + name
+	runnerFactory := newWatchRunnerFactory(root, cfg, verify, h, timeout, repository)
 
 	store, err := job.Open(job.Path())
 	if err != nil {
@@ -81,7 +83,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 				return "", err
 			}
 			defer f.Close()
-			r, err := buildRunner(root, cfg, verify, h, timeout)
+			r, err := runnerFactory()
 			if err != nil {
 				return "", err
 			}
@@ -97,11 +99,10 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 				return err
 			}
 			dir := filepath.Join(cache, "romp", owner+"-"+name, fmt.Sprintf("romp-%d", issue))
-			r := &git.Repo{Root: root}
-			if err := r.RemoveWorktree(ctx, dir); err != nil {
+			if err := repository.RemoveWorktree(ctx, dir); err != nil {
 				return err
 			}
-			return r.DeleteBranch(ctx, fmt.Sprintf("romp-%d", issue))
+			return repository.DeleteBranch(ctx, fmt.Sprintf("romp-%d", issue))
 		},
 	}
 	return w.Run(ctx)

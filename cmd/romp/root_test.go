@@ -3,13 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/BRO3886/romp/internal/config"
+	"github.com/BRO3886/romp/internal/gh"
+	gitops "github.com/BRO3886/romp/internal/git"
 	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/prompt"
 	"github.com/BRO3886/romp/internal/runner"
@@ -239,7 +244,8 @@ func TestBuildRunnerWiresConfig(t *testing.T) {
 	cfg.Prompt.Template = "prompt.md"
 	cfg.Prompt.Brief = "DESIGN.md"
 
-	r, err := buildRunner(root, &cfg, []string{"go test ./..."}, harness.Claude{}, time.Minute)
+	repository := &gitops.Repo{Root: root}
+	r, err := buildRunner(root, &cfg, []string{"go test ./..."}, harness.Claude{}, time.Minute, repository)
 	if err != nil {
 		t.Fatalf("buildRunner: %v", err)
 	}
@@ -254,5 +260,117 @@ func TestBuildRunnerWiresConfig(t *testing.T) {
 	}
 	if r.Prompt.Template != "custom" {
 		t.Errorf("Prompt.Template = %q, want custom", r.Prompt.Template)
+	}
+}
+
+type refreshOnlyGH struct{ err error }
+
+func (g refreshOnlyGH) Issue(context.Context, string, int) (gh.Issue, error) {
+	return gh.Issue{}, g.err
+}
+func (refreshOnlyGH) Comment(context.Context, string, int, string) error     { return nil }
+func (refreshOnlyGH) AddLabel(context.Context, string, int, string) error    { return nil }
+func (refreshOnlyGH) RemoveLabel(context.Context, string, int, string) error { return nil }
+func (refreshOnlyGH) CreatePR(context.Context, string, string, string, string, string) (string, error) {
+	return "", nil
+}
+
+type watchTestGit struct{ *gitops.Repo }
+
+func (watchTestGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
+
+func runWatchTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func newWatchRefreshFixture(t *testing.T) (string, func(string)) {
+	t.Helper()
+	root := t.TempDir()
+	remote := filepath.Join(root, ":o", "r")
+	publisher := filepath.Join(root, "publisher")
+	operator := filepath.Join(root, "operator")
+	if err := os.MkdirAll(filepath.Dir(remote), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runWatchTestGit(t, root, "init", "--bare", remote)
+	runWatchTestGit(t, root, "init", "-b", "trunk", publisher)
+	runWatchTestGit(t, publisher, "config", "user.name", "Romp Test")
+	runWatchTestGit(t, publisher, "config", "user.email", "romp@example.com")
+	write := func(marker string) {
+		if err := os.WriteFile(filepath.Join(publisher, "marker.txt"), []byte(marker+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runWatchTestGit(t, publisher, "add", "marker.txt")
+		runWatchTestGit(t, publisher, "commit", "-m", marker)
+		runWatchTestGit(t, publisher, "push", "origin", "trunk")
+	}
+	if err := os.WriteFile(filepath.Join(publisher, "marker.txt"), []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runWatchTestGit(t, publisher, "add", "marker.txt")
+	runWatchTestGit(t, publisher, "commit", "-m", "first")
+	runWatchTestGit(t, publisher, "remote", "add", "origin", remote)
+	runWatchTestGit(t, publisher, "push", "-u", "origin", "trunk")
+	runWatchTestGit(t, root, "--git-dir", remote, "symbolic-ref", "HEAD", "refs/heads/trunk")
+	runWatchTestGit(t, root, "clone", remote, operator)
+	return operator, write
+}
+
+func concurrentWatchStarts(t *testing.T, factory func() (*runner.Runner, error), jobs int, stopErr error) []error {
+	t.Helper()
+	errs := make(chan error, jobs)
+	for issue := 1; issue <= jobs; issue++ {
+		go func(issue int) {
+			r, err := factory()
+			if err == nil {
+				r.GH = refreshOnlyGH{err: stopErr}
+				r.Stderr = io.Discard
+				_, err = r.Run(context.Background(), issue)
+			}
+			errs <- err
+		}(issue)
+	}
+	results := make([]error, 0, jobs)
+	for range jobs {
+		select {
+		case err := <-errs:
+			results = append(results, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("concurrent job startup timed out")
+		}
+	}
+	return results
+}
+
+func TestWatchRunnerFactorySerializesConcurrentBaseRefreshes(t *testing.T) {
+	root, push := newWatchRefreshFixture(t)
+	cfg := config.Defaults()
+	cfg.Base = "trunk"
+	const jobs = 16
+	stopErr := errors.New("refresh complete")
+
+	push("second")
+	shared := watchTestGit{Repo: &gitops.Repo{Root: root}}
+	factory := newWatchRunnerFactory(root, &cfg, []string{"true"}, harness.Claude{}, time.Minute, shared)
+	first, err := factory()
+	if err != nil {
+		t.Fatalf("first runner: %v", err)
+	}
+	second, err := factory()
+	if err != nil {
+		t.Fatalf("second runner: %v", err)
+	}
+	if first.Git != shared || second.Git != shared {
+		t.Fatalf("watch runners do not share the injected repository")
+	}
+	for i, err := range concurrentWatchStarts(t, factory, jobs, stopErr) {
+		if !errors.Is(err, stopErr) {
+			t.Errorf("job %d startup error = %v, want %v", i+1, err, stopErr)
+		}
 	}
 }

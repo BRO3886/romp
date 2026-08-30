@@ -90,38 +90,8 @@ func parseRemote(url string) (owner, name string, err error) {
 	return parts[0], parts[1], nil
 }
 
-// SyncBase resolves and refreshes the branch a job will use, then returns its
-// name and exact fetched commit.
-func (r *Repo) SyncBase(ctx context.Context, configured string) (string, string, error) {
-	r.syncMu.Lock()
-	defer r.syncMu.Unlock()
-
-	base := configured
-	if base == "" {
-		var err error
-		base, err = r.remoteDefaultBranch(ctx)
-		if err != nil {
-			return "", "", err
-		}
-	}
-	if _, err := r.run(ctx, "", "check-ref-format", "--branch", base); err != nil {
-		return "", "", fmt.Errorf("invalid base branch %q: %w", base, err)
-	}
-
-	remoteRef := "refs/heads/" + base
-	trackingRef := "refs/remotes/origin/" + base
-	refspec := "+" + remoteRef + ":" + trackingRef
-	if _, err := r.run(ctx, "", "fetch", "--no-tags", "origin", refspec); err != nil {
-		return "", "", fmt.Errorf("refreshing origin/%s: %w", base, err)
-	}
-	commit, err := r.run(ctx, "", "rev-parse", "--verify", trackingRef+"^{commit}")
-	if err != nil {
-		return "", "", fmt.Errorf("resolving refreshed origin/%s: %w", base, err)
-	}
-	return base, commit, nil
-}
-
-func (r *Repo) remoteDefaultBranch(ctx context.Context) (string, error) {
+// DefaultBranch returns the current default branch advertised by origin.
+func (r *Repo) DefaultBranch(ctx context.Context) (string, error) {
 	out, err := r.run(ctx, "", "ls-remote", "--symref", "origin", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("resolving remote default branch: %w", err)
@@ -137,6 +107,27 @@ func (r *Repo) remoteDefaultBranch(ctx context.Context) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("remote HEAD does not identify a default branch; configure base explicitly")
+}
+
+// RefreshBranch fetches one origin branch and returns its exact fetched commit.
+func (r *Repo) RefreshBranch(ctx context.Context, branch string) (string, error) {
+	r.syncMu.Lock()
+	defer r.syncMu.Unlock()
+
+	if _, err := r.run(ctx, "", "check-ref-format", "--branch", branch); err != nil {
+		return "", fmt.Errorf("invalid base branch %q: %w", branch, err)
+	}
+	remoteRef := "refs/heads/" + branch
+	trackingRef := "refs/remotes/origin/" + branch
+	refspec := "+" + remoteRef + ":" + trackingRef
+	if _, err := r.run(ctx, "", "fetch", "--no-tags", "origin", refspec); err != nil {
+		return "", fmt.Errorf("refreshing origin/%s: %w", branch, err)
+	}
+	commit, err := r.run(ctx, "", "rev-parse", "--verify", trackingRef+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("resolving refreshed origin/%s: %w", branch, err)
+	}
+	return commit, nil
 }
 
 // AddWorktree creates a fresh branch off base in a new worktree at dir. It
