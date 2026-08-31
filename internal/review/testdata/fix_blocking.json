@@ -1,0 +1,17 @@
+{
+  "verdict": "fix",
+  "findings": [
+    {
+      "severity": "blocking",
+      "file": "internal/review/outcome.go",
+      "line": 18,
+      "description": "Duplicate keys are accepted, so the parser is not fail-closed."
+    },
+    {
+      "severity": "nit",
+      "file": null,
+      "line": null,
+      "description": "The table name could be more specific."
+    }
+  ]
+}

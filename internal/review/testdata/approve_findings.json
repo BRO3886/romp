@@ -1,0 +1,17 @@
+{
+  "verdict": "approve",
+  "findings": [
+    {
+      "severity": "non-blocking",
+      "file": "internal/review/outcome.go",
+      "line": 18,
+      "description": "The error could include the rejected field name."
+    },
+    {
+      "severity": "nit",
+      "file": null,
+      "line": null,
+      "description": "A helper name could be shorter."
+    }
+  ]
+}

@@ -41,7 +41,9 @@ The common shape: every harness enforces explicit denials, none enforces allowli
 
 ### Artifact contract
 
-The reviewer writes `.romp/review.md`, the existing outcome-artifact convention: a verdict line (`approve` | `fix`) and findings with severities (`blocking`, `non-blocking`, `nit`). One or more blocking findings under `fix` make the fix round mandatory. A missing or malformed artifact after a successful agent exit is an error, never an implicit approve. Non-blocking findings and nits under approve are appended to the PR body for the human reviewer.
+The reviewer returns one strict JSON document as `harness.Result.Output`; it writes no review file. The document contains a verdict (`approve` | `fix`) and findings with severities (`blocking`, `non-blocking`, `nit`). A successful harness exit with empty, malformed, or semantically invalid output is an error, never an implicit approve. One or more blocking findings under `fix` make the fix round mandatory. An `approve` verdict may contain non-blocking findings and nits, but never a blocking finding.
+
+The runner work in issue #33 supplies the complete diff, branch log, changed files, deterministic lens plan, verification transcript, and convention references to the review prompt. It then parses `harness.Result.Output` and consumes the typed outcome. The renderer and parser remain pure: they do not discover inputs, inspect configuration, invoke a harness, or access the filesystem.
 
 ### Fix round
 
@@ -54,7 +56,7 @@ On exhausted rounds the job records `changes-requested`: distinct from red becau
 The worktree's inspection value exists only while its contents match what the gates actually judged. Cleanup follows the terminal outcome:
 
 - **Removed** when the pipeline completes: any route to `done` (clean approve, approve with nits, docs-only skip, fix round ending in an approved re-review and an opened PR), plus `blocked`. Also removed on `no-changes`, which today leaks the directory; since such jobs never committed, the zero-commit `romp-N` branch ref is deleted with it.
-- **Kept** whenever a human needs to inspect what failed: `red` (the tree is exactly what failed verify), `changes-requested` (the final tree equals what the reviewer rejected, even though the fixer mutated it mid-job), `timeout`, `interrupted`, and errors including a missing or malformed review artifact.
+- **Kept** whenever a human needs to inspect what failed: `red` (the tree is exactly what failed verify), `changes-requested` (the final tree equals what the reviewer rejected, even though the fixer mutated it mid-job), `timeout`, `interrupted`, and errors including empty or invalid reviewer output.
 
 Branches are separate from worktrees and follow their own rule: `done` keeps the branch (it is the PR head), `blocked` and `no-changes` delete it, everything kept-for-inspection keeps both.
 
