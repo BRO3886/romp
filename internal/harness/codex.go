@@ -39,6 +39,11 @@ func (c Codex) Check(ctx context.Context) (string, error) {
 }
 
 func (c Codex) Run(ctx context.Context, req Request) (Result, error) {
+	if req.ReadOnly {
+		if err := validateCodexReadOnlyExtras(c.Args); err != nil {
+			return Result{}, err
+		}
+	}
 	cmd := exec.CommandContext(ctx, "codex", codexArgs(req, c.Args)...)
 	cmd.Dir = req.Dir
 	// CombinedOutput leaves stdin on /dev/null. Codex treats a non-TTY
@@ -122,7 +127,11 @@ func codexEventMessage(message, nested string) string {
 }
 
 func codexArgs(req Request, extra []string) []string {
-	args := []string{"exec", "--json", "--sandbox", "workspace-write", "--color", "never"}
+	args := []string{"exec", "--json"}
+	if !req.ReadOnly {
+		args = append(args, "--sandbox", "workspace-write")
+	}
+	args = append(args, "--color", "never")
 	if req.Dir != "" {
 		args = append(args, "--cd", req.Dir)
 	}
@@ -133,5 +142,62 @@ func codexArgs(req Request, extra []string) []string {
 		args = append(args, "-c", "model_reasoning_effort="+req.Effort)
 	}
 	args = append(args, extra...)
+	if req.ReadOnly {
+		args = append(args, "--sandbox", "read-only")
+	}
 	return args
+}
+
+func validateCodexReadOnlyExtras(extra []string) error {
+	flag, conflict := conflictingExtra(extra,
+		"--",
+		"--sandbox",
+		"-s",
+		"--add-dir",
+		"--dangerously-bypass-approvals-and-sandbox",
+		"--approve-for-me",
+		"--full-auto",
+		"--yolo",
+		"--output-last-message",
+		"-o",
+	)
+	if conflict {
+		return fmt.Errorf("codex read-only run rejects conflicting extra argument %q", flag)
+	}
+	for _, arg := range extra {
+		for _, short := range []string{"-s", "-o"} {
+			if strings.HasPrefix(arg, short) && !strings.HasPrefix(arg, "--") {
+				return fmt.Errorf("codex read-only run rejects conflicting extra argument %q", short)
+			}
+		}
+	}
+	for _, override := range codexConfigOverrides(extra) {
+		key, _, _ := strings.Cut(override, "=")
+		key = strings.TrimSpace(key)
+		key = strings.Trim(key, `"'`)
+		if key == "approval_policy" || key == "sandbox_mode" || strings.HasPrefix(key, "sandbox_") {
+			return fmt.Errorf("codex read-only run rejects conflicting config override %q", key)
+		}
+	}
+	return nil
+}
+
+func codexConfigOverrides(args []string) []string {
+	var overrides []string
+	for i := 0; i < len(args); i++ {
+		switch arg := args[i]; {
+		case arg == "-c" || arg == "--config":
+			if i+1 < len(args) {
+				overrides = append(overrides, args[i+1])
+				i++
+			}
+		case strings.HasPrefix(arg, "--config="):
+			overrides = append(overrides, strings.TrimPrefix(arg, "--config="))
+		case strings.HasPrefix(arg, "-c="):
+			overrides = append(overrides, strings.TrimPrefix(arg, "-c="))
+		case strings.HasPrefix(arg, "-c") && !strings.HasPrefix(arg, "--"):
+			overrides = append(overrides, strings.TrimPrefix(arg, "-c"))
+		}
+	}
+	return overrides
 }

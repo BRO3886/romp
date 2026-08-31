@@ -41,6 +41,11 @@ func (c Claude) Check(ctx context.Context) (string, error) {
 }
 
 func (c Claude) Run(ctx context.Context, req Request) (Result, error) {
+	if req.ReadOnly {
+		if err := validateClaudeReadOnlyExtras(c.Args); err != nil {
+			return Result{}, err
+		}
+	}
 	cmd := exec.CommandContext(ctx, "claude", claudeArgs(req, c.Args)...)
 	cmd.Dir = req.Dir
 	var stdout, stderr bytes.Buffer
@@ -76,7 +81,10 @@ func parseClaudeResult(out []byte) (Result, error) {
 }
 
 func claudeArgs(req Request, extra []string) []string {
-	args := []string{"-p", "--output-format", "json", "--permission-mode", "bypassPermissions"}
+	args := []string{"-p", "--output-format", "json"}
+	if !req.ReadOnly {
+		args = append(args, "--permission-mode", "bypassPermissions")
+	}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
@@ -87,6 +95,30 @@ func claudeArgs(req Request, extra []string) []string {
 		args = append(args, "--max-turns", strconv.Itoa(req.MaxTurns))
 	}
 	args = append(args, extra...)
+	if req.ReadOnly {
+		args = append(args,
+			"--permission-mode", "bypassPermissions",
+			"--disallowedTools=Write,Edit,NotebookEdit,Bash",
+		)
+	}
 	args = append(args, req.Prompt)
 	return args
+}
+
+func validateClaudeReadOnlyExtras(extra []string) error {
+	flag, conflict := conflictingExtra(extra,
+		"--",
+		"--permission-mode",
+		"--allowedTools",
+		"--allowed-tools",
+		"--tools",
+		"--disallowedTools",
+		"--disallowed-tools",
+		"--allow-dangerously-skip-permissions",
+		"--dangerously-skip-permissions",
+	)
+	if conflict {
+		return fmt.Errorf("claude read-only run rejects conflicting extra argument %q", flag)
+	}
+	return nil
 }

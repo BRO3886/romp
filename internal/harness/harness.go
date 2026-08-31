@@ -6,6 +6,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // Request is a single agent run.
@@ -25,6 +26,9 @@ type Request struct {
 	// --max-turns). Codex and OpenCode have no equivalent and ignore this field.
 	// Zero leaves the harness default in place.
 	MaxTurns int
+	// ReadOnly selects the harness's native worktree mutation restrictions.
+	// The zero value preserves the writable builder behavior.
+	ReadOnly bool
 }
 
 // Result is the outcome of a run. Fields are added additively so adapters
@@ -45,6 +49,17 @@ func diagnosticError(name string, err error, stdout, stderr []byte) error {
 		detail += "\nstderr:\n" + string(stderr)
 	}
 	return fmt.Errorf("%s: %w%s", name, err, detail)
+}
+
+func conflictingExtra(args []string, flags ...string) (string, bool) {
+	for _, arg := range args {
+		for _, flag := range flags {
+			if arg == flag || strings.HasPrefix(arg, flag+"=") {
+				return flag, true
+			}
+		}
+	}
+	return "", false
 }
 
 // Harness drives a coding agent. Implementations are expected to block until
