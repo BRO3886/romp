@@ -138,18 +138,22 @@ func (f *fakeGH) CreatePR(_ context.Context, _, title, body, _, _ string) (strin
 }
 
 type fakeHarness struct {
-	result harness.Result
-	err    error
-	calls  *int
+	result   harness.Result
+	err      error
+	calls    *int
+	deadline *bool
 }
 
 func (fakeHarness) Name() string { return "fake" }
 
 func (fakeHarness) Check(context.Context) (string, error) { return "fake", nil }
 
-func (f fakeHarness) Run(context.Context, harness.Request) (harness.Result, error) {
+func (f fakeHarness) Run(ctx context.Context, _ harness.Request) (harness.Result, error) {
 	if f.calls != nil {
 		*f.calls++
+	}
+	if f.deadline != nil {
+		_, *f.deadline = ctx.Deadline()
 	}
 	return f.result, f.err
 }
@@ -479,6 +483,21 @@ func TestRunTimeout(t *testing.T) {
 	}
 	if len(c.prs) != 0 {
 		t.Errorf("PRs opened = %v, want none", c.prs)
+	}
+}
+
+func TestRunWithoutTimeoutDoesNotSetDeadline(t *testing.T) {
+	g := &fakeGit{changed: true, onAdd: writePR}
+	c := &fakeGH{}
+	r := newTestRunner(t, g, c, []string{"true"})
+	hasDeadline := true
+	r.Harness = fakeHarness{deadline: &hasDeadline}
+
+	if _, err := r.Run(context.Background(), 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if hasDeadline {
+		t.Error("harness context has a deadline, want unbounded")
 	}
 }
 

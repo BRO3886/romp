@@ -68,6 +68,33 @@ func TestRunCmdFlags(t *testing.T) {
 	}
 }
 
+func TestParseTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "omitted", want: 0},
+		{name: "minutes", value: "25m", want: 25 * time.Minute},
+		{name: "fractional hours", value: "1.5h", want: 90 * time.Minute},
+		{name: "composite", value: "2h45m", want: 2*time.Hour + 45*time.Minute},
+		{name: "invalid", value: "later", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseTimeout(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseTimeout(%q) error = %v, want error: %v", tt.value, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("parseTimeout(%q) = %s, want %s", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunCmdVerifyDefaults(t *testing.T) {
 	var (
 		gotOverrides config.Overrides

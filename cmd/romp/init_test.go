@@ -23,6 +23,9 @@ func TestSeedConfig(t *testing.T) {
 			t.Errorf("seedConfig missing %q:\n%s", want, got)
 		}
 	}
+	if strings.Contains(got, "timeout") {
+		t.Errorf("seedConfig contains a timeout:\n%s", got)
+	}
 
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := t.TempDir()

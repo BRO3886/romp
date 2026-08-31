@@ -48,9 +48,9 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	timeout, err := time.ParseDuration(cfg.Timeout)
+	timeout, err := parseTimeout(cfg.Timeout)
 	if err != nil {
-		return fmt.Errorf("parsing timeout %q: %w", cfg.Timeout, err)
+		return err
 	}
 
 	repository := &git.Repo{Root: root}

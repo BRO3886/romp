@@ -2,7 +2,6 @@ label          = "romp"
 claimed_label  = "romp:claimed"
 blocked_label  = "romp:blocked"
 width          = 3
-timeout        = "25m"
 
 [verify]
 commands = [

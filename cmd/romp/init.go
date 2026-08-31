@@ -109,8 +109,7 @@ func seedConfig(commands []string) string {
 	b.WriteString("label          = \"romp\"\n")
 	b.WriteString("claimed_label  = \"romp:claimed\"\n")
 	b.WriteString("blocked_label  = \"romp:blocked\"\n")
-	b.WriteString("width          = 3\n")
-	b.WriteString("timeout        = \"25m\"\n\n")
+	b.WriteString("width          = 3\n\n")
 	b.WriteString("[verify]\n")
 	b.WriteString("commands = [\n")
 	for _, command := range commands {

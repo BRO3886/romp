@@ -100,7 +100,6 @@ claimed_label  = "romp:claimed"
 blocked_label  = "romp:blocked"
 base           = "main"           # default: repo default branch
 width          = 3
-timeout        = "25m"
 
 [verify]
 commands = [
@@ -132,6 +131,9 @@ does not produce this configuration warning.
 Precedence: flags → `.romp/local.toml` (gitignored) → `romp.toml` →
 `~/.config/romp/config.toml` → defaults. Commit `romp.toml` and `.romp/*.md`;
 keep `local.toml` out of git. `history_days` is global-only (user config).
+
+Omit `timeout` to let jobs run without a deadline. Set it to a Go duration
+string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
 
 State lives outside the repo: `~/.local/state/romp/romp.db` (shared job table),
 `~/.local/state/romp/<owner>-<repo>/logs/`, and worktrees under the cache dir.

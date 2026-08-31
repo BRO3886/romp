@@ -104,9 +104,9 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlags []string, ve
 		return nil, err
 	}
 
-	timeout, err := time.ParseDuration(cfg.Timeout)
+	timeout, err := parseTimeout(cfg.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("parsing timeout %q: %w", cfg.Timeout, err)
+		return nil, err
 	}
 
 	factory := runnerFactory{
@@ -118,6 +118,17 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlags []string, ve
 		repository: &git.Repo{Root: root},
 	}
 	return factory.build()
+}
+
+func parseTimeout(value string) (time.Duration, error) {
+	if value == "" {
+		return 0, nil
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("parsing timeout %q: %w", value, err)
+	}
+	return timeout, nil
 }
 
 type runnerFactory struct {
