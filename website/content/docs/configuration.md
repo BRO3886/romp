@@ -12,7 +12,6 @@ claimed_label  = "romp:claimed"
 blocked_label  = "romp:blocked"
 base           = "main"           # default: repo default branch
 width          = 3
-timeout        = "25m"
 
 [verify]
 commands = [
@@ -54,6 +53,9 @@ you).
 (`~/.config/romp/config.toml`), never from `romp.toml`. Retention is an
 operator concern, not a team convention.
 
+Omit `timeout` to let jobs run without a deadline. Set it to a Go duration
+string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
+
 ## Full reference
 
 | Key | Default | Notes |
@@ -63,7 +65,7 @@ operator concern, not a team convention.
 | `blocked_label` | `romp:blocked` | Marks an under-scoped issue. |
 | `base` | repo default branch | Branch worktrees fork from. |
 | `width` | `3` | Max concurrent jobs in this repo. |
-| `timeout` | `25m` | Per-job deadline. |
+| `timeout` | unbounded | Optional per-job deadline as a Go duration string. |
 | `verify.commands` | — | Ordered commands that Romp runs independently after the agent exits. |
 | `scope.protected` | — | Paths the agent must not touch. |
 | `scope.ignore` | — | Paths the agent must not read. |

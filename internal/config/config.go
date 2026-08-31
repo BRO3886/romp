@@ -10,8 +10,8 @@ import (
 )
 
 // Config is the merged configuration for one repo. Every field's zero value
-// means "use the built-in default", which makes layering additive: a later
-// file overrides only the fields it actually sets.
+// means "use the lower-precedence value", which makes layering additive: a
+// later file overrides only the fields it actually sets.
 type Config struct {
 	Label        string  `toml:"label"`
 	ClaimedLabel string  `toml:"claimed_label"`
@@ -63,7 +63,6 @@ func Defaults() Config {
 		ClaimedLabel: "romp:claimed",
 		BlockedLabel: "romp:blocked",
 		Width:        3,
-		Timeout:      "25m",
 		HistoryDays:  30,
 		Harness:      Harness{Default: "codex", Effort: "high"},
 	}

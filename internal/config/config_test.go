@@ -9,7 +9,7 @@ import (
 func TestDefaults(t *testing.T) {
 	cfg := Defaults()
 	if cfg.Label != "romp" || cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" ||
-		cfg.Width != 3 || cfg.Timeout != "25m" || cfg.HistoryDays != 30 ||
+		cfg.Width != 3 || cfg.Timeout != "" || cfg.HistoryDays != 30 ||
 		cfg.Harness.Default != "codex" || cfg.Harness.Effort != "high" {
 		t.Fatalf("Defaults() = %+v", cfg)
 	}
@@ -21,8 +21,41 @@ func TestLoadNoFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Label != "romp" || cfg.Width != 3 {
+	if cfg.Label != "romp" || cfg.Width != 3 || cfg.Timeout != "" {
 		t.Fatalf("cfg = %+v, want defaults", cfg)
+	}
+}
+
+func TestLoadTimeoutPrecedence(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", user)
+	write(t, filepath.Join(user, "romp", "config.toml"), "timeout = \"25m\"\n")
+
+	root := t.TempDir()
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load user timeout: %v", err)
+	}
+	if cfg.Timeout != "25m" {
+		t.Errorf("Timeout = %q, want 25m from user config", cfg.Timeout)
+	}
+
+	write(t, filepath.Join(root, "romp.toml"), "timeout = \"1.5h\"\n")
+	cfg, err = Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load repository timeout: %v", err)
+	}
+	if cfg.Timeout != "1.5h" {
+		t.Errorf("Timeout = %q, want 1.5h from repository config", cfg.Timeout)
+	}
+
+	write(t, filepath.Join(root, ".romp", "local.toml"), "timeout = \"2h45m\"\n")
+	cfg, err = Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load local timeout: %v", err)
+	}
+	if cfg.Timeout != "2h45m" {
+		t.Errorf("Timeout = %q, want 2h45m from local config", cfg.Timeout)
 	}
 }
 
