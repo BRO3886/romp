@@ -3,6 +3,7 @@ package prompt_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/BRO3886/romp/internal/prompt"
@@ -42,6 +43,24 @@ func TestReviewComponentsSmoke(t *testing.T) {
 	}
 	if got.Verdict != review.VerdictApprove || len(got.Findings) != 1 || got.Findings[0].Severity != review.SeverityNit {
 		t.Fatalf("ParseOutcome = %+v, want typed approval with one nit", got)
+	}
+}
+
+func TestRenderReviewPlanUsesSuppliedVerificationTranscript(t *testing.T) {
+	input := reviewInput()
+	input.Plan = review.BuildPlan([]string{"internal/prompt/review.go"}, false)
+
+	rendered, err := prompt.RenderReview(input)
+	if err != nil {
+		t.Fatalf("RenderReview: %v", err)
+	}
+
+	want := "tests: Assess test coverage using the supplied verification transcript as evidence rather than claiming commands were run during review."
+	if !strings.Contains(rendered, want) {
+		t.Errorf("rendered review prompt does not contain transcript-only tests lens %q", want)
+	}
+	if strings.Contains(rendered, "Run the suite and print the exit code") {
+		t.Error("rendered review prompt instructs the read-only reviewer to run the test suite")
 	}
 }
 
