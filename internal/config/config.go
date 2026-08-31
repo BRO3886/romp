@@ -173,8 +173,9 @@ func apply(dst *Config, path string, global bool) error {
 	return nil
 }
 
-// overlay copies non-zero fields from src over dst. Review fields use TOML
-// presence so false and empty strings can override lower-precedence values.
+// overlay copies non-zero fields from src over dst. A review table resets its
+// model and harness to builder fallbacks unless it defines replacements.
+// Review enabled uses field presence so omission retains the lower layer.
 // Global-only fields are copied solely when src is the user config file.
 func overlay(dst *Config, src *Config, global bool, metadata toml.MetaData) {
 	if src.Label != "" {
@@ -222,10 +223,8 @@ func overlay(dst *Config, src *Config, global bool, metadata toml.MetaData) {
 	if metadata.IsDefined("review", "enabled") {
 		dst.Review.Enabled = src.Review.Enabled
 	}
-	if metadata.IsDefined("review", "model") {
+	if metadata.IsDefined("review") {
 		dst.Review.Model = src.Review.Model
-	}
-	if metadata.IsDefined("review", "harness") {
 		dst.Review.Harness = src.Review.Harness
 	}
 	if src.Prompt.Template != "" {

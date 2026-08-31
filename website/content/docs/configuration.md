@@ -32,8 +32,8 @@ max_turns = 30                   # claude only; ignored by codex and opencode
 
 [review]
 enabled = true
-model   = ""                     # empty uses harness.model
-harness = ""                     # empty uses harness.default
+model   = ""                     # missing or empty uses harness.model
+harness = ""                     # missing or empty uses harness.default
 
 [prompt]
 template = ".romp/prompt.md"     # optional
@@ -51,9 +51,12 @@ flags  →  .romp/local.toml  →  romp.toml  →  ~/.config/romp/config.toml  �
 
 Zero means "use the lower layer" for builder settings. This applies to a zero
 `width`, an empty `base`, an unset `max_turns`, and other empty strings. Review
-settings are presence-aware. An explicit `review.enabled = false` disables
-review. Explicit empty `review.model` and `review.harness` values select the
-effective builder model and harness instead of a lower-layer reviewer override.
+settings have separate rules. `review.enabled` uses normal field-level layering,
+so omission retains the lower-layer value and an explicit `false` disables
+review. A higher-precedence `[review]` table resets `review.model` and
+`review.harness` to the effective builder settings unless that table supplies
+non-empty replacements. Missing and explicit empty values both select
+`harness.model` and `harness.default`, not lower-layer reviewer overrides.
 Commit `romp.toml` and `.romp/*.md`; keep `local.toml` out of git (romp adds it
 to `.gitignore` for you).
 
@@ -85,8 +88,8 @@ string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
 | `harness.effort` | `high` | Reasoning effort for Claude/Codex; model-specific OpenCode variant (see below). |
 | `harness.max_turns` | — | Turn cap, claude only. |
 | `review.enabled` | `true` | Enables the review gate for watched and one-shot jobs. |
-| `review.model` | builder model | Reviewer model; empty uses `harness.model`. |
-| `review.harness` | builder harness | Reviewer harness; empty uses `harness.default`. |
+| `review.model` | builder model | Reviewer model; missing or empty uses `harness.model`. |
+| `review.harness` | builder harness | Reviewer harness; missing or empty uses `harness.default`. |
 | `prompt.template` | — | Custom goal-contract template. |
 | `prompt.brief` | — | File the agent reads first (e.g. `.romp/DESIGN.md`). |
 | `history_days` | `30` | Global only; outcome retention window. |

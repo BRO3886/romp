@@ -46,6 +46,44 @@ func TestLoadReviewPrecedenceAndFallback(t *testing.T) {
 	}
 }
 
+func TestLoadReviewTableResetsReviewerOverrides(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", user)
+	write(t, filepath.Join(user, "romp", "config.toml"), "[review]\nenabled = false\nmodel = \"reviewer-model\"\nharness = \"claude\"\n")
+
+	tests := []struct {
+		name        string
+		review      string
+		wantModel   string
+		wantHarness string
+	}{
+		{name: "both omitted", review: "[review]\n", wantModel: "builder-model", wantHarness: "opencode"},
+		{name: "harness omitted", review: "[review]\nmodel = \"repo-reviewer\"\n", wantModel: "repo-reviewer", wantHarness: "opencode"},
+		{name: "model omitted", review: "[review]\nharness = \"codex\"\n", wantModel: "builder-model", wantHarness: "codex"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			write(t, filepath.Join(root, "romp.toml"), tt.review)
+			write(t, filepath.Join(root, ".romp", "local.toml"), "[harness]\ndefault = \"opencode\"\nmodel = \"builder-model\"\n")
+
+			cfg, err := Load(root, Overrides{})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Review.Enabled {
+				t.Error("Review.Enabled = true, want inherited false")
+			}
+			if got := cfg.ReviewModel(); got != tt.wantModel {
+				t.Errorf("ReviewModel() = %q, want %q", got, tt.wantModel)
+			}
+			if got := cfg.ReviewHarness(); got != tt.wantHarness {
+				t.Errorf("ReviewHarness() = %q, want %q", got, tt.wantHarness)
+			}
+		})
+	}
+}
+
 func TestLoadNoReviewOverrideIsNotPersisted(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := t.TempDir()
