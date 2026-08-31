@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/prompt"
 	"github.com/BRO3886/romp/internal/runner"
+	"github.com/BRO3886/romp/internal/testutil/gitfixture"
 )
 
 func TestRunCmdFlags(t *testing.T) {
@@ -245,9 +245,17 @@ func TestBuildRunnerWiresConfig(t *testing.T) {
 	cfg.Prompt.Brief = "DESIGN.md"
 
 	repository := &gitops.Repo{Root: root}
-	r, err := buildRunner(root, &cfg, []string{"go test ./..."}, harness.Claude{}, time.Minute, repository)
+	factory := runnerFactory{
+		root:       root,
+		config:     &cfg,
+		verify:     []string{"go test ./..."},
+		harness:    harness.Claude{},
+		timeout:    time.Minute,
+		repository: repository,
+	}
+	r, err := factory.build()
 	if err != nil {
-		t.Fatalf("buildRunner: %v", err)
+		t.Fatalf("build runner: %v", err)
 	}
 	if r.MaxTurns != 7 {
 		t.Errorf("MaxTurns = %d, want 7", r.MaxTurns)
@@ -279,48 +287,6 @@ type watchTestGit struct{ *gitops.Repo }
 
 func (watchTestGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
 
-func runWatchTestGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
-
-func newWatchRefreshFixture(t *testing.T) (string, func(string)) {
-	t.Helper()
-	root := t.TempDir()
-	remote := filepath.Join(root, ":o", "r")
-	publisher := filepath.Join(root, "publisher")
-	operator := filepath.Join(root, "operator")
-	if err := os.MkdirAll(filepath.Dir(remote), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runWatchTestGit(t, root, "init", "--bare", remote)
-	runWatchTestGit(t, root, "init", "-b", "trunk", publisher)
-	runWatchTestGit(t, publisher, "config", "user.name", "Romp Test")
-	runWatchTestGit(t, publisher, "config", "user.email", "romp@example.com")
-	write := func(marker string) {
-		if err := os.WriteFile(filepath.Join(publisher, "marker.txt"), []byte(marker+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		runWatchTestGit(t, publisher, "add", "marker.txt")
-		runWatchTestGit(t, publisher, "commit", "-m", marker)
-		runWatchTestGit(t, publisher, "push", "origin", "trunk")
-	}
-	if err := os.WriteFile(filepath.Join(publisher, "marker.txt"), []byte("first\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runWatchTestGit(t, publisher, "add", "marker.txt")
-	runWatchTestGit(t, publisher, "commit", "-m", "first")
-	runWatchTestGit(t, publisher, "remote", "add", "origin", remote)
-	runWatchTestGit(t, publisher, "push", "-u", "origin", "trunk")
-	runWatchTestGit(t, root, "--git-dir", remote, "symbolic-ref", "HEAD", "refs/heads/trunk")
-	runWatchTestGit(t, root, "clone", remote, operator)
-	return operator, write
-}
-
 func concurrentWatchStarts(t *testing.T, factory func() (*runner.Runner, error), jobs int, stopErr error) []error {
 	t.Helper()
 	errs := make(chan error, jobs)
@@ -348,27 +314,34 @@ func concurrentWatchStarts(t *testing.T, factory func() (*runner.Runner, error),
 }
 
 func TestWatchRunnerFactorySerializesConcurrentBaseRefreshes(t *testing.T) {
-	root, push := newWatchRefreshFixture(t)
+	fixture := gitfixture.New(t, "trunk")
 	cfg := config.Defaults()
 	cfg.Base = "trunk"
 	const jobs = 16
 	stopErr := errors.New("refresh complete")
 
-	push("second")
-	shared := watchTestGit{Repo: &gitops.Repo{Root: root}}
-	factory := newWatchRunnerFactory(root, &cfg, []string{"true"}, harness.Claude{}, time.Minute, shared)
-	first, err := factory()
+	fixture.CommitAndPush(t, "trunk", "second")
+	shared := watchTestGit{Repo: &gitops.Repo{Root: fixture.Operator}}
+	factory := runnerFactory{
+		root:       fixture.Operator,
+		config:     &cfg,
+		verify:     []string{"true"},
+		harness:    harness.Claude{},
+		timeout:    time.Minute,
+		repository: shared,
+	}
+	first, err := factory.build()
 	if err != nil {
 		t.Fatalf("first runner: %v", err)
 	}
-	second, err := factory()
+	second, err := factory.build()
 	if err != nil {
 		t.Fatalf("second runner: %v", err)
 	}
 	if first.Git != shared || second.Git != shared {
 		t.Fatalf("watch runners do not share the injected repository")
 	}
-	for i, err := range concurrentWatchStarts(t, factory, jobs, stopErr) {
+	for i, err := range concurrentWatchStarts(t, factory.build, jobs, stopErr) {
 		if !errors.Is(err, stopErr) {
 			t.Errorf("job %d startup error = %v, want %v", i+1, err, stopErr)
 		}

@@ -59,7 +59,14 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("resolve origin: %w", err)
 	}
 	repo := owner + "/" + name
-	runnerFactory := newWatchRunnerFactory(root, cfg, verify, h, timeout, repository)
+	factory := runnerFactory{
+		root:       root,
+		config:     cfg,
+		verify:     verify,
+		harness:    h,
+		timeout:    timeout,
+		repository: repository,
+	}
 
 	store, err := job.Open(job.Path())
 	if err != nil {
@@ -83,7 +90,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 				return "", err
 			}
 			defer f.Close()
-			r, err := runnerFactory()
+			r, err := factory.build()
 			if err != nil {
 				return "", err
 			}
