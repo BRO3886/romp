@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,9 +12,12 @@ import (
 	"time"
 
 	"github.com/BRO3886/romp/internal/config"
+	"github.com/BRO3886/romp/internal/gh"
+	gitops "github.com/BRO3886/romp/internal/git"
 	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/prompt"
 	"github.com/BRO3886/romp/internal/runner"
+	"github.com/BRO3886/romp/internal/testutil/gitfixture"
 )
 
 func TestRunCmdFlags(t *testing.T) {
@@ -239,9 +244,18 @@ func TestBuildRunnerWiresConfig(t *testing.T) {
 	cfg.Prompt.Template = "prompt.md"
 	cfg.Prompt.Brief = "DESIGN.md"
 
-	r, err := buildRunner(root, &cfg, []string{"go test ./..."}, harness.Claude{}, time.Minute)
+	repository := &gitops.Repo{Root: root}
+	factory := runnerFactory{
+		root:       root,
+		config:     &cfg,
+		verify:     []string{"go test ./..."},
+		harness:    harness.Claude{},
+		timeout:    time.Minute,
+		repository: repository,
+	}
+	r, err := factory.build()
 	if err != nil {
-		t.Fatalf("buildRunner: %v", err)
+		t.Fatalf("build runner: %v", err)
 	}
 	if r.MaxTurns != 7 {
 		t.Errorf("MaxTurns = %d, want 7", r.MaxTurns)
@@ -254,5 +268,82 @@ func TestBuildRunnerWiresConfig(t *testing.T) {
 	}
 	if r.Prompt.Template != "custom" {
 		t.Errorf("Prompt.Template = %q, want custom", r.Prompt.Template)
+	}
+}
+
+type refreshOnlyGH struct{ err error }
+
+func (g refreshOnlyGH) Issue(context.Context, string, int) (gh.Issue, error) {
+	return gh.Issue{}, g.err
+}
+func (refreshOnlyGH) Comment(context.Context, string, int, string) error     { return nil }
+func (refreshOnlyGH) AddLabel(context.Context, string, int, string) error    { return nil }
+func (refreshOnlyGH) RemoveLabel(context.Context, string, int, string) error { return nil }
+func (refreshOnlyGH) CreatePR(context.Context, string, string, string, string, string) (string, error) {
+	return "", nil
+}
+
+type watchTestGit struct{ *gitops.Repo }
+
+func (watchTestGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
+
+func concurrentWatchStarts(t *testing.T, factory func() (*runner.Runner, error), jobs int, stopErr error) []error {
+	t.Helper()
+	errs := make(chan error, jobs)
+	for issue := 1; issue <= jobs; issue++ {
+		go func(issue int) {
+			r, err := factory()
+			if err == nil {
+				r.GH = refreshOnlyGH{err: stopErr}
+				r.Stderr = io.Discard
+				_, err = r.Run(context.Background(), issue)
+			}
+			errs <- err
+		}(issue)
+	}
+	results := make([]error, 0, jobs)
+	for range jobs {
+		select {
+		case err := <-errs:
+			results = append(results, err)
+		case <-time.After(10 * time.Second):
+			t.Fatal("concurrent job startup timed out")
+		}
+	}
+	return results
+}
+
+func TestWatchRunnerFactorySerializesConcurrentBaseRefreshes(t *testing.T) {
+	fixture := gitfixture.New(t, "trunk")
+	cfg := config.Defaults()
+	cfg.Base = "trunk"
+	const jobs = 16
+	stopErr := errors.New("refresh complete")
+
+	fixture.CommitAndPush(t, "trunk", "second")
+	shared := watchTestGit{Repo: &gitops.Repo{Root: fixture.Operator}}
+	factory := runnerFactory{
+		root:       fixture.Operator,
+		config:     &cfg,
+		verify:     []string{"true"},
+		harness:    harness.Claude{},
+		timeout:    time.Minute,
+		repository: shared,
+	}
+	first, err := factory.build()
+	if err != nil {
+		t.Fatalf("first runner: %v", err)
+	}
+	second, err := factory.build()
+	if err != nil {
+		t.Fatalf("second runner: %v", err)
+	}
+	if first.Git != shared || second.Git != shared {
+		t.Fatalf("watch runners do not share the injected repository")
+	}
+	for i, err := range concurrentWatchStarts(t, factory.build, jobs, stopErr) {
+		if !errors.Is(err, stopErr) {
+			t.Errorf("job %d startup error = %v, want %v", i+1, err, stopErr)
+		}
 	}
 }

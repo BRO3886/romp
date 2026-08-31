@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // Repo is the main checkout romp was started in.
 type Repo struct {
-	Root string
+	Root   string
+	syncMu sync.Mutex
 }
 
 func (r *Repo) run(ctx context.Context, dir string, args ...string) (string, error) {
@@ -88,19 +90,44 @@ func parseRemote(url string) (owner, name string, err error) {
 	return parts[0], parts[1], nil
 }
 
-// Fetch updates the origin remote-tracking refs.
-func (r *Repo) Fetch(ctx context.Context) error {
-	_, err := r.run(ctx, "", "fetch", "origin")
-	return err
+// DefaultBranch returns the current default branch advertised by origin.
+func (r *Repo) DefaultBranch(ctx context.Context) (string, error) {
+	out, err := r.run(ctx, "", "ls-remote", "--symref", "origin", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("resolving remote default branch: %w", err)
+	}
+	for line := range strings.SplitSeq(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || fields[0] != "ref:" || fields[2] != "HEAD" {
+			continue
+		}
+		const heads = "refs/heads/"
+		if strings.HasPrefix(fields[1], heads) {
+			return strings.TrimPrefix(fields[1], heads), nil
+		}
+	}
+	return "", fmt.Errorf("remote HEAD does not identify a default branch; configure base explicitly")
 }
 
-// DefaultBranch returns the remote default branch name (e.g. "main").
-func (r *Repo) DefaultBranch(ctx context.Context) (string, error) {
-	out, err := r.run(ctx, "", "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
-	if err != nil {
-		return "", err
+// RefreshBranch fetches one origin branch and returns its exact fetched commit.
+func (r *Repo) RefreshBranch(ctx context.Context, branch string) (string, error) {
+	r.syncMu.Lock()
+	defer r.syncMu.Unlock()
+
+	if _, err := r.run(ctx, "", "check-ref-format", "--branch", branch); err != nil {
+		return "", fmt.Errorf("invalid base branch %q: %w", branch, err)
 	}
-	return strings.TrimPrefix(out, "origin/"), nil
+	remoteRef := "refs/heads/" + branch
+	trackingRef := "refs/remotes/origin/" + branch
+	refspec := "+" + remoteRef + ":" + trackingRef
+	if _, err := r.run(ctx, "", "fetch", "--no-tags", "origin", refspec); err != nil {
+		return "", fmt.Errorf("refreshing origin/%s: %w", branch, err)
+	}
+	commit, err := r.run(ctx, "", "rev-parse", "--verify", trackingRef+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("resolving refreshed origin/%s: %w", branch, err)
+	}
+	return commit, nil
 }
 
 // AddWorktree creates a fresh branch off base in a new worktree at dir. It

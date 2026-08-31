@@ -109,36 +109,51 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlags []string, ve
 		return nil, fmt.Errorf("parsing timeout %q: %w", cfg.Timeout, err)
 	}
 
-	return buildRunner(root, cfg, verify, h, timeout)
+	factory := runnerFactory{
+		root:       root,
+		config:     cfg,
+		verify:     verify,
+		harness:    h,
+		timeout:    timeout,
+		repository: &git.Repo{Root: root},
+	}
+	return factory.build()
 }
 
-// buildRunner assembles a Runner from already-resolved config and options so
-// both the run and watch commands share one construction path.
-func buildRunner(root string, cfg *config.Config, verify []string, h harness.Harness, timeout time.Duration) (*runner.Runner, error) {
-	templateText, err := loadTemplate(root, cfg.Prompt.Template)
+type runnerFactory struct {
+	root       string
+	config     *config.Config
+	verify     []string
+	harness    harness.Harness
+	timeout    time.Duration
+	repository runner.GitOps
+}
+
+func (f runnerFactory) build() (*runner.Runner, error) {
+	templateText, err := loadTemplate(f.root, f.config.Prompt.Template)
 	if err != nil {
 		return nil, err
 	}
-	brief, err := resolveBrief(root, cfg.Prompt.Brief)
+	brief, err := resolveBrief(f.root, f.config.Prompt.Brief)
 	if err != nil {
 		return nil, err
 	}
 	return &runner.Runner{
-		Harness:      h,
-		Git:          &git.Repo{Root: root},
+		Harness:      f.harness,
+		Git:          f.repository,
 		GH:           &gh.Client{},
 		Prompt:       &prompt.Renderer{Template: templateText},
-		Verify:       verify,
-		Model:        cfg.Harness.Model,
-		Effort:       cfg.Harness.Effort,
-		MaxTurns:     cfg.Harness.MaxTurns,
-		Base:         cfg.Base,
-		Timeout:      timeout,
-		Protected:    cfg.Scope.Protected,
-		Ignore:       cfg.Scope.Ignore,
+		Verify:       f.verify,
+		Model:        f.config.Harness.Model,
+		Effort:       f.config.Harness.Effort,
+		MaxTurns:     f.config.Harness.MaxTurns,
+		Base:         f.config.Base,
+		Timeout:      f.timeout,
+		Protected:    f.config.Scope.Protected,
+		Ignore:       f.config.Scope.Ignore,
 		Brief:        brief,
-		TriggerLabel: cfg.Label,
-		BlockedLabel: cfg.BlockedLabel,
+		TriggerLabel: f.config.Label,
+		BlockedLabel: f.config.BlockedLabel,
 		Stderr:       os.Stderr,
 	}, nil
 }
