@@ -52,6 +52,7 @@ func standardDoctorChecks() []doctorCheck {
 		{name: "gh", run: checkGH},
 		{name: "harness", run: checkHarness},
 		{name: "config", run: checkConfig},
+		{name: "review", run: checkConfiguredReviewHarness},
 	}
 }
 
@@ -152,6 +153,33 @@ func checkConfig(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return "valid — verify: " + strings.Join(verify, "; "), nil
+}
+
+func checkConfiguredReviewHarness(ctx context.Context) (string, error) {
+	root, err := repoRoot(ctx)
+	if err != nil {
+		return "", err
+	}
+	cfg, err := loadConfig(root, config.Overrides{}, os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	return checkReviewHarness(ctx, cfg)
+}
+
+func checkReviewHarness(ctx context.Context, cfg *config.Config) (string, error) {
+	if !cfg.Review.Enabled {
+		return "disabled", nil
+	}
+	h, err := buildReviewHarness(cfg)
+	if err != nil {
+		return "", err
+	}
+	detail, err := h.Check(ctx)
+	if err != nil {
+		return "", fmt.Errorf("review harness %s is unavailable: %w", h.Name(), err)
+	}
+	return h.Name() + " " + detail, nil
 }
 
 // gitVersionAtLeast reports whether a `git --version` string is at least

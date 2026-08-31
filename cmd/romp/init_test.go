@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestSeedConfig(t *testing.T) {
-	got := seedConfig([]string{"go build ./...", "go test ./... -count=1"})
+	got := seedConfig([]string{"go build ./...", "go test ./... -count=1"}, true)
 	for _, want := range []string{
 		`commands = [`,
 		`"go build ./...",`,
@@ -18,6 +19,8 @@ func TestSeedConfig(t *testing.T) {
 		`default = "codex"`,
 		`claimed_label  = "romp:claimed"`,
 		`blocked_label  = "romp:blocked"`,
+		`[review]`,
+		`enabled = true`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("seedConfig missing %q:\n%s", want, got)
@@ -42,12 +45,46 @@ func TestSeedConfig(t *testing.T) {
 	if cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" {
 		t.Errorf("round-trip labels = %q / %q", cfg.ClaimedLabel, cfg.BlockedLabel)
 	}
+	if !cfg.Review.Enabled {
+		t.Error("round-trip Review.Enabled = false, want true")
+	}
 }
 
 func TestSeedConfigNoBuild(t *testing.T) {
-	got := seedConfig([]string{"npm test"})
+	got := seedConfig([]string{"npm test"}, false)
 	if !strings.Contains(got, `"npm test",`) {
 		t.Errorf("seedConfig missing command:\n%s", got)
+	}
+	if !strings.Contains(got, "[review]\nenabled = false") {
+		t.Errorf("seedConfig missing disabled review setting:\n%s", got)
+	}
+}
+
+func TestChooseReviewEnabled(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "default", input: "\n", want: true},
+		{name: "yes", input: "y\n", want: true},
+		{name: "no", input: "n\n", want: false},
+		{name: "retry invalid", input: "maybe\nno\n", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			got, err := chooseReviewEnabled(strings.NewReader(tt.input), &out)
+			if err != nil {
+				t.Fatalf("chooseReviewEnabled: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("chooseReviewEnabled = %v, want %v", got, tt.want)
+			}
+			if !strings.Contains(out.String(), "Enable review gate? [Y/n]") {
+				t.Errorf("prompt = %q", out.String())
+			}
+		})
 	}
 }
 

@@ -30,6 +30,11 @@ model     = ""
 effort    = "high"               # claude/codex: reasoning effort; opencode: model-specific variant
 max_turns = 30                   # claude only; ignored by codex and opencode
 
+[review]
+enabled = true
+model   = ""                     # empty uses harness.model
+harness = ""                     # empty uses harness.default
+
 [prompt]
 template = ".romp/prompt.md"     # optional
 brief    = ".romp/DESIGN.md"     # optional
@@ -44,10 +49,16 @@ set:
 flags  →  .romp/local.toml  →  romp.toml  →  ~/.config/romp/config.toml  →  defaults
 ```
 
-Zero means "use the lower layer": `width = 0`, `base = ""`, an unset
-`max_turns`, and empty strings all fall through. Commit `romp.toml` and
-`.romp/*.md`; keep `local.toml` out of git (romp adds it to `.gitignore` for
-you).
+Zero means "use the lower layer" for builder settings. This applies to a zero
+`width`, an empty `base`, an unset `max_turns`, and other empty strings. Review
+settings are presence-aware. An explicit `review.enabled = false` disables
+review. Explicit empty `review.model` and `review.harness` values select the
+effective builder model and harness instead of a lower-layer reviewer override.
+Commit `romp.toml` and `.romp/*.md`; keep `local.toml` out of git (romp adds it
+to `.gitignore` for you).
+
+Unknown keys under `[review]` are rejected when any configuration layer loads.
+Unrelated unknown keys retain the loader's existing ignore behavior.
 
 `history_days` is the one exception — it is read **only** from the user config
 (`~/.config/romp/config.toml`), never from `romp.toml`. Retention is an
@@ -73,6 +84,9 @@ string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
 | `harness.model` | — | Specific model, or empty for the harness default. |
 | `harness.effort` | `high` | Reasoning effort for Claude/Codex; model-specific OpenCode variant (see below). |
 | `harness.max_turns` | — | Turn cap, claude only. |
+| `review.enabled` | `true` | Enables the review gate for watched and one-shot jobs. |
+| `review.model` | builder model | Reviewer model; empty uses `harness.model`. |
+| `review.harness` | builder harness | Reviewer harness; empty uses `harness.default`. |
 | `prompt.template` | — | Custom goal-contract template. |
 | `prompt.brief` | — | File the agent reads first (e.g. `.romp/DESIGN.md`). |
 | `history_days` | `30` | Global only; outcome retention window. |
@@ -102,6 +116,10 @@ validated by Romp.
 | `claude` | `low`, `medium`, `high`, `xhigh`, `max` |
 | `codex` | `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
 | `opencode` | Model-specific `--variant` values; not validated by Romp |
+
+`romp doctor` checks the effective reviewer harness when review is enabled. A
+cross-harness setup must have both the builder and reviewer CLIs installed and
+healthy.
 
 ## Where state lives
 

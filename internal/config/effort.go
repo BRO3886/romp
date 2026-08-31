@@ -17,10 +17,10 @@ var effortsByHarness = map[string][]string{
 }
 
 func validateHarness(h Harness) error {
-	allowed, ok := effortsByHarness[h.Default]
-	if !ok {
-		return fmt.Errorf("unknown harness %q (want claude, codex, or opencode)", h.Default)
+	if err := validateHarnessName(h.Default); err != nil {
+		return err
 	}
+	allowed := effortsByHarness[h.Default]
 	// OpenCode accepts model-specific variant names, so validation belongs to
 	// OpenCode rather than this shared configuration layer.
 	if h.Default == "opencode" {
@@ -31,6 +31,13 @@ func validateHarness(h Harness) error {
 	}
 	if !contains(allowed, h.Effort) {
 		return fmt.Errorf("harness.effort %q is not valid for %s (want %s)", h.Effort, h.Default, strings.Join(allowed, ", "))
+	}
+	return nil
+}
+
+func validateHarnessName(name string) error {
+	if _, ok := effortsByHarness[name]; !ok {
+		return fmt.Errorf("unknown harness %q (want claude, codex, or opencode)", name)
 	}
 	return nil
 }

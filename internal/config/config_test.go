@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -10,8 +11,104 @@ func TestDefaults(t *testing.T) {
 	cfg := Defaults()
 	if cfg.Label != "romp" || cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" ||
 		cfg.Width != 3 || cfg.Timeout != "" || cfg.HistoryDays != 30 ||
-		cfg.Harness.Default != "codex" || cfg.Harness.Effort != "high" {
+		cfg.Harness.Default != "codex" || cfg.Harness.Effort != "high" || !cfg.Review.Enabled {
 		t.Fatalf("Defaults() = %+v", cfg)
+	}
+	if cfg.ReviewModel() != cfg.Harness.Model || cfg.ReviewHarness() != cfg.Harness.Default {
+		t.Fatalf("review fallback = model %q, harness %q; want builder settings", cfg.ReviewModel(), cfg.ReviewHarness())
+	}
+}
+
+func TestLoadReviewPrecedenceAndFallback(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", user)
+	write(t, filepath.Join(user, "romp", "config.toml"), "[review]\nenabled = true\nmodel = \"reviewer-model\"\nharness = \"claude\"\n")
+
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "[review]\nenabled = false\nmodel = \"\"\nharness = \"\"\n")
+	write(t, filepath.Join(root, ".romp", "local.toml"), "[harness]\ndefault = \"codex\"\nmodel = \"builder-model\"\n")
+
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Review.Enabled {
+		t.Error("Review.Enabled = true, want repo config to disable review")
+	}
+	if cfg.Review.Model != "" || cfg.Review.Harness != "" {
+		t.Errorf("Review = %+v, want explicit empty repo values", cfg.Review)
+	}
+	if cfg.ReviewModel() != "builder-model" {
+		t.Errorf("ReviewModel() = %q, want builder-model", cfg.ReviewModel())
+	}
+	if cfg.ReviewHarness() != "codex" {
+		t.Errorf("ReviewHarness() = %q, want codex", cfg.ReviewHarness())
+	}
+}
+
+func TestLoadNoReviewOverrideIsNotPersisted(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	path := filepath.Join(root, "romp.toml")
+	write(t, path, "[review]\nenabled = true\n")
+
+	cfg, err := Load(root, Overrides{NoReview: true})
+	if err != nil {
+		t.Fatalf("Load override: %v", err)
+	}
+	if cfg.Review.Enabled {
+		t.Error("Review.Enabled = true, want --no-review override")
+	}
+
+	cfg, err = Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load persisted config: %v", err)
+	}
+	if !cfg.Review.Enabled {
+		t.Error("Review.Enabled = false after reload, override was persisted")
+	}
+}
+
+func TestLoadRejectsUnknownReviewKey(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "[review]\nenabld = true\n")
+
+	_, err := Load(root, Overrides{})
+	if err == nil {
+		t.Fatal("Load() = nil error, want unknown review key error")
+	}
+	if !strings.Contains(err.Error(), "unknown key review.enabld") {
+		t.Errorf("err = %q, want unknown review.enabld", err)
+	}
+}
+
+func TestLoadIgnoresUnrelatedUnknownKey(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "label = \"work\"\nfuture_setting = true\n")
+
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load unrelated unknown key: %v", err)
+	}
+	if cfg.Label != "work" {
+		t.Errorf("Label = %q, want work", cfg.Label)
+	}
+}
+
+func TestLoadRejectsUnknownReviewHarness(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "[review]\nharness = \"bogus\"\n")
+
+	_, err := Load(root, Overrides{})
+	if err == nil {
+		t.Fatal("Load() = nil error, want unknown review harness")
+	}
+	want := `review.harness: unknown harness "bogus" (want claude, codex, or opencode)`
+	if err.Error() != want {
+		t.Errorf("err = %q, want %q", err, want)
 	}
 }
 
