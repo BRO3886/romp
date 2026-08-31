@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,10 +44,15 @@ func runInit(cmd *cobra.Command, verifyFlags []string) error {
 		cmd.Printf("romp.toml already exists; leaving it untouched\n")
 	} else if os.IsNotExist(err) {
 		commands := verifyFlags
+		reviewEnabled := true
 		interactive := isInteractive(cmd)
 		if interactive {
 			var err error
 			commands, err = chooseVerifyCommands(cmd.InOrStdin(), cmd.OutOrStdout(), config.Discover(root), verifyFlags)
+			if err != nil {
+				return err
+			}
+			reviewEnabled, err = chooseReviewEnabled(cmd.InOrStdin(), cmd.OutOrStdout())
 			if err != nil {
 				return err
 			}
@@ -59,7 +66,7 @@ func runInit(cmd *cobra.Command, verifyFlags []string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(path, []byte(seedConfig(commands)), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(seedConfig(commands, reviewEnabled)), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		} else {
 			cmd.Printf("wrote %s\n", path)
@@ -104,7 +111,7 @@ func isInteractive(cmd *cobra.Command) bool {
 		(isatty.IsTerminal(outFile.Fd()) || isatty.IsCygwinTerminal(outFile.Fd()))
 }
 
-func seedConfig(commands []string) string {
+func seedConfig(commands []string, reviewEnabled bool) string {
 	var b strings.Builder
 	b.WriteString("label          = \"romp\"\n")
 	b.WriteString("claimed_label  = \"romp:claimed\"\n")
@@ -117,7 +124,29 @@ func seedConfig(commands []string) string {
 	}
 	b.WriteString("]\n\n")
 	b.WriteString("[harness]\ndefault = \"codex\"\n")
+	fmt.Fprintf(&b, "\n[review]\nenabled = %t\n", reviewEnabled)
 	return b.String()
+}
+
+func chooseReviewEnabled(in io.Reader, out io.Writer) (bool, error) {
+	scanner := bufio.NewScanner(in)
+	for {
+		fmt.Fprint(out, "Enable review gate? [Y/n] ")
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return false, fmt.Errorf("reading review choice: %w", err)
+			}
+			return true, nil
+		}
+		switch strings.ToLower(strings.TrimSpace(scanner.Text())) {
+		case "", "y", "yes":
+			return true, nil
+		case "n", "no":
+			return false, nil
+		default:
+			fmt.Fprintln(out, "Enter yes or no.")
+		}
+	}
 }
 
 type repoLabel struct {

@@ -55,6 +55,7 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 		model       string
 		effort      string
 		width       int
+		noReview    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -62,10 +63,11 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := factory(cmd.Context(), config.Overrides{
-				Harness: harnessName,
-				Model:   model,
-				Effort:  effort,
-				Width:   width,
+				Harness:  harnessName,
+				Model:    model,
+				Effort:   effort,
+				Width:    width,
+				NoReview: noReview,
 			}, verify, cmd.Flags().Changed("verify"))
 			if err != nil {
 				return err
@@ -79,6 +81,7 @@ func newRunCmd(factory runFactory, run runFunc) *cobra.Command {
 	cmd.Flags().StringVar(&model, "model", "", "model for the harness")
 	cmd.Flags().StringVar(&effort, "effort", "", "reasoning effort for the harness")
 	cmd.Flags().IntVar(&width, "width", 0, "concurrent jobs (ignored by run)")
+	cmd.Flags().BoolVar(&noReview, "no-review", false, "skip review for this run")
 	cmd.MarkFlagRequired("issue")
 	return cmd
 }
@@ -232,6 +235,10 @@ func buildHarness(name string) (harness.Harness, error) {
 	default:
 		return nil, fmt.Errorf("unknown harness %q (want claude, codex, or opencode)", name)
 	}
+}
+
+func buildReviewHarness(cfg *config.Config) (harness.Harness, error) {
+	return buildHarness(cfg.ReviewHarness())
 }
 
 func execRun(ctx context.Context, r *runner.Runner, issue int) error {

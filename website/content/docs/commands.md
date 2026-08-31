@@ -34,6 +34,7 @@ romp run -i 17
 | `--harness` | Harness to use (`claude`, `codex`, or `opencode`). |
 | `--model` | Model for the harness. |
 | `--effort` | Reasoning effort for Claude/Codex; model-specific variant for OpenCode. |
+| `--no-review` | Skip the review gate for this run without changing `romp.toml`. |
 | `--width` | Concurrent jobs (ignored by `run`). |
 
 `run` is a pure foreground bypass: no job row, no dedupe, absent from `status`,
@@ -108,12 +109,13 @@ finished-job history older than `history_days` (default 30, from user config).
 romp doctor
 ```
 
-Checks four things and prints a table:
+Checks five things and prints a table:
 
 - `git` — installed and 2.35+
 - `gh` — installed and authenticated
 - `harness` — at least one of `claude`, `codex`, or `opencode` is healthy
 - `config` — `romp.toml` loads and a verify command is present
+- `review` — the effective reviewer CLI is healthy, or review is disabled
 
 ## `romp init`
 
@@ -122,8 +124,9 @@ romp init
 ```
 
 In an interactive terminal, inspects project configuration files and lets you
-select or type one or more ordered verification commands before writing
-`romp.toml`. It creates the three labels on the repo and appends
-`.romp/local.toml` to `.gitignore`. If `romp.toml` already exists it is left
-untouched. In non-interactive use, pass one or more repeatable `--verify` flags;
-Romp does not guess commands.
+select or type one or more ordered verification commands. It then asks whether
+to enable review, with yes as the default, before writing `romp.toml`. It
+creates the three labels on the repo and appends `.romp/local.toml` to
+`.gitignore`. If `romp.toml` already exists it is left untouched. In
+non-interactive use, pass one or more repeatable `--verify` flags; Romp does not
+guess commands and writes review as enabled.

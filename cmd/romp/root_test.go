@@ -38,7 +38,7 @@ func TestRunCmdFlags(t *testing.T) {
 	}
 
 	cmd := newRunCmd(factory, run)
-	cmd.SetArgs([]string{"--verify", "go build ./...", "--verify", "go test ./...", "--harness", "codex", "--model", "opus", "--effort", "low", "--width", "1", "-i", "7"})
+	cmd.SetArgs([]string{"--verify", "go build ./...", "--verify", "go test ./...", "--harness", "codex", "--model", "opus", "--effort", "low", "--width", "1", "--no-review", "-i", "7"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -65,6 +65,9 @@ func TestRunCmdFlags(t *testing.T) {
 	}
 	if gotOverrides.Width != 1 {
 		t.Errorf("overrides.Width = %d, want 1", gotOverrides.Width)
+	}
+	if !gotOverrides.NoReview {
+		t.Error("overrides.NoReview = false, want true")
 	}
 }
 
@@ -120,6 +123,32 @@ func TestRunCmdVerifyDefaults(t *testing.T) {
 	}
 	if gotOverrides.Effort != "" {
 		t.Errorf("overrides.Effort = %q, want empty when --effort is absent", gotOverrides.Effort)
+	}
+	if gotOverrides.NoReview {
+		t.Error("overrides.NoReview = true, want false when --no-review is absent")
+	}
+}
+
+func TestBuildReviewHarnessUsesEffectiveConfig(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Harness.Default = "codex"
+	cfg.Review.Harness = "claude"
+
+	h, err := buildReviewHarness(&cfg)
+	if err != nil {
+		t.Fatalf("buildReviewHarness: %v", err)
+	}
+	if h.Name() != "claude" {
+		t.Errorf("review harness = %q, want claude", h.Name())
+	}
+
+	cfg.Review.Harness = ""
+	h, err = buildReviewHarness(&cfg)
+	if err != nil {
+		t.Fatalf("buildReviewHarness fallback: %v", err)
+	}
+	if h.Name() != "codex" {
+		t.Errorf("fallback review harness = %q, want codex", h.Name())
 	}
 }
 

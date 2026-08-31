@@ -23,6 +23,7 @@ type Config struct {
 	Verify       Verify  `toml:"verify"`
 	Scope        Scope   `toml:"scope"`
 	Harness      Harness `toml:"harness"`
+	Review       Review  `toml:"review"`
 	// HarnessEffortSource records the config file that supplied the effective
 	// harness effort. It is empty for the built-in default and command-line
 	// overrides.
@@ -49,6 +50,13 @@ type Harness struct {
 	MaxTurns int    `toml:"max_turns"`
 }
 
+// Review configures the review gate independently from the builder.
+type Review struct {
+	Enabled bool   `toml:"enabled"`
+	Model   string `toml:"model"`
+	Harness string `toml:"harness"`
+}
+
 // Prompt points at optional custom goal-contract files.
 type Prompt struct {
 	Template string `toml:"template"`
@@ -65,15 +73,33 @@ func Defaults() Config {
 		Width:        3,
 		HistoryDays:  30,
 		Harness:      Harness{Default: "codex", Effort: "high"},
+		Review:       Review{Enabled: true},
 	}
+}
+
+// ReviewModel returns the configured reviewer model or the builder model.
+func (c Config) ReviewModel() string {
+	if c.Review.Model != "" {
+		return c.Review.Model
+	}
+	return c.Harness.Model
+}
+
+// ReviewHarness returns the configured reviewer harness or the builder harness.
+func (c Config) ReviewHarness() string {
+	if c.Review.Harness != "" {
+		return c.Review.Harness
+	}
+	return c.Harness.Default
 }
 
 // Overrides carries command-line values that outrank every file.
 type Overrides struct {
-	Harness string
-	Model   string
-	Effort  string
-	Width   int
+	Harness  string
+	Model    string
+	Effort   string
+	Width    int
+	NoReview bool
 }
 
 // Load merges, in order of increasing precedence, the built-in defaults, the
@@ -107,8 +133,14 @@ func Load(root string, o Overrides) (*Config, error) {
 	if o.Width != 0 {
 		cfg.Width = o.Width
 	}
+	if o.NoReview {
+		cfg.Review.Enabled = false
+	}
 	if err := validateHarness(cfg.Harness); err != nil {
 		return nil, err
+	}
+	if err := validateHarnessName(cfg.ReviewHarness()); err != nil {
+		return nil, fmt.Errorf("review.harness: %w", err)
 	}
 	return &cfg, nil
 }
@@ -125,20 +157,27 @@ func apply(dst *Config, path string, global bool) error {
 		return fmt.Errorf("reading %s: %w", path, err)
 	}
 	var src Config
-	if err := toml.Unmarshal(data, &src); err != nil {
+	metadata, err := toml.Decode(string(data), &src)
+	if err != nil {
 		return fmt.Errorf("parsing %s: %w", path, err)
 	}
-	overlay(dst, &src, global)
+	for _, key := range metadata.Undecoded() {
+		if len(key) > 0 && key[0] == "review" {
+			return fmt.Errorf("parsing %s: unknown key %s", path, key.String())
+		}
+	}
+	overlay(dst, &src, global, metadata)
 	if src.Harness.Effort != "" {
 		dst.HarnessEffortSource = path
 	}
 	return nil
 }
 
-// overlay copies non-zero fields from src over dst. Zero means "not set", so
-// dst keeps its current (lower-precedence) value for anything src leaves out.
+// overlay copies non-zero fields from src over dst. A review table resets its
+// model and harness to builder fallbacks unless it defines replacements.
+// Review enabled uses field presence so omission retains the lower layer.
 // Global-only fields are copied solely when src is the user config file.
-func overlay(dst *Config, src *Config, global bool) {
+func overlay(dst *Config, src *Config, global bool, metadata toml.MetaData) {
 	if src.Label != "" {
 		dst.Label = src.Label
 	}
@@ -180,6 +219,13 @@ func overlay(dst *Config, src *Config, global bool) {
 	}
 	if src.Harness.MaxTurns != 0 {
 		dst.Harness.MaxTurns = src.Harness.MaxTurns
+	}
+	if metadata.IsDefined("review", "enabled") {
+		dst.Review.Enabled = src.Review.Enabled
+	}
+	if metadata.IsDefined("review") {
+		dst.Review.Model = src.Review.Model
+		dst.Review.Harness = src.Review.Harness
 	}
 	if src.Prompt.Template != "" {
 		dst.Prompt.Template = src.Prompt.Template
