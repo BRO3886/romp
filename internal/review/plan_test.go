@@ -8,7 +8,7 @@ import (
 
 var routeInstructions = map[string]string{
 	"correctness":    "Adversarial bug-hunt + verify the claim; default stance: find reasons NOT to merge.",
-	"tests":          "Run the suite and print the exit code. No green run, no merge-safe verdict.",
+	"tests":          "Assess test coverage using the supplied verification transcript as evidence rather than claiming commands were run during review.",
 	"security":       "Review security-sensitive behavior against the repository's actual enforcement mechanisms.",
 	"quality":        "Strict maintainability / abstraction / spaghetti / 1k-line-file audit.",
 	"pr-conventions": "Project conventions + logical soundness via the repo's own reviewer.",

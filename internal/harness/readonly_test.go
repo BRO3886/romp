@@ -517,9 +517,6 @@ func TestLiveReadOnlyEnforcement(t *testing.T) {
 			if string(got) != "original\n" {
 				t.Fatalf("sentinel = %q, want unchanged original", got)
 			}
-			if _, err := os.Stat(filepath.Join(worktree, ".romp", "review.md")); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("review artifact exists or could not be checked: %v", err)
-			}
 			t.Logf("native denial evidence reported through Result.Output: %s", result.Output)
 		})
 	}

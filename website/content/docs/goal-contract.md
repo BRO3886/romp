@@ -4,9 +4,9 @@ description: "The finish line romp hands your agent — GATE, DONE, PROVE IT, CO
 weight: 5
 ---
 
-romp hands the agent a finish line, not a task description. The rendered prompt
-is the single contract between romp and the agent, and it is harness-agnostic:
-Claude, Codex, and OpenCode receive the same structure.
+romp hands the builder a finish line, not a task description. The rendered
+builder prompt is the contract between romp and the builder, and it is
+harness-agnostic: Claude, Codex, and OpenCode receive the same structure.
 
 ## The four sections
 
@@ -29,21 +29,30 @@ the agent must self-reject before editing source, write the specific gap to
 `.romp/blocked.md`, and stop. A plausible PR solving the wrong problem costs
 more than no PR.
 
-## Outcome artifacts
+## Builder outcome artifacts
 
-The agent reports a structured result by writing a markdown file under
+The builder reports a structured result by writing a markdown file under
 `.romp/`:
 
 - `pull-request.md` — PR title, conventional-commit subject, and description
   (with mermaid diagrams for substantial changes)
 - `blocked.md` — the specific gap when an issue is under-scoped
 
-romp reads these after the harness exits and never parses a harness's native
-output. `pull-request.md` is removed before committing; `blocked.md` is
-consumed on a path that returns before any commit, so neither reaches the diff.
+romp reads these builder artifacts after the harness exits. It does not parse
+the builder's native output. `pull-request.md` is removed before committing;
+`blocked.md` is consumed on a path that returns before any commit, so neither
+reaches the diff.
 
 When the artifact is missing or malformed, romp falls back to safe defaults:
 the issue title, a conventional commit, and `Closes #N`.
+
+The review gate uses a different contract. The read-only reviewer writes no
+artifact. It returns one strict JSON document through `harness.Result.Output`.
+An empty, malformed, or semantically invalid document is an error, never an
+implicit approval. The runner supplies the diff, branch log, changed files,
+lens plan, verification transcript, and convention references, then parses and
+consumes the typed review outcome. Runner integration belongs to issue #33; the
+review renderer and parser perform no filesystem discovery or harness calls.
 
 ## Customizing the prompt
 

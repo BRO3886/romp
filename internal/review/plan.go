@@ -21,7 +21,7 @@ type Plan struct {
 
 var lensRegistry = []Lens{
 	{Name: "correctness", Instruction: "Adversarial bug-hunt + verify the claim; default stance: find reasons NOT to merge."},
-	{Name: "tests", Instruction: "Run the suite and print the exit code. No green run, no merge-safe verdict."},
+	{Name: "tests", Instruction: "Assess test coverage using the supplied verification transcript as evidence rather than claiming commands were run during review."},
 	{Name: "security", Instruction: "Review security-sensitive behavior against the repository's actual enforcement mechanisms."},
 	{Name: "quality", Instruction: "Strict maintainability / abstraction / spaghetti / 1k-line-file audit."},
 	{Name: "pr-conventions", Instruction: "Project conventions + logical soundness via the repo's own reviewer."},
