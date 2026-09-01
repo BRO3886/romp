@@ -19,26 +19,26 @@ import (
 )
 
 type fakeGit struct {
-	changed        bool
-	worktree       string
-	worktreeBase   string
-	changesBase    string
-	defaultBranch  string
-	defaultErr     error
-	defaultCalls   int
-	refreshErr     error
-	refreshCommit  string
-	refreshed      []string
-	onAdd          func(dir string) error
-	onHasChanges   func()
-	pushed         []string
-	removed        []string
-	deleted        []string
-	files          []string
-	diff           string
-	log            string
-	commits        int
-	commitDeadline *bool
+	changed       bool
+	worktree      string
+	worktreeBase  string
+	changesBase   string
+	defaultBranch string
+	defaultErr    error
+	defaultCalls  int
+	refreshErr    error
+	refreshCommit string
+	refreshed     []string
+	onAdd         func(dir string) error
+	onHasChanges  func()
+	pushed        []string
+	removed       []string
+	deleted       []string
+	files         []string
+	diff          string
+	log           string
+	commits       int
+	commitCtx     *bool
 }
 
 func (f *fakeGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
@@ -95,8 +95,8 @@ func (f *fakeGit) HasChanges(_ context.Context, _, base string) (bool, error) {
 }
 
 func (f *fakeGit) CommitAll(ctx context.Context, _ string, _ string) error {
-	if f.commitDeadline != nil {
-		_, *f.commitDeadline = ctx.Deadline()
+	if f.commitCtx != nil {
+		_, *f.commitCtx = ctx.Deadline()
 	}
 	return nil
 }
@@ -679,7 +679,7 @@ func TestRunTimeoutDuringReviewUsesJobTimeoutOutcome(t *testing.T) {
 
 func TestRunCommitUsesJobTimeoutContext(t *testing.T) {
 	hasDeadline := false
-	g := &fakeGit{changed: true, onAdd: writePR, commitDeadline: &hasDeadline}
+	g := &fakeGit{changed: true, onAdd: writePR, commitCtx: &hasDeadline}
 	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
 	r.Timeout = time.Minute
 
