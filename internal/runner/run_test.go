@@ -19,25 +19,26 @@ import (
 )
 
 type fakeGit struct {
-	changed       bool
-	worktree      string
-	worktreeBase  string
-	changesBase   string
-	defaultBranch string
-	defaultErr    error
-	defaultCalls  int
-	refreshErr    error
-	refreshCommit string
-	refreshed     []string
-	onAdd         func(dir string) error
-	onHasChanges  func()
-	pushed        []string
-	removed       []string
-	deleted       []string
-	files         []string
-	diff          string
-	log           string
-	commits       int
+	changed        bool
+	worktree       string
+	worktreeBase   string
+	changesBase    string
+	defaultBranch  string
+	defaultErr     error
+	defaultCalls   int
+	refreshErr     error
+	refreshCommit  string
+	refreshed      []string
+	onAdd          func(dir string) error
+	onHasChanges   func()
+	pushed         []string
+	removed        []string
+	deleted        []string
+	files          []string
+	diff           string
+	log            string
+	commits        int
+	commitDeadline *bool
 }
 
 func (f *fakeGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
@@ -93,7 +94,12 @@ func (f *fakeGit) HasChanges(_ context.Context, _, base string) (bool, error) {
 	return f.changed, nil
 }
 
-func (f *fakeGit) CommitAll(context.Context, string, string) error { return nil }
+func (f *fakeGit) CommitAll(ctx context.Context, _ string, _ string) error {
+	if f.commitDeadline != nil {
+		_, *f.commitDeadline = ctx.Deadline()
+	}
+	return nil
+}
 
 func (f *fakeGit) ChangedFiles(context.Context, string, string) ([]string, error) {
 	return append([]string(nil), f.files...), nil
@@ -668,5 +674,19 @@ func TestRunTimeoutDuringReviewUsesJobTimeoutOutcome(t *testing.T) {
 	_, err := r.Run(context.Background(), 7)
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("Run error = %v, want ErrTimeout", err)
+	}
+}
+
+func TestRunCommitUsesJobTimeoutContext(t *testing.T) {
+	hasDeadline := false
+	g := &fakeGit{changed: true, onAdd: writePR, commitDeadline: &hasDeadline}
+	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+	r.Timeout = time.Minute
+
+	if _, err := r.Run(context.Background(), 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !hasDeadline {
+		t.Error("commit context has no deadline, want the job timeout deadline")
 	}
 }

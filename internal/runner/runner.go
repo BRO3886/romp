@@ -252,7 +252,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		return "", fmt.Errorf("%w: agent made no changes in %s", ErrNoChanges, dir)
 	}
 
-	if err := r.Git.CommitAll(ctx, dir, pr.Commit); err != nil {
+	if err := r.Git.CommitAll(runCtx, dir, pr.Commit); err != nil {
 		return "", fmt.Errorf("commit: %w", err)
 	}
 
