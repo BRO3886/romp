@@ -423,6 +423,25 @@ func TestRunJobRecordsBlockedOutcome(t *testing.T) {
 	}
 }
 
+func TestRunJobRecordsChangesRequestedOutcome(t *testing.T) {
+	ghc := &fakeGH{}
+	store := newFakeStore()
+	store.rows[7] = true
+
+	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
+	w.RunJob = func(context.Context, int) (string, error) {
+		return "", fmt.Errorf("%w: blocking finding", runner.ErrChangesRequested)
+	}
+
+	w.runJobSync(t, 7)
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.finished) != 1 || store.finished[0].Outcome != "changes-requested" {
+		t.Fatalf("outcomes = %v, want one changes-requested", store.finished)
+	}
+}
+
 func TestColorizerMapsWatchTokens(t *testing.T) {
 	c := newColorizer(true, "sunny_naruto")
 	got := c.colorize("12:34:56  [sunny_naruto] warning: PR: https://github.com/o/r/pull/1 #1: done #2: blocked #3: timeout #4: red\n")

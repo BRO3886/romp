@@ -189,3 +189,25 @@ func (r *Repo) Push(ctx context.Context, dir, branch string) error {
 	_, err := r.run(ctx, dir, "push", "-u", "origin", branch)
 	return err
 }
+
+// ChangedFiles lists paths changed from base in Git's stable name-only order.
+func (r *Repo) ChangedFiles(ctx context.Context, dir, base string) ([]string, error) {
+	out, err := r.run(ctx, dir, "diff", "--name-only", base+"...HEAD")
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return []string{}, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// Diff returns the complete patch from base through the worktree HEAD.
+func (r *Repo) Diff(ctx context.Context, dir, base string) (string, error) {
+	return r.run(ctx, dir, "diff", "--no-ext-diff", base+"...HEAD")
+}
+
+// BranchLog returns the commits introduced after base.
+func (r *Repo) BranchLog(ctx context.Context, dir, base string) (string, error) {
+	return r.run(ctx, dir, "log", "--format=%h %s", base+"..HEAD")
+}

@@ -106,6 +106,13 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlags []string, ve
 	if err != nil {
 		return nil, err
 	}
+	var reviewer harness.Harness
+	if cfg.Review.Enabled {
+		reviewer, err = buildReviewHarness(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	timeout, err := parseTimeout(cfg.Timeout)
 	if err != nil {
@@ -117,6 +124,7 @@ func newRunner(ctx context.Context, o config.Overrides, verifyFlags []string, ve
 		config:     cfg,
 		verify:     verify,
 		harness:    h,
+		reviewer:   reviewer,
 		timeout:    timeout,
 		repository: &git.Repo{Root: root},
 	}
@@ -139,6 +147,7 @@ type runnerFactory struct {
 	config     *config.Config
 	verify     []string
 	harness    harness.Harness
+	reviewer   harness.Harness
 	timeout    time.Duration
 	repository runner.GitOps
 }
@@ -153,22 +162,25 @@ func (f runnerFactory) build() (*runner.Runner, error) {
 		return nil, err
 	}
 	return &runner.Runner{
-		Harness:      f.harness,
-		Git:          f.repository,
-		GH:           &gh.Client{},
-		Prompt:       &prompt.Renderer{Template: templateText},
-		Verify:       f.verify,
-		Model:        f.config.Harness.Model,
-		Effort:       f.config.Harness.Effort,
-		MaxTurns:     f.config.Harness.MaxTurns,
-		Base:         f.config.Base,
-		Timeout:      f.timeout,
-		Protected:    f.config.Scope.Protected,
-		Ignore:       f.config.Scope.Ignore,
-		Brief:        brief,
-		TriggerLabel: f.config.Label,
-		BlockedLabel: f.config.BlockedLabel,
-		Stderr:       os.Stderr,
+		Harness:       f.harness,
+		ReviewHarness: f.reviewer,
+		Git:           f.repository,
+		GH:            &gh.Client{},
+		Prompt:        &prompt.Renderer{Template: templateText},
+		Verify:        f.verify,
+		Model:         f.config.Harness.Model,
+		ReviewModel:   f.config.ReviewModel(),
+		ReviewEnabled: f.config.Review.Enabled,
+		Effort:        f.config.Harness.Effort,
+		MaxTurns:      f.config.Harness.MaxTurns,
+		Base:          f.config.Base,
+		Timeout:       f.timeout,
+		Protected:     f.config.Scope.Protected,
+		Ignore:        f.config.Scope.Ignore,
+		Brief:         brief,
+		TriggerLabel:  f.config.Label,
+		BlockedLabel:  f.config.BlockedLabel,
+		Stderr:        os.Stderr,
 	}, nil
 }
 

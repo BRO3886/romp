@@ -333,6 +333,8 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{
 		w.logf("#%d: blocked", iss.Number)
 	case errors.Is(err, runner.ErrTimeout):
 		w.logf("#%d: timeout", iss.Number)
+	case errors.Is(err, runner.ErrChangesRequested):
+		w.logf("#%d: changes-requested", iss.Number)
 	default:
 		w.logf("#%d: %v", iss.Number, err)
 	}
@@ -372,6 +374,8 @@ func classifyOutcome(err error) string {
 		return "no-changes"
 	case errors.Is(err, runner.ErrRed):
 		return "red"
+	case errors.Is(err, runner.ErrChangesRequested):
+		return "changes-requested"
 	default:
 		return "error"
 	}

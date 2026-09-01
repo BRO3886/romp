@@ -69,6 +69,8 @@ operator concern, not a team convention.
 
 Omit `timeout` to let jobs run without a deadline. Set it to a Go duration
 string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
+The deadline covers the builder, verification, read-only review, and optional
+fix round as one budget. Review does not consume another width slot.
 
 ## Full reference
 

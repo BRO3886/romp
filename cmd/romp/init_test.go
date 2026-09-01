@@ -91,8 +91,8 @@ func TestChooseReviewEnabled(t *testing.T) {
 func TestInitLabels(t *testing.T) {
 	cfg := config.Defaults()
 	got := initLabels(&cfg)
-	if len(got) != 3 {
-		t.Fatalf("initLabels = %d labels, want 3", len(got))
+	if len(got) != 4 {
+		t.Fatalf("initLabels = %d labels, want 4", len(got))
 	}
 	if got[0].name != "romp" || got[0].desc == "" {
 		t.Errorf("trigger = %+v, want named romp with a description", got[0])
@@ -102,6 +102,9 @@ func TestInitLabels(t *testing.T) {
 	}
 	if got[2].name != "romp:blocked" || got[2].desc == "" {
 		t.Errorf("blocked = %+v, want named romp:blocked with a description", got[2])
+	}
+	if got[3].name != "romp:changes-requested" || got[3].desc == "" {
+		t.Errorf("changes requested = %+v, want named label with a description", got[3])
 	}
 
 	cfg.Label, cfg.ClaimedLabel, cfg.BlockedLabel = "work", "taken", "stuck"

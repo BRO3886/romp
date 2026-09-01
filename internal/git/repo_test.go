@@ -173,6 +173,43 @@ func TestConcurrentBranchRefreshesSucceed(t *testing.T) {
 	}
 }
 
+func TestReviewInputsDescribeCommittedBranchAgainstBase(t *testing.T) {
+	fixture := gitfixture.New(t, "trunk")
+	repo := &Repo{Root: fixture.Operator}
+	dir := filepath.Join(t.TempDir(), "worktree")
+	if err := repo.AddWorktree(context.Background(), "romp-review-inputs", dir, fixture.Initial); err != nil {
+		t.Fatalf("AddWorktree: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.RemoveWorktree(context.Background(), dir) })
+	if err := os.WriteFile(filepath.Join(dir, "review.go"), []byte("package review\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitfixture.Run(t, dir, "add", "review.go")
+	gitfixture.Run(t, dir, "commit", "-m", "feat: add review input")
+
+	files, err := repo.ChangedFiles(context.Background(), dir, fixture.Initial)
+	if err != nil {
+		t.Fatalf("ChangedFiles: %v", err)
+	}
+	if len(files) != 1 || files[0] != "review.go" {
+		t.Fatalf("ChangedFiles = %v, want [review.go]", files)
+	}
+	diff, err := repo.Diff(context.Background(), dir, fixture.Initial)
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if !strings.Contains(diff, "+package review") {
+		t.Errorf("Diff missing committed content:\n%s", diff)
+	}
+	log, err := repo.BranchLog(context.Background(), dir, fixture.Initial)
+	if err != nil {
+		t.Fatalf("BranchLog: %v", err)
+	}
+	if !strings.Contains(log, "feat: add review input") {
+		t.Errorf("BranchLog = %q, want commit subject", log)
+	}
+}
+
 func TestParseRemote(t *testing.T) {
 	tests := []struct {
 		name        string

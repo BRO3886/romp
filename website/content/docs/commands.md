@@ -31,6 +31,7 @@ romp run -i 17
 | --- | --- |
 | `-i, --issue` | Issue number to run (required). |
 | `--verify` | Command that must pass in the worktree before a PR opens (overrides config). |
+| `--no-review` | Skip the review gate for this one run. |
 | `--harness` | Harness to use (`claude`, `codex`, or `opencode`). |
 | `--model` | Model for the harness. |
 | `--effort` | Reasoning effort for Claude/Codex; model-specific variant for OpenCode. |

@@ -28,7 +28,7 @@ var (
 	jobIdentity  = regexp.MustCompile(`^(?:\d{2}:){2}\d{2}  (\[[^\]]+\])`)
 	warningToken = regexp.MustCompile(`(\] )warning:`)
 	prURL        = regexp.MustCompile(`https://github\.com/[^[:space:]]+/pull/[0-9]+`)
-	outcomeToken = regexp.MustCompile(`#\d+: (?:done|blocked|timeout|red|no-changes|error)\b`)
+	outcomeToken = regexp.MustCompile(`#\d+: (?:done|blocked|timeout|red|changes-requested|no-changes|error)\b`)
 )
 
 type colorizer struct {

@@ -68,8 +68,12 @@ machinery to claim, isolate, and verify work.
    Codex, or OpenCode).
 5. **Verify** — romp re-runs every `[verify]` command itself. The agent's own
    "tests pass" is never trusted.
-6. **PR or block** — green and scoped means a PR and label removal; an
-   under-scoped issue becomes `blocked` with a gap comment.
+6. **Review** — code changes go through one read-only reviewer in the same job
+   slot. Blocking findings get one builder fix round, then fresh verification
+   and review. Documentation-only changes skip this step.
+7. **PR or block** — green and approved means a PR and label removal. An
+   under-scoped issue becomes `blocked`; unresolved review findings become
+   `changes-requested` and keep the worktree for inspection.
 
 ## Components
 
