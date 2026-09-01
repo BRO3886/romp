@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
@@ -12,12 +13,29 @@ import (
 )
 
 type verifyInputModel struct {
-	input      textinput.Model
-	candidates []config.Candidate
-	selected   []string
-	done       bool
-	aborted    bool
-	message    string
+	input         textinput.Model
+	candidateList list.Model
+	selected      []string
+	done          bool
+	aborted       bool
+	message       string
+}
+
+type verifyCandidateItem struct {
+	command string
+	sources []string
+}
+
+func (i verifyCandidateItem) FilterValue() string {
+	return i.command
+}
+
+func (i verifyCandidateItem) Title() string {
+	return i.command
+}
+
+func (i verifyCandidateItem) Description() string {
+	return strings.Join(i.sources, ", ")
 }
 
 func chooseVerifyCommands(in io.Reader, out io.Writer, candidates []config.Candidate, initial []string) ([]string, error) {
@@ -25,18 +43,7 @@ func chooseVerifyCommands(in io.Reader, out io.Writer, candidates []config.Candi
 	if err != nil {
 		return nil, err
 	}
-	input := textinput.New()
-	input.Prompt = "verify> "
-	input.Placeholder = "type a command or filter candidates"
-	input.ShowSuggestions = true
-	input.SetSuggestions(candidateCommands(candidates))
-	input.Focus()
-
-	m := verifyInputModel{
-		input:      input,
-		candidates: candidates,
-		selected:   append([]string(nil), initial...),
-	}
+	m := newVerifyInputModel(candidates, initial)
 	model, err := tea.NewProgram(&m, tea.WithInput(in), tea.WithOutput(out)).Run()
 	if err != nil {
 		return nil, err
@@ -46,6 +53,36 @@ func chooseVerifyCommands(in io.Reader, out io.Writer, candidates []config.Candi
 		return nil, fmt.Errorf("verification command selection cancelled")
 	}
 	return result.selected, nil
+}
+
+func newVerifyInputModel(candidates []config.Candidate, initial []string) verifyInputModel {
+	input := textinput.New()
+	input.Prompt = "verify> "
+	input.Placeholder = "type a command or filter candidates"
+	input.Focus()
+
+	items := make([]list.Item, 0, len(candidates))
+	for _, candidate := range candidates {
+		items = append(items, verifyCandidateItem{
+			command: candidate.Command,
+			sources: append([]string(nil), candidate.Sources...),
+		})
+	}
+	delegate := list.NewDefaultDelegate()
+	delegate.SetSpacing(0)
+	candidateList := list.New(items, delegate, 80, 12)
+	candidateList.Title = "Discovered commands"
+	candidateList.Filter = list.UnsortedFilter
+	candidateList.SetShowFilter(false)
+	candidateList.SetShowStatusBar(false)
+	candidateList.SetShowHelp(false)
+	candidateList.DisableQuitKeybindings()
+
+	return verifyInputModel{
+		input:         input,
+		candidateList: candidateList,
+		selected:      append([]string(nil), initial...),
+	}
 }
 
 func normalizeVerifyCommands(commands []string) ([]string, error) {
@@ -70,39 +107,70 @@ func (m *verifyInputModel) Init() tea.Cmd {
 func (m *verifyInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
-		var command tea.Cmd
-		m.input, command = m.input.Update(msg)
-		return m, command
+		if size, ok := msg.(tea.WindowSizeMsg); ok {
+			m.input.SetWidth(size.Width)
+			m.candidateList.SetSize(size.Width, max(3, size.Height-10))
+		}
+		var inputCmd, listCmd tea.Cmd
+		m.input, inputCmd = m.input.Update(msg)
+		m.candidateList, listCmd = m.candidateList.Update(msg)
+		return m, tea.Batch(inputCmd, listCmd)
 	}
 
 	switch key.String() {
 	case "ctrl+c", "esc":
 		m.aborted = true
 		return m, tea.Quit
+	case "up", "down":
+		var command tea.Cmd
+		m.candidateList, command = m.candidateList.Update(msg)
+		return m, command
+	case "tab":
+		if candidate, ok := m.candidateList.SelectedItem().(verifyCandidateItem); ok {
+			m.input.SetValue(candidate.command)
+			m.syncCandidateFilter()
+		}
+		return m, nil
 	case "enter":
 		if strings.TrimSpace(m.input.Value()) == "" {
 			m.done = true
 			return m, tea.Quit
 		}
-		command := m.input.Value()
-		if suggestion := m.input.CurrentSuggestion(); suggestion != "" && strings.TrimSpace(command) == suggestion {
-			command = suggestion
+		command := strings.TrimSpace(m.input.Value())
+		if candidate, ok := m.candidateList.SelectedItem().(verifyCandidateItem); ok && command == candidate.command {
+			command = candidate.command
 		}
-		command = strings.TrimSpace(command)
 		if containsCommand(m.selected, command) {
 			m.message = "command already selected"
-			m.input.Reset()
+			m.resetInput()
 			return m, nil
 		}
 		m.selected = append(m.selected, command)
 		m.message = ""
-		m.input.Reset()
+		m.resetInput()
 		return m, nil
 	}
 
 	var command tea.Cmd
 	m.input, command = m.input.Update(msg)
+	m.syncCandidateFilter()
 	return m, command
+}
+
+func (m *verifyInputModel) syncCandidateFilter() {
+	filter := strings.TrimSpace(m.input.Value())
+	if filter == "" {
+		m.candidateList.ResetFilter()
+		m.candidateList.ResetSelected()
+		return
+	}
+	m.candidateList.SetFilterText(filter)
+}
+
+func (m *verifyInputModel) resetInput() {
+	m.input.Reset()
+	m.candidateList.ResetFilter()
+	m.candidateList.ResetSelected()
 }
 
 func (m *verifyInputModel) View() tea.View {
@@ -120,41 +188,13 @@ func (m *verifyInputModel) View() tea.View {
 	b.WriteString("\n")
 	b.WriteString(m.input.View())
 	b.WriteString("\n\n")
-	matched := m.input.MatchedSuggestions()
-	if strings.TrimSpace(m.input.Value()) == "" {
-		matched = candidateCommands(m.candidates)
-	}
-	current := m.input.CurrentSuggestion()
-	for _, command := range matched {
-		prefix := "  "
-		if command == current {
-			prefix = "> "
-		}
-		fmt.Fprintf(&b, "%s%-36s %s\n", prefix, command, candidateSource(m.candidates, command))
-	}
+	b.WriteString(m.candidateList.View())
 	if m.message != "" {
 		b.WriteString("\n")
 		b.WriteString(m.message)
 		b.WriteString("\n")
 	}
 	return tea.NewView(b.String())
-}
-
-func candidateCommands(candidates []config.Candidate) []string {
-	commands := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		commands = append(commands, candidate.Command)
-	}
-	return commands
-}
-
-func candidateSource(candidates []config.Candidate, command string) string {
-	for _, candidate := range candidates {
-		if candidate.Command == command {
-			return strings.Join(candidate.Sources, ", ")
-		}
-	}
-	return "custom"
 }
 
 func containsCommand(commands []string, command string) bool {
