@@ -14,6 +14,7 @@ import (
 	"github.com/BRO3886/romp/internal/config"
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/git"
+	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/job"
 	"github.com/BRO3886/romp/internal/watch"
 )
@@ -48,6 +49,13 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	var reviewer harness.Harness
+	if cfg.Review.Enabled {
+		reviewer, err = buildReviewHarness(cfg)
+		if err != nil {
+			return err
+		}
+	}
 	timeout, err := parseTimeout(cfg.Timeout)
 	if err != nil {
 		return err
@@ -64,6 +72,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 		config:     cfg,
 		verify:     verify,
 		harness:    h,
+		reviewer:   reviewer,
 		timeout:    timeout,
 		repository: repository,
 	}

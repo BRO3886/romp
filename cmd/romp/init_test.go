@@ -19,6 +19,7 @@ func TestSeedConfig(t *testing.T) {
 		`default = "codex"`,
 		`claimed_label  = "romp:claimed"`,
 		`blocked_label  = "romp:blocked"`,
+		`changes_requested_label = "romp:changes-requested"`,
 		`[review]`,
 		`enabled = true`,
 	} {
@@ -42,8 +43,8 @@ func TestSeedConfig(t *testing.T) {
 	if len(cfg.Verify.Commands) != 2 || cfg.Verify.Commands[0] != "go build ./..." || cfg.Verify.Commands[1] != "go test ./... -count=1" {
 		t.Errorf("round-trip verify = %+v", cfg.Verify)
 	}
-	if cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" {
-		t.Errorf("round-trip labels = %q / %q", cfg.ClaimedLabel, cfg.BlockedLabel)
+	if cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" || cfg.ChangesRequestedLabel != "romp:changes-requested" {
+		t.Errorf("round-trip labels = %q / %q / %q", cfg.ClaimedLabel, cfg.BlockedLabel, cfg.ChangesRequestedLabel)
 	}
 	if !cfg.Review.Enabled {
 		t.Error("round-trip Review.Enabled = false, want true")
@@ -91,8 +92,8 @@ func TestChooseReviewEnabled(t *testing.T) {
 func TestInitLabels(t *testing.T) {
 	cfg := config.Defaults()
 	got := initLabels(&cfg)
-	if len(got) != 3 {
-		t.Fatalf("initLabels = %d labels, want 3", len(got))
+	if len(got) != 4 {
+		t.Fatalf("initLabels = %d labels, want 4", len(got))
 	}
 	if got[0].name != "romp" || got[0].desc == "" {
 		t.Errorf("trigger = %+v, want named romp with a description", got[0])
@@ -103,13 +104,16 @@ func TestInitLabels(t *testing.T) {
 	if got[2].name != "romp:blocked" || got[2].desc == "" {
 		t.Errorf("blocked = %+v, want named romp:blocked with a description", got[2])
 	}
-
-	cfg.Label, cfg.ClaimedLabel, cfg.BlockedLabel = "work", "taken", "stuck"
-	got = initLabels(&cfg)
-	if got[0].name != "work" || got[1].name != "taken" || got[2].name != "stuck" {
-		t.Errorf("custom names = %q %q %q", got[0].name, got[1].name, got[2].name)
+	if got[3].name != "romp:changes-requested" || got[3].desc == "" {
+		t.Errorf("changes requested = %+v, want named label with a description", got[3])
 	}
-	if got[0].desc == "" || got[1].desc == "" || got[2].desc == "" {
+
+	cfg.Label, cfg.ClaimedLabel, cfg.BlockedLabel, cfg.ChangesRequestedLabel = "work", "taken", "stuck", "review"
+	got = initLabels(&cfg)
+	if got[0].name != "work" || got[1].name != "taken" || got[2].name != "stuck" || got[3].name != "review" {
+		t.Errorf("custom names = %q %q %q %q", got[0].name, got[1].name, got[2].name, got[3].name)
+	}
+	if got[0].desc == "" || got[1].desc == "" || got[2].desc == "" || got[3].desc == "" {
 		t.Errorf("custom labels missing descriptions: %+v", got)
 	}
 }

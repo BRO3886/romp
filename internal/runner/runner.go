@@ -16,11 +16,15 @@ import (
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/prompt"
+	"github.com/BRO3886/romp/internal/review"
 )
 
 // defaultTriggerLabel is the label romp watch polls for, and the one a
 // finished run removes as its completion marker.
-const defaultTriggerLabel = "romp"
+const (
+	defaultTriggerLabel          = "romp"
+	defaultChangesRequestedLabel = "romp:changes-requested"
+)
 
 // ErrTimeout is returned when the job timeout expires while the harness is
 // running. The agent is killed and the job stays labelled so it can retry.
@@ -32,6 +36,10 @@ var ErrNoChanges = errors.New("no-changes")
 // ErrRed is returned when a verification command fails after the agent finished.
 var ErrRed = errors.New("red")
 
+// ErrChangesRequested is returned when blocking review findings remain after
+// the single fix round.
+var ErrChangesRequested = errors.New("changes-requested")
+
 // GitOps is the git surface a run needs: read the remote and the default
 // branch, manage the job worktree and branch, and publish the result.
 type GitOps interface {
@@ -42,6 +50,9 @@ type GitOps interface {
 	RemoveWorktree(ctx context.Context, dir string) error
 	DeleteBranch(ctx context.Context, branch string) error
 	HasChanges(ctx context.Context, dir, base string) (bool, error)
+	ChangedFiles(ctx context.Context, dir, base string) ([]string, error)
+	Diff(ctx context.Context, dir, base string) (string, error)
+	BranchLog(ctx context.Context, dir, base string) (string, error)
 	CommitAll(ctx context.Context, dir, msg string) error
 	Push(ctx context.Context, dir, branch string) error
 }
@@ -63,24 +74,28 @@ type SessionStore interface {
 
 // Runner wires the ports together for a single one-shot job.
 type Runner struct {
-	Harness      harness.Harness
-	Sessions     SessionStore
-	Git          GitOps
-	GH           GHOps
-	Prompt       *prompt.Renderer
-	Verify       []string
-	Model        string
-	Effort       string
-	MaxTurns     int
-	Codename     string
-	Base         string
-	Timeout      time.Duration
-	Protected    []string
-	Ignore       []string
-	Brief        string
-	TriggerLabel string
-	BlockedLabel string
-	Stderr       io.Writer
+	Harness               harness.Harness
+	ReviewHarness         harness.Harness
+	Sessions              SessionStore
+	Git                   GitOps
+	GH                    GHOps
+	Prompt                *prompt.Renderer
+	Verify                []string
+	Model                 string
+	ReviewModel           string
+	ReviewEnabled         bool
+	Effort                string
+	MaxTurns              int
+	Codename              string
+	Base                  string
+	Timeout               time.Duration
+	Protected             []string
+	Ignore                []string
+	Brief                 string
+	TriggerLabel          string
+	BlockedLabel          string
+	ChangesRequestedLabel string
+	Stderr                io.Writer
 }
 
 func (r *Runner) logf(format string, a ...any) {
@@ -107,6 +122,13 @@ func (r *Runner) blockedLabel() string {
 		return r.BlockedLabel
 	}
 	return defaultBlockedLabel
+}
+
+func (r *Runner) changesRequestedLabel() string {
+	if r.ChangesRequestedLabel != "" {
+		return r.ChangesRequestedLabel
+	}
+	return defaultChangesRequestedLabel
 }
 
 // Run executes the full pipeline for one issue and opens a PR on success. It
@@ -179,20 +201,12 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		runCtx, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
-	result, err := r.Harness.Run(runCtx, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
+	_, err = r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
 	if err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("%w: %v", ErrTimeout, err)
 		}
 		return "", err
-	}
-	if result.SessionID != "" {
-		r.logf("session %s", result.SessionID)
-		if r.Sessions != nil {
-			if err := r.Sessions.SetSessionID(context.WithoutCancel(ctx), repo, issueNum, result.SessionID); err != nil {
-				return "", fmt.Errorf("recording session: %w", err)
-			}
-		}
 	}
 	r.logf("agent took %s", time.Since(start).Round(time.Second))
 
@@ -229,23 +243,81 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		return "", err
 	}
 	if !changed {
+		if err := r.Git.RemoveWorktree(runCtx, dir); err != nil {
+			r.logf("warning: cleanup worktree: %v", err)
+		}
+		if err := r.Git.DeleteBranch(runCtx, branch); err != nil {
+			r.logf("warning: delete branch: %v", err)
+		}
 		return "", fmt.Errorf("%w: agent made no changes in %s", ErrNoChanges, dir)
 	}
 
-	if err := r.Git.CommitAll(ctx, dir, pr.Commit); err != nil {
+	if err := r.Git.CommitAll(runCtx, dir, pr.Commit); err != nil {
 		return "", fmt.Errorf("commit: %w", err)
 	}
 
 	r.logf("verify: %s", strings.Join(r.Verify, " && "))
-	if err := r.verify(ctx, dir); err != nil {
+	verification, err := r.verifyWithResults(runCtx, dir)
+	if err != nil {
+		if runCtx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("%w: %v", ErrTimeout, err)
+		}
 		return "", fmt.Errorf("%w: %s failed: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), err, dir)
 	}
 
-	if err := r.Git.Push(ctx, dir, branch); err != nil {
+	if r.ReviewEnabled {
+		outcome, plan, err := r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
+		if err != nil {
+			return "", err
+		}
+		if plan.HasCode && outcome.Verdict == review.VerdictFix {
+			fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
+			if _, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns}); err != nil {
+				if runCtx.Err() == context.DeadlineExceeded {
+					return "", fmt.Errorf("%w: %v", ErrTimeout, err)
+				}
+				return "", err
+			}
+			pr, err = readPR(dir, issue.Title, issueNum)
+			if err != nil {
+				return "", err
+			}
+			if err := removePRArtifact(dir); err != nil {
+				return "", err
+			}
+			if err := r.Git.CommitAll(runCtx, dir, pr.Commit); err != nil {
+				return "", fmt.Errorf("commit fix round: %w", err)
+			}
+			verification, err = r.verifyWithResults(runCtx, dir)
+			if err != nil {
+				if runCtx.Err() == context.DeadlineExceeded {
+					return "", fmt.Errorf("%w: %v", ErrTimeout, err)
+				}
+				return "", fmt.Errorf("%w: %s failed after fix round: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), err, dir)
+			}
+			outcome, _, err = r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
+			if err != nil {
+				return "", err
+			}
+			if outcome.Verdict == review.VerdictFix {
+				blocking := formatBlockingFindings(outcome.Findings)
+				if err := r.GH.Comment(runCtx, repo, issueNum, changesRequestedComment(blocking)); err != nil {
+					return "", fmt.Errorf("posting review findings: %w", err)
+				}
+				if err := r.GH.AddLabel(runCtx, repo, issueNum, r.changesRequestedLabel()); err != nil {
+					return "", fmt.Errorf("adding %s label: %w", r.changesRequestedLabel(), err)
+				}
+				return "", fmt.Errorf("%w: blocking review findings remain (worktree kept at %s): %s", ErrChangesRequested, dir, blocking)
+			}
+		}
+		pr.Body = appendReviewerNotes(pr.Body, outcome.Findings)
+	}
+
+	if err := r.Git.Push(runCtx, dir, branch); err != nil {
 		return "", fmt.Errorf("push: %w", err)
 	}
 
-	url, err := r.GH.CreatePR(ctx, repo, pr.Title, prBody(pr.Body, issueNum), branch, base)
+	url, err := r.GH.CreatePR(runCtx, repo, pr.Title, prBody(pr.Body, issueNum), branch, base)
 	if err != nil {
 		return "", err
 	}
@@ -267,19 +339,42 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 // verify re-runs each verification command itself in the worktree, in order. The
 // agent's own claim that tests pass is not proof.
 func (r *Runner) verify(ctx context.Context, dir string) error {
+	_, err := r.verifyWithResults(ctx, dir)
+	return err
+}
+
+func (r *Runner) verifyWithResults(ctx context.Context, dir string) ([]prompt.VerificationResult, error) {
+	results := make([]prompt.VerificationResult, 0, len(r.Verify))
 	for _, v := range r.Verify {
 		if strings.TrimSpace(v) == "" {
-			return fmt.Errorf("empty verify command")
+			return nil, fmt.Errorf("empty verify command")
 		}
 		cmd := exec.CommandContext(ctx, "sh", "-c", v)
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("%s", out)
+			return nil, fmt.Errorf("%s", out)
 		}
+		results = append(results, prompt.VerificationResult{Command: v, ExitCode: 0, Output: string(out)})
 		r.logf("verify ok (%s):\n%s", v, out)
 	}
-	return nil
+	return results, nil
+}
+
+func (r *Runner) runHarness(ctx context.Context, repo string, issue int, h harness.Harness, req harness.Request) (harness.Result, error) {
+	result, err := h.Run(ctx, req)
+	if err != nil {
+		return result, err
+	}
+	if result.SessionID != "" {
+		r.logf("session %s", result.SessionID)
+		if r.Sessions != nil {
+			if err := r.Sessions.SetSessionID(context.WithoutCancel(ctx), repo, issue, result.SessionID); err != nil {
+				return result, fmt.Errorf("recording session: %w", err)
+			}
+		}
+	}
+	return result, nil
 }
 
 func cacheDir() string {

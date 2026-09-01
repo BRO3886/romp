@@ -34,6 +34,11 @@ type fakeGit struct {
 	pushed        []string
 	removed       []string
 	deleted       []string
+	files         []string
+	diff          string
+	log           string
+	commits       int
+	commitCtx     *bool
 }
 
 func (f *fakeGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
@@ -89,7 +94,20 @@ func (f *fakeGit) HasChanges(_ context.Context, _, base string) (bool, error) {
 	return f.changed, nil
 }
 
-func (f *fakeGit) CommitAll(context.Context, string, string) error { return nil }
+func (f *fakeGit) CommitAll(ctx context.Context, _ string, _ string) error {
+	if f.commitCtx != nil {
+		_, *f.commitCtx = ctx.Deadline()
+	}
+	return nil
+}
+
+func (f *fakeGit) ChangedFiles(context.Context, string, string) ([]string, error) {
+	return append([]string(nil), f.files...), nil
+}
+
+func (f *fakeGit) Diff(context.Context, string, string) (string, error) { return f.diff, nil }
+
+func (f *fakeGit) BranchLog(context.Context, string, string) (string, error) { return f.log, nil }
 
 func (f *fakeGit) Push(_ context.Context, _, branch string) error {
 	f.pushed = append(f.pushed, branch)
@@ -156,6 +174,23 @@ func (f fakeHarness) Run(ctx context.Context, _ harness.Request) (harness.Result
 		_, *f.deadline = ctx.Deadline()
 	}
 	return f.result, f.err
+}
+
+type sequenceHarness struct {
+	results  []harness.Result
+	requests []harness.Request
+}
+
+func (f *sequenceHarness) Name() string                          { return "sequence" }
+func (f *sequenceHarness) Check(context.Context) (string, error) { return "sequence", nil }
+func (f *sequenceHarness) Run(_ context.Context, req harness.Request) (harness.Result, error) {
+	f.requests = append(f.requests, req)
+	if len(f.results) == 0 {
+		return harness.Result{}, errors.New("unexpected harness call")
+	}
+	result := f.results[0]
+	f.results = f.results[1:]
+	return result, nil
 }
 
 type fakeSessionStore struct {
@@ -543,5 +578,115 @@ func TestRunKeepsTriggerLabelOnFailure(t *testing.T) {
 				t.Errorf("labels removed = %v, want none", c.removed)
 			}
 		})
+	}
+}
+
+func TestRunReviewGatePaths(t *testing.T) {
+	approve := `{"verdict":"approve","findings":[]}`
+	approveWithNit := `{"verdict":"approve","findings":[{"severity":"nit","file":"internal/a.go","line":4,"description":"Use the existing helper."}]}`
+	fix := `{"verdict":"fix","findings":[{"severity":"blocking","file":"internal/a.go","line":7,"description":"The error path is lost."}]}`
+	tests := []struct {
+		name          string
+		files         []string
+		reviews       []harness.Result
+		wantBuilder   int
+		wantReviewer  int
+		wantErr       error
+		wantNotes     bool
+		wantFixPrompt bool
+		wantLabel     bool
+		wantComment   bool
+	}{
+		{name: "approve first", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: approve}}, wantBuilder: 1, wantReviewer: 1},
+		{name: "approve with nits", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: approveWithNit}}, wantBuilder: 1, wantReviewer: 1, wantNotes: true},
+		{name: "fix then approve", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: approve}}, wantBuilder: 2, wantReviewer: 2, wantFixPrompt: true},
+		{name: "fix still blocking", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: fix}}, wantBuilder: 2, wantReviewer: 2, wantErr: ErrChangesRequested, wantFixPrompt: true, wantLabel: true, wantComment: true},
+		{name: "malformed", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: "not json"}}, wantBuilder: 1, wantReviewer: 1},
+		{name: "docs only", files: []string{"docs/readme.md"}, wantBuilder: 1, wantReviewer: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &fakeGit{changed: true, onAdd: writePR, files: tt.files, diff: "diff --git a/a b/a", log: "abc fix: a thing"}
+			c := &fakeGH{}
+			builder := &sequenceHarness{results: make([]harness.Result, tt.wantBuilder)}
+			reviewer := &sequenceHarness{results: append([]harness.Result(nil), tt.reviews...)}
+			r := newTestRunner(t, g, c, []string{"printf verified"})
+			r.Harness = builder
+			r.ReviewHarness = reviewer
+			r.ReviewEnabled = true
+
+			_, err := r.Run(context.Background(), 7)
+			if tt.name == "malformed" {
+				if err == nil || !strings.Contains(err.Error(), "parse review outcome") {
+					t.Fatalf("Run error = %v, want malformed review error", err)
+				}
+			} else if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Run error = %v, want %v", err, tt.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if len(builder.requests) != tt.wantBuilder || len(reviewer.requests) != tt.wantReviewer {
+				t.Fatalf("calls = builder:%d reviewer:%d, want %d/%d", len(builder.requests), len(reviewer.requests), tt.wantBuilder, tt.wantReviewer)
+			}
+			for _, req := range reviewer.requests {
+				if !req.ReadOnly || !strings.Contains(req.Prompt, "printf verified") || !strings.Contains(req.Prompt, "diff --git") {
+					t.Errorf("review request missing read-only contract inputs: %+v", req)
+				}
+			}
+			if tt.wantFixPrompt && !strings.Contains(builder.requests[1].Prompt, "The error path is lost.") {
+				t.Errorf("fix prompt missing blocking finding:\n%s", builder.requests[1].Prompt)
+			}
+			if tt.wantNotes && (len(c.prBodies) != 1 || !strings.Contains(c.prBodies[0], "Reviewer notes") || !strings.Contains(c.prBodies[0], "Use the existing helper.")) {
+				t.Errorf("PR bodies = %v, want reviewer notes", c.prBodies)
+			}
+			if tt.wantLabel && !slices.Contains(c.added, "7:romp:changes-requested") {
+				t.Errorf("labels added = %v", c.added)
+			}
+			if tt.wantComment && len(c.comments) != 1 {
+				t.Errorf("comments = %v, want blocking findings comment", c.comments)
+			}
+		})
+	}
+}
+
+func TestRunNoChangesCleansWorktreeAndBranch(t *testing.T) {
+	g := &fakeGit{changed: false, onAdd: writePR}
+	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+
+	_, err := r.Run(context.Background(), 7)
+	if !errors.Is(err, ErrNoChanges) {
+		t.Fatalf("Run error = %v, want ErrNoChanges", err)
+	}
+	if len(g.removed) != 1 || !slices.Equal(g.deleted, []string{"romp-7"}) {
+		t.Errorf("cleanup = worktrees:%v branches:%v, want one worktree and romp-7", g.removed, g.deleted)
+	}
+}
+
+func TestRunTimeoutDuringReviewUsesJobTimeoutOutcome(t *testing.T) {
+	g := &fakeGit{changed: true, onAdd: writePR, files: []string{"internal/a.go"}}
+	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+	r.ReviewEnabled = true
+	r.ReviewHarness = blockingHarness{}
+	r.Timeout = 50 * time.Millisecond
+
+	_, err := r.Run(context.Background(), 7)
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("Run error = %v, want ErrTimeout", err)
+	}
+}
+
+func TestRunCommitUsesJobTimeoutContext(t *testing.T) {
+	hasDeadline := false
+	g := &fakeGit{changed: true, onAdd: writePR, commitCtx: &hasDeadline}
+	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+	r.Timeout = time.Minute
+
+	if _, err := r.Run(context.Background(), 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !hasDeadline {
+		t.Error("commit context has no deadline, want the job timeout deadline")
 	}
 }
