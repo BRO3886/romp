@@ -78,7 +78,7 @@ Ctrl-C drains; twice kills.
 | `watch` | Poll and work labelled issues. One repo, foreground. |
 | `run -i N` | Run one issue now, ignoring the label. |
 | `status` | In-flight jobs. `--all` for every repo. |
-| `history` | Recently finished jobs. `--all` for every repo. |
+| `history` | Recently finished jobs. `--all` for every repo. `--review` for reviewer calibration. |
 | `logs <codename\|issue> [-f]` | Show or follow a job's log. |
 | `cancel <issue>` | Kill a running job and abandon it. |
 | `gc` | Remove stale worktrees and old history. Dry-run unless `--apply`. |

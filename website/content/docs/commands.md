@@ -13,7 +13,7 @@ directory (resolved from its `origin` remote) unless noted.
 | `romp watch` | Poll and work labelled issues. One repo, foreground. |
 | `romp run -i N` | Run one issue now, ignoring the label. |
 | `romp status` | In-flight jobs. `--all` for every repo. |
-| `romp history` | Recently finished jobs. `--all` for every repo. |
+| `romp history` | Recently finished jobs. `--all` for every repo. `--review` for reviewer calibration. |
 | `romp logs <codename\|issue> [-f]` | Show or follow a job's log. |
 | `romp cancel <issue>` | Kill a running job and abandon it. |
 | `romp gc` | Remove stale worktrees and old history. Dry-run unless `--apply`. |
@@ -59,12 +59,17 @@ romp status            # in-flight jobs in this repo
 romp status --all      # in-flight jobs across every repo on this machine
 romp history           # recently finished jobs in this repo
 romp history --all     # recently finished jobs across every repo
+romp history --review --days 30
 ```
 
 `status` shows each in-flight job's codename, issue, branch, elapsed time, and
 optional `SESSION` identifier. `history` lists recently finished jobs with
 their outcome, branch, PR URL, and optional `SESSION` identifier. A missing
 session identifier appears as `-`.
+
+`history --review` reports the clean-pass rate, fix-round rate, and median
+reviewer duration over the selected history window. It uses reviewed jobs as
+the rate denominator, so disabled and docs-only skips do not dilute the rates.
 
 ## `romp logs`
 

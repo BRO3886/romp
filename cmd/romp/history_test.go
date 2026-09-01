@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BRO3886/romp/internal/job"
+	"github.com/BRO3886/romp/internal/review"
 )
 
 func TestWriteHistorySingleRepoOmitsRepoColumn(t *testing.T) {
@@ -57,8 +60,61 @@ func TestWriteHistoryAllIncludesEveryRepo(t *testing.T) {
 }
 
 func TestHistoryCmdHasAllFlag(t *testing.T) {
-	if newHistoryCmd().Flags().Lookup("all") == nil {
-		t.Fatal("history is missing --all")
+	for _, name := range []string{"all", "review", "days"} {
+		if newHistoryCmd().Flags().Lookup(name) == nil {
+			t.Fatalf("history is missing --%s", name)
+		}
+	}
+}
+
+func TestWriteReviewSummary(t *testing.T) {
+	var out bytes.Buffer
+	writeReviewSummary(&out, job.ReviewSummary{
+		ReviewedJobs: 4, CleanPassJobs: 3, FixRoundJobs: 1, MedianReviewerDuration: 1250 * time.Millisecond,
+	})
+	got := out.String()
+	for _, want := range []string{"reviewed jobs: 4", "clean-pass rate: 75.0%", "fix-round rate: 25.0%", "median reviewer duration: 1.25s"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestHistoryReviewCommandReportsStoredJobs(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	owner, name, err := currentRepo(context.Background())
+	if err != nil {
+		t.Fatalf("currentRepo: %v", err)
+	}
+	store, err := job.Open(job.Path())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+	repo := owner + "/" + name
+	if ok, err := store.Claim(context.Background(), repo, 34, "romp-34"); err != nil || !ok {
+		t.Fatalf("Claim: ok=%v err=%v", ok, err)
+	}
+	metrics := review.Instrumentation{ReviewRan: true, Passes: []review.PassInstrumentation{{Verdict: review.VerdictApprove, DurationMS: 1250}}}
+	if err := store.SetReviewInstrumentation(context.Background(), repo, 34, metrics); err != nil {
+		t.Fatalf("SetReviewInstrumentation: %v", err)
+	}
+	if err := store.Finish(context.Background(), job.Outcome{Repo: repo, Issue: 34, Outcome: "done", FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)}); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+
+	cmd := newHistoryCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--review", "--days", "1"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("history --review: %v", err)
+	}
+	for _, want := range []string{"reviewed jobs: 1", "clean-pass rate: 100.0%", "fix-round rate: 0.0%", "median reviewer duration: 1.25s"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, out.String())
+		}
 	}
 }
 
