@@ -16,7 +16,9 @@ import (
 	"github.com/BRO3886/romp/internal/git"
 	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/job"
+	"github.com/BRO3886/romp/internal/progress"
 	"github.com/BRO3886/romp/internal/watch"
+	"github.com/mattn/go-isatty"
 )
 
 const defaultPollInterval = 60 * time.Second
@@ -83,6 +85,16 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 	}
 	defer store.Close()
 
+	interactive := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
+	var events chan progress.Event
+	var progressSink progress.Sink
+	if interactive {
+		events = make(chan progress.Event, 256)
+		progressSink = func(event progress.Event) {
+			events <- event
+		}
+	}
+
 	w := &watch.Watcher{
 		Repo:     repo,
 		Trigger:  cfg.Label,
@@ -106,10 +118,15 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 			r.Codename = jobName
 			r.Sessions = store
 			r.ReviewInstrumentation = store
-			r.Stderr = io.MultiWriter(watch.NewColorWriter(os.Stderr, jobName), f)
+			r.Progress = progressSink
+			if interactive {
+				r.Stderr = f
+			} else {
+				r.Stderr = io.MultiWriter(watch.NewColorWriter(os.Stderr, jobName), f)
+			}
 			return r.Run(ctx, issue)
 		},
-		Stderr: watch.NewColorWriter(os.Stderr, ""),
+		Progress: progressSink,
 		CleanJob: func(ctx context.Context, issue int) error {
 			cache, err := os.UserCacheDir()
 			if err != nil {
@@ -122,6 +139,11 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 			return repository.DeleteBranch(ctx, fmt.Sprintf("romp-%d", issue))
 		},
 	}
+	if interactive {
+		w.Stderr = io.Discard
+		return runWatchTUI(ctx, w, store, repo, events)
+	}
+	w.Stderr = watch.NewColorWriter(os.Stderr, "")
 	return w.Run(ctx)
 }
 

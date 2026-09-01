@@ -17,6 +17,7 @@ import (
 
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/job"
+	"github.com/BRO3886/romp/internal/progress"
 	"github.com/BRO3886/romp/internal/runner"
 )
 
@@ -58,6 +59,7 @@ type Watcher struct {
 	CleanJob func(ctx context.Context, issue int) error
 	Logf     func(format string, a ...any)
 	Stderr   io.Writer
+	Progress progress.Sink
 
 	mu        sync.Mutex
 	cancels   map[int]context.CancelFunc
@@ -213,6 +215,7 @@ func (w *Watcher) claim(ctx context.Context, iss gh.Issue) bool {
 		return false
 	}
 	w.logf("claimed #%d", iss.Number)
+	w.Progress.Emit(progress.Event{Issue: iss.Number, Phase: progress.PhaseClaiming, Detail: iss.Title})
 	return true
 }
 
@@ -323,6 +326,11 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{
 	}); err != nil {
 		w.logf("#%d: recording history: %v", iss.Number, err)
 	}
+	phase := progress.PhaseDone
+	if outcome != "done" {
+		phase = progress.PhaseFailed
+	}
+	w.Progress.Emit(progress.Event{Issue: iss.Number, Phase: phase, Detail: detailOf(err), Outcome: outcome, URL: prURL, Terminal: true})
 
 	switch {
 	case cancelled:

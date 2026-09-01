@@ -61,21 +61,29 @@ romp init --verify "make test" --verify "make lint"
 
 ```
 $ romp watch
-19:04:12  watching label "romp" every 1m0s (width 3)
-19:04:12  [sunny_naruto] running codex
-19:22:38  [sunny_naruto] verify ok (go test ./... -count=1)
-19:22:44  [sunny_naruto] PR: https://github.com/you/your-project/pull/482
-19:22:44  #17: done
+Romp  you/your-project
+
+[Active]  History
+
+> #17  reviewing       18m32s    reviewer working
+  #21  agent            4m08s    agent working
+
+Tab switch  ↑/↓ navigate  Enter details  q drain and quit
 ```
 
-Ctrl-C drains; twice kills.
+The interactive dashboard shows each job moving through agent, verification,
+review, fix, and publication phases. Tab switches between active jobs and
+history. Enter opens the selected job's phase timeline. Successful verification
+output is not copied into the job log; failures retain their diagnostic output.
+When stdout is not a terminal, `watch` keeps the line-oriented output used by
+scripts and service managers. Ctrl-C drains; twice kills.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `init` | Write `romp.toml`, create the labels, update `.gitignore`. |
-| `watch` | Poll and work labelled issues. One repo, foreground. |
+| `watch` | Open the interactive job dashboard and work labelled issues. |
 | `run -i N` | Run one issue now, ignoring the label. |
 | `status` | In-flight jobs. `--all` for every repo. |
 | `history` | Recently finished jobs. `--all` for every repo. `--review` for reviewer calibration. |
