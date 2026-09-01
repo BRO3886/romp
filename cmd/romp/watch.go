@@ -105,6 +105,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 			}
 			r.Codename = jobName
 			r.Sessions = store
+			r.ReviewInstrumentation = store
 			r.Stderr = io.MultiWriter(watch.NewColorWriter(os.Stderr, jobName), f)
 			return r.Run(ctx, issue)
 		},

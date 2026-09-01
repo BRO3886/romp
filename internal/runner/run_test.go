@@ -16,6 +16,7 @@ import (
 	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/job"
 	"github.com/BRO3886/romp/internal/prompt"
+	"github.com/BRO3886/romp/internal/review"
 )
 
 type fakeGit struct {
@@ -179,11 +180,13 @@ func (f fakeHarness) Run(ctx context.Context, _ harness.Request) (harness.Result
 type sequenceHarness struct {
 	results  []harness.Result
 	requests []harness.Request
+	delay    time.Duration
 }
 
 func (f *sequenceHarness) Name() string                          { return "sequence" }
 func (f *sequenceHarness) Check(context.Context) (string, error) { return "sequence", nil }
 func (f *sequenceHarness) Run(_ context.Context, req harness.Request) (harness.Result, error) {
+	time.Sleep(f.delay)
 	f.requests = append(f.requests, req)
 	if len(f.results) == 0 {
 		return harness.Result{}, errors.New("unexpected harness call")
@@ -198,6 +201,17 @@ type fakeSessionStore struct {
 	issue     int
 	sessionID string
 	calls     int
+}
+
+type fakeReviewStore struct {
+	metrics review.Instrumentation
+	calls   int
+}
+
+func (f *fakeReviewStore) SetReviewInstrumentation(_ context.Context, _ string, _ int, metrics review.Instrumentation) error {
+	f.metrics = metrics
+	f.calls++
+	return nil
 }
 
 func (f *fakeSessionStore) SetSessionID(_ context.Context, repo string, issue int, sessionID string) error {
@@ -608,12 +622,16 @@ func TestRunReviewGatePaths(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := &fakeGit{changed: true, onAdd: writePR, files: tt.files, diff: "diff --git a/a b/a", log: "abc fix: a thing"}
 			c := &fakeGH{}
-			builder := &sequenceHarness{results: make([]harness.Result, tt.wantBuilder)}
-			reviewer := &sequenceHarness{results: append([]harness.Result(nil), tt.reviews...)}
+			builder := &sequenceHarness{results: make([]harness.Result, tt.wantBuilder), delay: 2 * time.Millisecond}
+			reviewer := &sequenceHarness{results: append([]harness.Result(nil), tt.reviews...), delay: 2 * time.Millisecond}
 			r := newTestRunner(t, g, c, []string{"printf verified"})
 			r.Harness = builder
 			r.ReviewHarness = reviewer
 			r.ReviewEnabled = true
+			instrumentation := &fakeReviewStore{}
+			r.ReviewInstrumentation = instrumentation
+			var logs strings.Builder
+			r.Stderr = &logs
 
 			_, err := r.Run(context.Background(), 7)
 			if tt.name == "malformed" {
@@ -647,7 +665,50 @@ func TestRunReviewGatePaths(t *testing.T) {
 			if tt.wantComment && len(c.comments) != 1 {
 				t.Errorf("comments = %v, want blocking findings comment", c.comments)
 			}
+			if instrumentation.calls == 0 {
+				t.Fatal("review instrumentation was not recorded")
+			}
+			if instrumentation.metrics.BuilderDurationMS < int64(tt.wantBuilder) {
+				t.Errorf("BuilderDurationMS = %d, want a measured duration for %d runs", instrumentation.metrics.BuilderDurationMS, tt.wantBuilder)
+			}
+			if tt.name == "docs only" {
+				if instrumentation.metrics.ReviewRan || instrumentation.metrics.SkipReason != review.SkipDocsOnly {
+					t.Errorf("docs-only instrumentation = %+v", instrumentation.metrics)
+				}
+			} else {
+				if !instrumentation.metrics.ReviewRan || len(instrumentation.metrics.Passes) != tt.wantReviewer {
+					t.Errorf("review instrumentation = %+v, want %d passes", instrumentation.metrics, tt.wantReviewer)
+				}
+				for passNumber, pass := range instrumentation.metrics.Passes {
+					if pass.DurationMS < 1 {
+						t.Errorf("review pass %d duration = %dms, want measured harness time", passNumber+1, pass.DurationMS)
+					}
+				}
+				if tt.name != "malformed" && tt.wantFixPrompt != instrumentation.metrics.FixRoundFired {
+					t.Errorf("FixRoundFired = %t, want %t", instrumentation.metrics.FixRoundFired, tt.wantFixPrompt)
+				}
+				if !strings.Contains(logs.String(), "review pass 1:") {
+					t.Errorf("logs missing live review summary:\n%s", logs.String())
+				}
+				if tt.name == "approve with nits" && instrumentation.metrics.Passes[0].Nit != 1 {
+					t.Errorf("approve-with-nits pass = %+v", instrumentation.metrics.Passes[0])
+				}
+			}
 		})
+	}
+}
+
+func TestRunRecordsDisabledReview(t *testing.T) {
+	g := &fakeGit{changed: true, onAdd: writePR}
+	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+	instrumentation := &fakeReviewStore{}
+	r.ReviewInstrumentation = instrumentation
+
+	if _, err := r.Run(context.Background(), 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if instrumentation.calls != 1 || instrumentation.metrics.ReviewRan || instrumentation.metrics.SkipReason != review.SkipDisabled {
+		t.Errorf("disabled review instrumentation = %+v, calls %d", instrumentation.metrics, instrumentation.calls)
 	}
 }
 

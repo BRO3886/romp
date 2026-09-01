@@ -10,10 +10,15 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
+
+	"github.com/BRO3886/romp/internal/review"
 
 	_ "modernc.org/sqlite"
 )
@@ -38,6 +43,7 @@ type Outcome struct {
 	StartedAt  string
 	FinishedAt string
 	SessionID  string
+	Review     review.Instrumentation
 }
 
 // Store is a thin handle over the SQLite job table.
@@ -66,6 +72,12 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrating schema: %w", err)
 	}
+	for _, table := range []string{"jobs", "outcomes"} {
+		if err := migrateColumn(db, table, "review_json", "TEXT"); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("migrating %s review instrumentation: %w", table, err)
+		}
+	}
 	return &Store{db: db}, nil
 }
 
@@ -77,6 +89,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 	branch     TEXT NOT NULL,
 	claimed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 	session_id TEXT,
+	review_json TEXT,
 	UNIQUE(repo, issue)
 );
 CREATE TABLE IF NOT EXISTS outcomes (
@@ -89,8 +102,18 @@ CREATE TABLE IF NOT EXISTS outcomes (
 	detail      TEXT,
 	started_at  TEXT NOT NULL,
 	finished_at TEXT NOT NULL,
-	session_id  TEXT
+	session_id  TEXT,
+	review_json TEXT
 );`
+
+func migrateColumn(db *sql.DB, table, column, dataType string) error {
+	hasColumn, err := tableHasColumn(db, table, column)
+	if err != nil || hasColumn {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + dataType)
+	return err
+}
 
 func migrateSessionID(db *sql.DB) error {
 	for _, table := range []string{"jobs", "outcomes"} {
@@ -175,6 +198,26 @@ func (s *Store) SetSessionID(ctx context.Context, repo string, issue int, sessio
 	return nil
 }
 
+// SetReviewInstrumentation records review calibration facts on an in-flight job.
+func (s *Store) SetReviewInstrumentation(ctx context.Context, repo string, issue int, metrics review.Instrumentation) error {
+	data, err := json.Marshal(metrics)
+	if err != nil {
+		return fmt.Errorf("encoding review instrumentation: %w", err)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET review_json = ? WHERE repo = ? AND issue = ?`, data, repo, issue)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("in-flight job %s#%d not found", repo, issue)
+	}
+	return nil
+}
+
 // Delete removes the in-flight row for issue, marking it terminal.
 func (s *Store) Delete(ctx context.Context, repo string, issue int) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM jobs WHERE repo = ? AND issue = ?`, repo, issue)
@@ -227,9 +270,9 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 	defer tx.Rollback()
 
 	var startedAt string
-	var sessionID sql.NullString
+	var sessionID, reviewJSON sql.NullString
 	err = tx.QueryRowContext(ctx,
-		`SELECT claimed_at, session_id FROM jobs WHERE repo = ? AND issue = ?`, o.Repo, o.Issue).Scan(&startedAt, &sessionID)
+		`SELECT claimed_at, session_id, review_json FROM jobs WHERE repo = ? AND issue = ?`, o.Repo, o.Issue).Scan(&startedAt, &sessionID, &reviewJSON)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -238,8 +281,8 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO outcomes (repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		o.Repo, o.Issue, o.Outcome, o.Branch, nullable(o.PRURL), nullable(o.Detail), startedAt, o.FinishedAt, nullable(sessionID.String)); err != nil {
+		`INSERT INTO outcomes (repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, session_id, review_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		o.Repo, o.Issue, o.Outcome, o.Branch, nullable(o.PRURL), nullable(o.Detail), startedAt, o.FinishedAt, nullable(sessionID.String), nullable(reviewJSON.String)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -252,7 +295,7 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 // History returns the most recent limit finished jobs for repo, newest first.
 // An empty repo returns outcomes from every repository.
 func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome, error) {
-	query := `SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, COALESCE(session_id, '') FROM outcomes`
+	query := `SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, COALESCE(session_id, ''), COALESCE(review_json, '') FROM outcomes`
 	var args []any
 	if repo != "" {
 		query += ` WHERE repo = ?`
@@ -269,13 +312,81 @@ func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome,
 	for rows.Next() {
 		var o Outcome
 		var prURL, detail sql.NullString
-		if err := rows.Scan(&o.Repo, &o.Issue, &o.Outcome, &o.Branch, &prURL, &detail, &o.StartedAt, &o.FinishedAt, &o.SessionID); err != nil {
+		var reviewJSON string
+		if err := rows.Scan(&o.Repo, &o.Issue, &o.Outcome, &o.Branch, &prURL, &detail, &o.StartedAt, &o.FinishedAt, &o.SessionID, &reviewJSON); err != nil {
 			return nil, err
 		}
 		o.PRURL, o.Detail = prURL.String, detail.String
+		if reviewJSON != "" {
+			if err := json.Unmarshal([]byte(reviewJSON), &o.Review); err != nil {
+				return nil, fmt.Errorf("decoding review instrumentation for %s#%d: %w", o.Repo, o.Issue, err)
+			}
+		}
 		out = append(out, o)
 	}
 	return out, rows.Err()
+}
+
+// ReviewSummary is the aggregate calibration view over reviewed jobs.
+type ReviewSummary struct {
+	ReviewedJobs           int
+	CleanPassJobs          int
+	FixRoundJobs           int
+	MedianReviewerDuration time.Duration
+}
+
+// ReviewSummary returns calibration rates and reviewer duration since the cutoff.
+func (s *Store) ReviewSummary(ctx context.Context, repo string, since time.Time) (ReviewSummary, error) {
+	query := `SELECT review_json FROM outcomes WHERE finished_at >= ? AND review_json IS NOT NULL`
+	args := []any{since.UTC().Format(time.RFC3339Nano)}
+	if repo != "" {
+		query += ` AND repo = ?`
+		args = append(args, repo)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return ReviewSummary{}, err
+	}
+	defer rows.Close()
+
+	var summary ReviewSummary
+	var durations []int64
+	for rows.Next() {
+		var data string
+		if err := rows.Scan(&data); err != nil {
+			return ReviewSummary{}, err
+		}
+		var metrics review.Instrumentation
+		if err := json.Unmarshal([]byte(data), &metrics); err != nil {
+			return ReviewSummary{}, fmt.Errorf("decoding review instrumentation: %w", err)
+		}
+		if !metrics.ReviewRan {
+			continue
+		}
+		summary.ReviewedJobs++
+		if len(metrics.Passes) == 1 && metrics.Passes[0].Verdict == review.VerdictApprove && metrics.Passes[0].Blocking == 0 && metrics.Passes[0].NonBlocking == 0 && metrics.Passes[0].Nit == 0 {
+			summary.CleanPassJobs++
+		}
+		if metrics.FixRoundFired {
+			summary.FixRoundJobs++
+		}
+		for _, pass := range metrics.Passes {
+			durations = append(durations, pass.DurationMS)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return ReviewSummary{}, err
+	}
+	slices.Sort(durations)
+	if len(durations) > 0 {
+		middle := len(durations) / 2
+		median := durations[middle]
+		if len(durations)%2 == 0 {
+			median = (durations[middle-1] + durations[middle]) / 2
+		}
+		summary.MedianReviewerDuration = time.Duration(median) * time.Millisecond
+	}
+	return summary, nil
 }
 
 func nullable(s string) any {

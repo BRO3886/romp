@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/BRO3886/romp/internal/review"
 )
 
 func openTest(t *testing.T) *Store {
@@ -123,6 +126,16 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 	if err := s.SetSessionID(ctx, "o/r", 7, "session-7"); err != nil {
 		t.Fatalf("SetSessionID: %v", err)
 	}
+	metrics := review.Instrumentation{
+		ReviewRan: true, BuilderDurationMS: 1200, FixRoundFired: true, FixRoundOutcome: review.FixApproved,
+		Passes: []review.PassInstrumentation{
+			{Verdict: review.VerdictFix, Blocking: 1, DurationMS: 400},
+			{Verdict: review.VerdictApprove, Nit: 1, DurationMS: 200},
+		},
+	}
+	if err := s.SetReviewInstrumentation(ctx, "o/r", 7, metrics); err != nil {
+		t.Fatalf("SetReviewInstrumentation: %v", err)
+	}
 
 	if err := s.Finish(ctx, Outcome{
 		Repo: "o/r", Issue: 7, Outcome: "done", Branch: "romp-7",
@@ -158,6 +171,41 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 	}
 	if o.SessionID != "session-7" {
 		t.Errorf("SessionID = %q, want session-7", o.SessionID)
+	}
+	if !o.Review.ReviewRan || o.Review.BuilderDurationMS != 1200 || len(o.Review.Passes) != 2 || o.Review.Passes[0].Blocking != 1 {
+		t.Errorf("Review = %+v, want persisted instrumentation", o.Review)
+	}
+}
+
+func TestReviewSummaryAnswersCalibrationQuestions(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	rows := []struct {
+		issue   int
+		metrics review.Instrumentation
+	}{
+		{1, review.Instrumentation{ReviewRan: true, Passes: []review.PassInstrumentation{{Verdict: review.VerdictApprove, DurationMS: 100}}}},
+		{2, review.Instrumentation{ReviewRan: true, FixRoundFired: true, FixRoundOutcome: review.FixApproved, Passes: []review.PassInstrumentation{{Verdict: review.VerdictFix, Blocking: 1, DurationMS: 300}, {Verdict: review.VerdictApprove, DurationMS: 500}}}},
+		{3, review.Instrumentation{SkipReason: review.SkipDocsOnly}},
+	}
+	for _, row := range rows {
+		if ok, err := s.Claim(ctx, "o/r", row.issue, "romp"); err != nil || !ok {
+			t.Fatalf("Claim %d: ok=%v err=%v", row.issue, ok, err)
+		}
+		if err := s.SetReviewInstrumentation(ctx, "o/r", row.issue, row.metrics); err != nil {
+			t.Fatalf("SetReviewInstrumentation %d: %v", row.issue, err)
+		}
+		if err := s.Finish(ctx, Outcome{Repo: "o/r", Issue: row.issue, Outcome: "done", FinishedAt: "2026-09-01T12:00:00Z"}); err != nil {
+			t.Fatalf("Finish %d: %v", row.issue, err)
+		}
+	}
+
+	summary, err := s.ReviewSummary(ctx, "o/r", time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ReviewSummary: %v", err)
+	}
+	if summary.ReviewedJobs != 2 || summary.CleanPassJobs != 1 || summary.FixRoundJobs != 1 || summary.MedianReviewerDuration != 300*time.Millisecond {
+		t.Errorf("ReviewSummary = %+v", summary)
 	}
 }
 
