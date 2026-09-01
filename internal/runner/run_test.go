@@ -36,10 +36,12 @@ type fakeGit struct {
 	removed       []string
 	deleted       []string
 	files         []string
+	fileSequences [][]string
 	diff          string
 	log           string
 	commits       int
 	commitCtx     *bool
+	events        *[]string
 }
 
 func (f *fakeGit) Origin(context.Context) (string, string, error) { return "o", "r", nil }
@@ -103,6 +105,11 @@ func (f *fakeGit) CommitAll(ctx context.Context, _ string, _ string) error {
 }
 
 func (f *fakeGit) ChangedFiles(context.Context, string, string) ([]string, error) {
+	if len(f.fileSequences) > 0 {
+		files := f.fileSequences[0]
+		f.fileSequences = f.fileSequences[1:]
+		return append([]string(nil), files...), nil
+	}
 	return append([]string(nil), f.files...), nil
 }
 
@@ -112,17 +119,23 @@ func (f *fakeGit) BranchLog(context.Context, string, string) (string, error) { r
 
 func (f *fakeGit) Push(_ context.Context, _, branch string) error {
 	f.pushed = append(f.pushed, branch)
+	if f.events != nil {
+		*f.events = append(*f.events, "push")
+	}
 	return nil
 }
 
 type fakeGH struct {
-	prs         []string
-	prBodies    []string
-	comments    []string
-	added       []string
-	removed     []string
-	removeErr   error
-	createPRErr error
+	prs          []string
+	prBodies     []string
+	comments     []string
+	added        []string
+	removed      []string
+	removeErr    error
+	createPRErr  error
+	prComments   []string
+	commentPRErr error
+	events       *[]string
 }
 
 func (f *fakeGH) Issue(_ context.Context, _ string, number int) (gh.Issue, error) {
@@ -148,12 +161,26 @@ func (f *fakeGH) RemoveLabel(_ context.Context, _ string, number int, label stri
 }
 
 func (f *fakeGH) CreatePR(_ context.Context, _, title, body, _, _ string) (string, error) {
+	if f.events != nil {
+		*f.events = append(*f.events, "create-pr")
+	}
 	if f.createPRErr != nil {
 		return "", f.createPRErr
 	}
 	f.prs = append(f.prs, title)
 	f.prBodies = append(f.prBodies, body)
 	return "https://github.com/o/r/pull/1", nil
+}
+
+func (f *fakeGH) CommentPR(_ context.Context, _ string, _ string, body string) error {
+	if f.events != nil {
+		*f.events = append(*f.events, "pr-comment")
+	}
+	if f.commentPRErr != nil {
+		return f.commentPRErr
+	}
+	f.prComments = append(f.prComments, body)
+	return nil
 }
 
 type fakeHarness struct {
@@ -181,12 +208,17 @@ type sequenceHarness struct {
 	results  []harness.Result
 	requests []harness.Request
 	delay    time.Duration
+	event    string
+	events   *[]string
 }
 
 func (f *sequenceHarness) Name() string                          { return "sequence" }
 func (f *sequenceHarness) Check(context.Context) (string, error) { return "sequence", nil }
 func (f *sequenceHarness) Run(_ context.Context, req harness.Request) (harness.Result, error) {
 	time.Sleep(f.delay)
+	if f.events != nil && f.event != "" {
+		*f.events = append(*f.events, f.event)
+	}
 	f.requests = append(f.requests, req)
 	if len(f.results) == 0 {
 		return harness.Result{}, errors.New("unexpected harness call")
@@ -606,16 +638,16 @@ func TestRunReviewGatePaths(t *testing.T) {
 		wantBuilder   int
 		wantReviewer  int
 		wantErr       error
-		wantNotes     bool
+		wantNit       bool
 		wantFixPrompt bool
 		wantLabel     bool
-		wantComment   bool
+		wantComments  int
 	}{
-		{name: "approve first", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: approve}}, wantBuilder: 1, wantReviewer: 1},
-		{name: "approve with nits", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: approveWithNit}}, wantBuilder: 1, wantReviewer: 1, wantNotes: true},
-		{name: "fix then approve", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: approve}}, wantBuilder: 2, wantReviewer: 2, wantFixPrompt: true},
-		{name: "fix still blocking", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: fix}}, wantBuilder: 2, wantReviewer: 2, wantErr: ErrChangesRequested, wantFixPrompt: true, wantLabel: true, wantComment: true},
-		{name: "malformed", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: "not json"}}, wantBuilder: 1, wantReviewer: 1},
+		{name: "approve first", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: approve}}, wantBuilder: 1, wantReviewer: 1, wantComments: 1},
+		{name: "approve with nits", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: approveWithNit}}, wantBuilder: 1, wantReviewer: 1, wantNit: true, wantComments: 1},
+		{name: "fix then approve", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: approve}}, wantBuilder: 2, wantReviewer: 2, wantFixPrompt: true, wantComments: 2},
+		{name: "fix still blocking", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: fix}}, wantBuilder: 2, wantReviewer: 2, wantErr: ErrChangesRequested, wantFixPrompt: true, wantLabel: true, wantComments: 2},
+		{name: "malformed", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: "not json"}}, wantBuilder: 1, wantReviewer: 1, wantComments: 1},
 		{name: "docs only", files: []string{"docs/readme.md"}, wantBuilder: 1, wantReviewer: 0},
 	}
 	for _, tt := range tests {
@@ -633,7 +665,7 @@ func TestRunReviewGatePaths(t *testing.T) {
 			var logs strings.Builder
 			r.Stderr = &logs
 
-			_, err := r.Run(context.Background(), 7)
+			url, err := r.Run(context.Background(), 7)
 			if tt.name == "malformed" {
 				if err == nil || !strings.Contains(err.Error(), "parse review outcome") {
 					t.Fatalf("Run error = %v, want malformed review error", err)
@@ -648,6 +680,12 @@ func TestRunReviewGatePaths(t *testing.T) {
 			if len(builder.requests) != tt.wantBuilder || len(reviewer.requests) != tt.wantReviewer {
 				t.Fatalf("calls = builder:%d reviewer:%d, want %d/%d", len(builder.requests), len(reviewer.requests), tt.wantBuilder, tt.wantReviewer)
 			}
+			if len(c.prs) != 1 {
+				t.Errorf("PRs opened = %v, want one before review handling", c.prs)
+			}
+			if url != "https://github.com/o/r/pull/1" {
+				t.Errorf("Run URL = %q, want the open PR URL", url)
+			}
 			for _, req := range reviewer.requests {
 				if !req.ReadOnly || !strings.Contains(req.Prompt, "printf verified") || !strings.Contains(req.Prompt, "diff --git") {
 					t.Errorf("review request missing read-only contract inputs: %+v", req)
@@ -656,14 +694,17 @@ func TestRunReviewGatePaths(t *testing.T) {
 			if tt.wantFixPrompt && !strings.Contains(builder.requests[1].Prompt, "The error path is lost.") {
 				t.Errorf("fix prompt missing blocking finding:\n%s", builder.requests[1].Prompt)
 			}
-			if tt.wantNotes && (len(c.prBodies) != 1 || !strings.Contains(c.prBodies[0], "Reviewer notes") || !strings.Contains(c.prBodies[0], "Use the existing helper.")) {
-				t.Errorf("PR bodies = %v, want reviewer notes", c.prBodies)
+			if len(c.prComments) != tt.wantComments {
+				t.Errorf("PR comments = %v, want %d", c.prComments, tt.wantComments)
+			}
+			if tt.wantNit && (len(c.prComments) != 1 || !strings.Contains(c.prComments[0], "### Nit") || !strings.Contains(c.prComments[0], "internal/a.go:4: Use the existing helper.")) {
+				t.Errorf("PR comments = %v, want located nit", c.prComments)
 			}
 			if tt.wantLabel && !slices.Contains(c.added, "7:romp:changes-requested") {
 				t.Errorf("labels added = %v", c.added)
 			}
-			if tt.wantComment && len(c.comments) != 1 {
-				t.Errorf("comments = %v, want blocking findings comment", c.comments)
+			if len(c.comments) != 0 {
+				t.Errorf("issue comments = %v, want review records only on the PR", c.comments)
 			}
 			if instrumentation.calls == 0 {
 				t.Fatal("review instrumentation was not recorded")
@@ -700,7 +741,8 @@ func TestRunReviewGatePaths(t *testing.T) {
 
 func TestRunRecordsDisabledReview(t *testing.T) {
 	g := &fakeGit{changed: true, onAdd: writePR}
-	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+	c := &fakeGH{}
+	r := newTestRunner(t, g, c, []string{"true"})
 	instrumentation := &fakeReviewStore{}
 	r.ReviewInstrumentation = instrumentation
 
@@ -709,6 +751,9 @@ func TestRunRecordsDisabledReview(t *testing.T) {
 	}
 	if instrumentation.calls != 1 || instrumentation.metrics.ReviewRan || instrumentation.metrics.SkipReason != review.SkipDisabled {
 		t.Errorf("disabled review instrumentation = %+v, calls %d", instrumentation.metrics, instrumentation.calls)
+	}
+	if len(c.prs) != 1 || len(c.prComments) != 0 {
+		t.Errorf("disabled review PRs/comments = %d/%d, want 1/0", len(c.prs), len(c.prComments))
 	}
 }
 

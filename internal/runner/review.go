@@ -15,13 +15,21 @@ import (
 )
 
 func (r *Runner) review(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
+	return r.reviewChanges(ctx, repo, issueNum, issue, dir, base, verification, true)
+}
+
+func (r *Runner) reviewAfterFix(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
+	return r.reviewChanges(ctx, repo, issueNum, issue, dir, base, verification, false)
+}
+
+func (r *Runner) reviewChanges(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult, skipDocsOnly bool) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
 	files, err := r.Git.ChangedFiles(ctx, dir, base)
 	if err != nil {
 		return review.Outcome{}, review.Plan{}, review.PassInstrumentation{}, fmt.Errorf("collect changed files: %w", err)
 	}
 	plan := review.BuildPlan(files, issueIsBugfix(issue))
-	if !plan.HasCode {
-		return review.Outcome{Verdict: review.VerdictApprove}, plan, review.PassInstrumentation{}, nil
+	if skipDocsOnly && !plan.HasCode {
+		return review.Outcome{}, plan, review.PassInstrumentation{}, nil
 	}
 	if r.ReviewHarness == nil {
 		return review.Outcome{}, plan, review.PassInstrumentation{}, fmt.Errorf("review gate enabled without a review harness")
@@ -94,20 +102,51 @@ func formatBlockingFindings(findings []review.Finding) string {
 	return strings.Join(lines, "\n")
 }
 
-func appendReviewerNotes(body string, findings []review.Finding) string {
-	var notes []string
-	for _, finding := range findings {
-		if finding.Severity == review.SeverityBlocking {
-			continue
+func reviewPassComment(pass int, outcome review.Outcome) string {
+	var body strings.Builder
+	fmt.Fprintf(&body, "## Romp review pass %d\n\n**Verdict:** %s", pass, outcome.Verdict)
+	if len(outcome.Findings) == 0 {
+		body.WriteString("\n\nNo findings.")
+	}
+	for _, group := range []struct {
+		heading  string
+		severity review.Severity
+	}{
+		{heading: "Blocking", severity: review.SeverityBlocking},
+		{heading: "Non-blocking", severity: review.SeverityNonBlocking},
+		{heading: "Nit", severity: review.SeverityNit},
+	} {
+		fmt.Fprintf(&body, "\n\n### %s\n\n", group.heading)
+		count := 0
+		for _, finding := range outcome.Findings {
+			if finding.Severity != group.severity {
+				continue
+			}
+			if count > 0 {
+				body.WriteByte('\n')
+			}
+			body.WriteString(formatReviewFinding(finding))
+			count++
 		}
-		notes = append(notes, "- "+finding.Severity.String()+": "+finding.Description)
+		if count == 0 {
+			body.WriteString("None.")
+		}
 	}
-	if len(notes) == 0 {
-		return body
-	}
-	return strings.TrimSpace(body) + "\n\n## Reviewer notes\n\n" + strings.Join(notes, "\n")
+	return body.String()
 }
 
-func changesRequestedComment(blocking string) string {
-	return "romp's review gate still found blocking findings after one fix round.\n\n" + blocking
+func formatReviewFinding(finding review.Finding) string {
+	location := ""
+	if finding.File != nil {
+		location = *finding.File
+		if finding.Line != nil {
+			location += fmt.Sprintf(":%d", *finding.Line)
+		}
+		location += ": "
+	}
+	return "- " + location + finding.Description
+}
+
+func reviewFailureComment(pass int) string {
+	return fmt.Sprintf("## Romp review pass %d\n\n**Review did not complete.**\n\nRomp did not receive a valid review outcome. This failure is not a reviewer finding. See the Romp logs for diagnostic details.", pass)
 }

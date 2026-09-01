@@ -10,7 +10,7 @@ machinery to claim, isolate, and verify work.
 
 ## Job lifecycle
 
-<svg viewBox="0 0 860 300" role="img" aria-label="romp job lifecycle: label, poll, claim, worktree, agent, verify, then open PR, red, or blocked" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-width:860px;display:block">
+<svg viewBox="0 0 860 300" role="img" aria-label="romp job lifecycle: label, poll, claim, worktree, agent, verify, then push, open PR, and review, or return red or blocked" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-width:860px;display:block">
   <defs>
     <marker id="a-navy" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1a2530"/></marker>
     <marker id="a-fox" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#c0662e"/></marker>
@@ -52,7 +52,7 @@ machinery to claim, isolate, and verify work.
     <rect x="450" y="200" width="100" height="46" rx="10" fill="#f6e5cf" stroke="#c0662e" stroke-width="1.5"/>
     <text x="500" y="228" fill="#9a4b1c">blocked</text>
     <rect x="570" y="200" width="100" height="46" rx="10" fill="#e3f1e7" stroke="#2f7d4f" stroke-width="1.5"/>
-    <text x="620" y="228" fill="#2f7d4f">Open PR</text>
+    <text x="620" y="228" fill="#2f7d4f">PR + review</text>
     <rect x="700" y="200" width="70" height="46" rx="10" fill="#f5e0dc" stroke="#b3422f" stroke-width="1.5"/>
     <text x="735" y="228" fill="#b3422f">red</text>
   </g>
@@ -68,12 +68,15 @@ machinery to claim, isolate, and verify work.
    Codex, or OpenCode).
 5. **Verify** — romp re-runs every `[verify]` command itself. The agent's own
    "tests pass" is never trusted.
-6. **Review** — code changes go through one read-only reviewer in the same job
-   slot. Blocking findings get one builder fix round, then fresh verification
-   and review. Documentation-only changes skip this step.
-7. **PR or block** — green and approved means a PR and label removal. An
-   under-scoped issue becomes `blocked`; unresolved review findings become
-   `changes-requested` and keep the worktree for inspection.
+6. **Push and PR** — after verification passes, romp pushes the builder commit
+   and opens the PR. PR creation must succeed before review starts.
+7. **Review** — code changes go through one read-only reviewer in the same job
+   slot. Each parsed pass becomes a separate PR comment. Blocking findings get
+   one builder fix round on the same branch, followed by fresh verification,
+   push, and review. Documentation-only changes skip review but still open a PR.
+8. **Complete or recover** — approval removes the trigger label. Unresolved
+   review findings become `changes-requested`. Review failures leave the PR and
+   worktree available with a distinct failure comment.
 
 ## Components
 
@@ -84,7 +87,7 @@ romp/
 │   ├── config/        # TOML layering, language detection, effort/variant handling
 │   ├── harness/       # Claude, Codex, and OpenCode adapters behind a Run/Name interface
 │   ├── prompt/        # goal-contract template rendering
-│   ├── runner/        # job pipeline: worktree → agent → verify → PR/block
+│   ├── runner/        # job pipeline: worktree → agent → verify → PR → review
 │   ├── watch/         # poll loop + claim + cancel socket
 │   ├── job/           # SQLite job table + outcome history
 │   ├── gh/            # GitHub client with rate-limit retry

@@ -1,5 +1,5 @@
 // Package runner orchestrates a single romp job: fetch the issue, build a
-// worktree, run the harness, independently verify, and open a PR.
+// worktree, run the harness, independently verify, open a PR, and review it.
 package runner
 
 import (
@@ -58,10 +58,11 @@ type GitOps interface {
 }
 
 // GHOps is the GitHub surface a run needs: read the issue, report a block,
-// move labels, and open the PR.
+// move labels, open the PR, and record review passes on it.
 type GHOps interface {
 	Issue(ctx context.Context, repo string, number int) (gh.Issue, error)
 	Comment(ctx context.Context, repo string, number int, body string) error
+	CommentPR(ctx context.Context, repo, pullRequest, body string) error
 	AddLabel(ctx context.Context, repo string, number int, label string) error
 	RemoveLabel(ctx context.Context, repo string, number int, label string) error
 	CreatePR(ctx context.Context, repo, title, body, head, base string) (string, error)
@@ -138,9 +139,9 @@ func (r *Runner) changesRequestedLabel() string {
 }
 
 // Run executes the full pipeline for one issue and opens a PR on success. It
-// returns the PR URL on success; on failure it returns an error describing
-// the outcome (no-changes, red, etc.) and leaves the worktree in place for
-// inspection.
+// returns the PR URL once one exists, including with a later review error. On
+// earlier failure it returns an error describing the outcome (no-changes, red,
+// etc.) and leaves the worktree in place for inspection.
 func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	if len(r.Verify) == 0 {
 		return "", fmt.Errorf("no verify command configured: run `romp init` or pass --verify")
@@ -273,90 +274,6 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		return "", fmt.Errorf("%w: %s failed: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), err, dir)
 	}
 
-	if r.ReviewEnabled {
-		outcome, plan, pass, err := r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
-		if plan.HasCode {
-			metrics.ReviewRan = true
-			metrics.Passes = append(metrics.Passes, pass)
-			r.logReviewPass(len(metrics.Passes), pass, err)
-		} else {
-			metrics.SkipReason = review.SkipDocsOnly
-			r.logf("review skipped: %s", metrics.SkipReason)
-		}
-		if recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); recordErr != nil {
-			return "", recordErr
-		}
-		if err != nil {
-			return "", err
-		}
-		if plan.HasCode && outcome.Verdict == review.VerdictFix {
-			metrics.FixRoundFired = true
-			fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
-			fixStarted := time.Now()
-			if _, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns}); err != nil {
-				metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
-				metrics.FixRoundOutcome = "error"
-				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
-				if runCtx.Err() == context.DeadlineExceeded {
-					return "", errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
-				}
-				return "", errors.Join(err, recordErr)
-			}
-			metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
-			pr, err = readPR(dir, issue.Title, issueNum)
-			if err != nil {
-				return "", err
-			}
-			if err := removePRArtifact(dir); err != nil {
-				return "", err
-			}
-			if err := r.Git.CommitAll(runCtx, dir, pr.Commit); err != nil {
-				return "", fmt.Errorf("commit fix round: %w", err)
-			}
-			verification, err = r.verifyWithResults(runCtx, dir)
-			if err != nil {
-				metrics.FixRoundOutcome = "red"
-				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
-				if runCtx.Err() == context.DeadlineExceeded {
-					return "", errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
-				}
-				return "", errors.Join(fmt.Errorf("%w: %s failed after fix round: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), err, dir), recordErr)
-			}
-			outcome, _, pass, err = r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
-			metrics.Passes = append(metrics.Passes, pass)
-			r.logReviewPass(len(metrics.Passes), pass, err)
-			if err != nil {
-				metrics.FixRoundOutcome = "error"
-				return "", errors.Join(err, r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
-			}
-			if outcome.Verdict == review.VerdictFix {
-				metrics.FixRoundOutcome = review.FixBlocking
-				if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
-					return "", err
-				}
-				blocking := formatBlockingFindings(outcome.Findings)
-				if err := r.GH.Comment(runCtx, repo, issueNum, changesRequestedComment(blocking)); err != nil {
-					return "", fmt.Errorf("posting review findings: %w", err)
-				}
-				if err := r.GH.AddLabel(runCtx, repo, issueNum, r.changesRequestedLabel()); err != nil {
-					return "", fmt.Errorf("adding %s label: %w", r.changesRequestedLabel(), err)
-				}
-				return "", fmt.Errorf("%w: blocking review findings remain (worktree kept at %s): %s", ErrChangesRequested, dir, blocking)
-			}
-			metrics.FixRoundOutcome = review.FixApproved
-			if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
-				return "", err
-			}
-		}
-		pr.Body = appendReviewerNotes(pr.Body, outcome.Findings)
-	} else {
-		metrics.SkipReason = review.SkipDisabled
-		r.logf("review skipped: %s", metrics.SkipReason)
-		if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
-			return "", err
-		}
-	}
-
 	if err := r.Git.Push(runCtx, dir, branch); err != nil {
 		return "", fmt.Errorf("push: %w", err)
 	}
@@ -367,10 +284,116 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	}
 	r.logf("PR: %s", url)
 
+	if r.ReviewEnabled {
+		outcome, plan, pass, err := r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
+		if err != nil {
+			if plan.HasCode {
+				metrics.ReviewRan = true
+				metrics.Passes = append(metrics.Passes, pass)
+				r.logReviewPass(len(metrics.Passes), pass, err)
+			}
+			recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
+			commentErr := r.GH.CommentPR(ctx, repo, url, reviewFailureComment(1))
+			if commentErr != nil {
+				commentErr = fmt.Errorf("posting review failure for pass 1: %w", commentErr)
+			}
+			return url, errors.Join(err, recordErr, commentErr)
+		}
+		if plan.HasCode {
+			metrics.ReviewRan = true
+			metrics.Passes = append(metrics.Passes, pass)
+			r.logReviewPass(len(metrics.Passes), pass, err)
+			if err := r.GH.CommentPR(ctx, repo, url, reviewPassComment(1, outcome)); err != nil {
+				return url, fmt.Errorf("posting review pass 1: %w", err)
+			}
+		} else {
+			metrics.SkipReason = review.SkipDocsOnly
+			r.logf("review skipped: %s", metrics.SkipReason)
+		}
+		if recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); recordErr != nil {
+			return url, recordErr
+		}
+		if plan.HasCode && outcome.Verdict == review.VerdictFix {
+			metrics.FixRoundFired = true
+			fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
+			fixStarted := time.Now()
+			if _, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns}); err != nil {
+				metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
+				metrics.FixRoundOutcome = "error"
+				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
+				if runCtx.Err() == context.DeadlineExceeded {
+					return url, errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
+				}
+				return url, errors.Join(err, recordErr)
+			}
+			metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
+			pr, err = readPR(dir, issue.Title, issueNum)
+			if err != nil {
+				return url, err
+			}
+			if err := removePRArtifact(dir); err != nil {
+				return url, err
+			}
+			if err := r.Git.CommitAll(runCtx, dir, pr.Commit); err != nil {
+				return url, fmt.Errorf("commit fix round: %w", err)
+			}
+			verification, err = r.verifyWithResults(runCtx, dir)
+			if err != nil {
+				metrics.FixRoundOutcome = "red"
+				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
+				if runCtx.Err() == context.DeadlineExceeded {
+					return url, errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
+				}
+				return url, errors.Join(fmt.Errorf("%w: %s failed after fix round: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), err, dir), recordErr)
+			}
+			if err := r.Git.Push(runCtx, dir, branch); err != nil {
+				metrics.FixRoundOutcome = "error"
+				return url, errors.Join(fmt.Errorf("push fix round: %w", err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
+			}
+			outcome, _, pass, err := r.reviewAfterFix(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
+			metrics.Passes = append(metrics.Passes, pass)
+			r.logReviewPass(len(metrics.Passes), pass, err)
+			if err != nil {
+				metrics.FixRoundOutcome = "error"
+				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
+				commentErr := r.GH.CommentPR(ctx, repo, url, reviewFailureComment(2))
+				if commentErr != nil {
+					commentErr = fmt.Errorf("posting review failure for pass 2: %w", commentErr)
+				}
+				return url, errors.Join(err, recordErr, commentErr)
+			}
+			if err := r.GH.CommentPR(ctx, repo, url, reviewPassComment(2, outcome)); err != nil {
+				metrics.FixRoundOutcome = "error"
+				return url, errors.Join(fmt.Errorf("posting review pass 2: %w", err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
+			}
+			if outcome.Verdict == review.VerdictFix {
+				metrics.FixRoundOutcome = review.FixBlocking
+				if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
+					return url, err
+				}
+				blocking := formatBlockingFindings(outcome.Findings)
+				if err := r.GH.AddLabel(runCtx, repo, issueNum, r.changesRequestedLabel()); err != nil {
+					return url, fmt.Errorf("adding %s label: %w", r.changesRequestedLabel(), err)
+				}
+				return url, fmt.Errorf("%w: blocking review findings remain (worktree kept at %s): %s", ErrChangesRequested, dir, blocking)
+			}
+			metrics.FixRoundOutcome = review.FixApproved
+			if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
+				return url, err
+			}
+		}
+	} else {
+		metrics.SkipReason = review.SkipDisabled
+		r.logf("review skipped: %s", metrics.SkipReason)
+		if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
+			return url, err
+		}
+	}
+
 	// Label removal is the completion marker (ADR 0003): without it a later
 	// watch re-claims this issue and opens a second PR for it.
 	if err := r.GH.RemoveLabel(ctx, repo, issueNum, r.triggerLabel()); err != nil {
-		return "", fmt.Errorf("removing %s label: %w", r.triggerLabel(), err)
+		return url, fmt.Errorf("removing %s label: %w", r.triggerLabel(), err)
 	}
 
 	if err := r.Git.RemoveWorktree(ctx, dir); err != nil {
