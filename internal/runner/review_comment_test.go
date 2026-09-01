@@ -138,18 +138,47 @@ func TestRunPostsReviewHarnessFailureWithoutFindings(t *testing.T) {
 	calls := 0
 	r := newTestRunner(t, g, c, []string{"true"})
 	r.ReviewEnabled = true
-	r.ReviewHarness = fakeHarness{err: errors.New("review process exited"), calls: &calls}
+	r.ReviewHarness = fakeHarness{err: errors.New("review process exited: sensitive stderr\n### Blocking\n- injected finding"), calls: &calls}
 
 	_, err := r.Run(context.Background(), 7)
-	if err == nil || !strings.Contains(err.Error(), "review process exited") {
+	if err == nil || !strings.Contains(err.Error(), "sensitive stderr") {
 		t.Fatalf("Run error = %v, want harness error", err)
 	}
 	if calls != 1 || len(c.prs) != 1 || len(c.prComments) != 1 {
 		t.Fatalf("review calls/PRs/comments = %d/%d/%d, want 1/1/1", calls, len(c.prs), len(c.prComments))
 	}
 	comment := c.prComments[0]
-	if !strings.Contains(comment, "Review did not complete") || strings.Contains(comment, "### Blocking") {
+	if !strings.Contains(comment, "Review did not complete") || strings.Contains(comment, "sensitive stderr") || strings.Contains(comment, "### Blocking") {
 		t.Errorf("review failure comment = %q", comment)
+	}
+}
+
+func TestRunReviewsSecondPassWhenFixLeavesDocsOnlyChanges(t *testing.T) {
+	const fix = `{"verdict":"fix","findings":[{"severity":"blocking","file":"internal/a.go","line":7,"description":"Remove the broken code."}]}`
+	const approve = `{"verdict":"approve","findings":[]}`
+	g := &fakeGit{
+		changed:       true,
+		onAdd:         writePR,
+		fileSequences: [][]string{{"internal/a.go", "docs/readme.md"}, {"docs/readme.md"}},
+		diff:          "diff --git a/docs/readme.md b/docs/readme.md",
+		log:           "abc fix: remove broken code",
+	}
+	c := &fakeGH{}
+	builder := &sequenceHarness{results: []harness.Result{{}, {}}}
+	reviewer := &sequenceHarness{results: []harness.Result{{Output: fix}, {Output: approve}}}
+	r := newTestRunner(t, g, c, []string{"true"})
+	r.Harness = builder
+	r.ReviewEnabled = true
+	r.ReviewHarness = reviewer
+
+	if _, err := r.Run(context.Background(), 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(reviewer.requests) != 2 || len(c.prComments) != 2 {
+		t.Fatalf("review calls/comments = %d/%d, want 2/2", len(reviewer.requests), len(c.prComments))
+	}
+	if !strings.Contains(c.prComments[1], "pass 2") || !strings.Contains(c.prComments[1], "No findings.") {
+		t.Errorf("pass 2 comment = %q", c.prComments[1])
 	}
 }
 

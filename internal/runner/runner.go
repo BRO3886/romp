@@ -293,7 +293,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 				r.logReviewPass(len(metrics.Passes), pass, err)
 			}
 			recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
-			commentErr := r.GH.CommentPR(ctx, repo, url, reviewFailureComment(1, err))
+			commentErr := r.GH.CommentPR(ctx, repo, url, reviewFailureComment(1))
 			if commentErr != nil {
 				commentErr = fmt.Errorf("posting review failure for pass 1: %w", commentErr)
 			}
@@ -350,36 +350,32 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 				metrics.FixRoundOutcome = "error"
 				return url, errors.Join(fmt.Errorf("push fix round: %w", err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
 			}
-			outcome, secondPlan, pass, err := r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
-			if secondPlan.HasCode {
-				metrics.Passes = append(metrics.Passes, pass)
-				r.logReviewPass(len(metrics.Passes), pass, err)
-			}
+			outcome, _, pass, err := r.reviewAfterFix(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
+			metrics.Passes = append(metrics.Passes, pass)
+			r.logReviewPass(len(metrics.Passes), pass, err)
 			if err != nil {
 				metrics.FixRoundOutcome = "error"
 				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
-				commentErr := r.GH.CommentPR(ctx, repo, url, reviewFailureComment(2, err))
+				commentErr := r.GH.CommentPR(ctx, repo, url, reviewFailureComment(2))
 				if commentErr != nil {
 					commentErr = fmt.Errorf("posting review failure for pass 2: %w", commentErr)
 				}
 				return url, errors.Join(err, recordErr, commentErr)
 			}
-			if secondPlan.HasCode {
-				if err := r.GH.CommentPR(ctx, repo, url, reviewPassComment(2, outcome)); err != nil {
-					metrics.FixRoundOutcome = "error"
-					return url, errors.Join(fmt.Errorf("posting review pass 2: %w", err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
+			if err := r.GH.CommentPR(ctx, repo, url, reviewPassComment(2, outcome)); err != nil {
+				metrics.FixRoundOutcome = "error"
+				return url, errors.Join(fmt.Errorf("posting review pass 2: %w", err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
+			}
+			if outcome.Verdict == review.VerdictFix {
+				metrics.FixRoundOutcome = review.FixBlocking
+				if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
+					return url, err
 				}
-				if outcome.Verdict == review.VerdictFix {
-					metrics.FixRoundOutcome = review.FixBlocking
-					if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
-						return url, err
-					}
-					blocking := formatBlockingFindings(outcome.Findings)
-					if err := r.GH.AddLabel(runCtx, repo, issueNum, r.changesRequestedLabel()); err != nil {
-						return url, fmt.Errorf("adding %s label: %w", r.changesRequestedLabel(), err)
-					}
-					return url, fmt.Errorf("%w: blocking review findings remain (worktree kept at %s): %s", ErrChangesRequested, dir, blocking)
+				blocking := formatBlockingFindings(outcome.Findings)
+				if err := r.GH.AddLabel(runCtx, repo, issueNum, r.changesRequestedLabel()); err != nil {
+					return url, fmt.Errorf("adding %s label: %w", r.changesRequestedLabel(), err)
 				}
+				return url, fmt.Errorf("%w: blocking review findings remain (worktree kept at %s): %s", ErrChangesRequested, dir, blocking)
 			}
 			metrics.FixRoundOutcome = review.FixApproved
 			if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {

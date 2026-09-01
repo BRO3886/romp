@@ -36,6 +36,7 @@ type fakeGit struct {
 	removed       []string
 	deleted       []string
 	files         []string
+	fileSequences [][]string
 	diff          string
 	log           string
 	commits       int
@@ -104,6 +105,11 @@ func (f *fakeGit) CommitAll(ctx context.Context, _ string, _ string) error {
 }
 
 func (f *fakeGit) ChangedFiles(context.Context, string, string) ([]string, error) {
+	if len(f.fileSequences) > 0 {
+		files := f.fileSequences[0]
+		f.fileSequences = f.fileSequences[1:]
+		return append([]string(nil), files...), nil
+	}
 	return append([]string(nil), f.files...), nil
 }
 

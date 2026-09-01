@@ -15,12 +15,20 @@ import (
 )
 
 func (r *Runner) review(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
+	return r.reviewChanges(ctx, repo, issueNum, issue, dir, base, verification, true)
+}
+
+func (r *Runner) reviewAfterFix(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
+	return r.reviewChanges(ctx, repo, issueNum, issue, dir, base, verification, false)
+}
+
+func (r *Runner) reviewChanges(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult, skipDocsOnly bool) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
 	files, err := r.Git.ChangedFiles(ctx, dir, base)
 	if err != nil {
 		return review.Outcome{}, review.Plan{}, review.PassInstrumentation{}, fmt.Errorf("collect changed files: %w", err)
 	}
 	plan := review.BuildPlan(files, issueIsBugfix(issue))
-	if !plan.HasCode {
+	if skipDocsOnly && !plan.HasCode {
 		return review.Outcome{}, plan, review.PassInstrumentation{}, nil
 	}
 	if r.ReviewHarness == nil {
@@ -139,6 +147,6 @@ func formatReviewFinding(finding review.Finding) string {
 	return "- " + location + finding.Description
 }
 
-func reviewFailureComment(pass int, err error) string {
-	return fmt.Sprintf("## Romp review pass %d\n\n**Review did not complete.**\n\nRomp did not receive a valid review outcome. This error is not a reviewer finding.\n\nError: %v", pass, err)
+func reviewFailureComment(pass int) string {
+	return fmt.Sprintf("## Romp review pass %d\n\n**Review did not complete.**\n\nRomp did not receive a valid review outcome. This failure is not a reviewer finding. See the Romp logs for diagnostic details.", pass)
 }
