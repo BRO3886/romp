@@ -19,6 +19,7 @@ func TestSeedConfig(t *testing.T) {
 		`default = "codex"`,
 		`claimed_label  = "romp:claimed"`,
 		`blocked_label  = "romp:blocked"`,
+		`changes_requested_label = "romp:changes-requested"`,
 		`[review]`,
 		`enabled = true`,
 	} {
@@ -42,8 +43,8 @@ func TestSeedConfig(t *testing.T) {
 	if len(cfg.Verify.Commands) != 2 || cfg.Verify.Commands[0] != "go build ./..." || cfg.Verify.Commands[1] != "go test ./... -count=1" {
 		t.Errorf("round-trip verify = %+v", cfg.Verify)
 	}
-	if cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" {
-		t.Errorf("round-trip labels = %q / %q", cfg.ClaimedLabel, cfg.BlockedLabel)
+	if cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" || cfg.ChangesRequestedLabel != "romp:changes-requested" {
+		t.Errorf("round-trip labels = %q / %q / %q", cfg.ClaimedLabel, cfg.BlockedLabel, cfg.ChangesRequestedLabel)
 	}
 	if !cfg.Review.Enabled {
 		t.Error("round-trip Review.Enabled = false, want true")
@@ -107,12 +108,12 @@ func TestInitLabels(t *testing.T) {
 		t.Errorf("changes requested = %+v, want named label with a description", got[3])
 	}
 
-	cfg.Label, cfg.ClaimedLabel, cfg.BlockedLabel = "work", "taken", "stuck"
+	cfg.Label, cfg.ClaimedLabel, cfg.BlockedLabel, cfg.ChangesRequestedLabel = "work", "taken", "stuck", "review"
 	got = initLabels(&cfg)
-	if got[0].name != "work" || got[1].name != "taken" || got[2].name != "stuck" {
-		t.Errorf("custom names = %q %q %q", got[0].name, got[1].name, got[2].name)
+	if got[0].name != "work" || got[1].name != "taken" || got[2].name != "stuck" || got[3].name != "review" {
+		t.Errorf("custom names = %q %q %q %q", got[0].name, got[1].name, got[2].name, got[3].name)
 	}
-	if got[0].desc == "" || got[1].desc == "" || got[2].desc == "" {
+	if got[0].desc == "" || got[1].desc == "" || got[2].desc == "" || got[3].desc == "" {
 		t.Errorf("custom labels missing descriptions: %+v", got)
 	}
 }

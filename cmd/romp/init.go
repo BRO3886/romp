@@ -116,6 +116,7 @@ func seedConfig(commands []string, reviewEnabled bool) string {
 	b.WriteString("label          = \"romp\"\n")
 	b.WriteString("claimed_label  = \"romp:claimed\"\n")
 	b.WriteString("blocked_label  = \"romp:blocked\"\n")
+	b.WriteString("changes_requested_label = \"romp:changes-requested\"\n")
 	b.WriteString("width          = 3\n\n")
 	b.WriteString("[verify]\n")
 	b.WriteString("commands = [\n")
@@ -159,7 +160,7 @@ func initLabels(cfg *config.Config) []repoLabel {
 		{cfg.Label, "romp will pick this up and open a pull request"},
 		{cfg.ClaimedLabel, "a romp job is working this issue"},
 		{cfg.BlockedLabel, "romp stopped; the issue is under-scoped"},
-		{"romp:changes-requested", "romp review found blocking findings after one fix round"},
+		{cfg.ChangesRequestedLabel, "romp review found blocking findings after one fix round"},
 	}
 }
 

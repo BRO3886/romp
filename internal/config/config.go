@@ -13,17 +13,18 @@ import (
 // means "use the lower-precedence value", which makes layering additive: a
 // later file overrides only the fields it actually sets.
 type Config struct {
-	Label        string  `toml:"label"`
-	ClaimedLabel string  `toml:"claimed_label"`
-	BlockedLabel string  `toml:"blocked_label"`
-	Base         string  `toml:"base"`
-	Width        int     `toml:"width"`
-	Timeout      string  `toml:"timeout"`
-	HistoryDays  int     `toml:"history_days"`
-	Verify       Verify  `toml:"verify"`
-	Scope        Scope   `toml:"scope"`
-	Harness      Harness `toml:"harness"`
-	Review       Review  `toml:"review"`
+	Label                 string  `toml:"label"`
+	ClaimedLabel          string  `toml:"claimed_label"`
+	BlockedLabel          string  `toml:"blocked_label"`
+	ChangesRequestedLabel string  `toml:"changes_requested_label"`
+	Base                  string  `toml:"base"`
+	Width                 int     `toml:"width"`
+	Timeout               string  `toml:"timeout"`
+	HistoryDays           int     `toml:"history_days"`
+	Verify                Verify  `toml:"verify"`
+	Scope                 Scope   `toml:"scope"`
+	Harness               Harness `toml:"harness"`
+	Review                Review  `toml:"review"`
 	// HarnessEffortSource records the config file that supplied the effective
 	// harness effort. It is empty for the built-in default and command-line
 	// overrides.
@@ -67,13 +68,14 @@ type Prompt struct {
 // contributes a value.
 func Defaults() Config {
 	return Config{
-		Label:        "romp",
-		ClaimedLabel: "romp:claimed",
-		BlockedLabel: "romp:blocked",
-		Width:        3,
-		HistoryDays:  30,
-		Harness:      Harness{Default: "codex", Effort: "high"},
-		Review:       Review{Enabled: true},
+		Label:                 "romp",
+		ClaimedLabel:          "romp:claimed",
+		BlockedLabel:          "romp:blocked",
+		ChangesRequestedLabel: "romp:changes-requested",
+		Width:                 3,
+		HistoryDays:           30,
+		Harness:               Harness{Default: "codex", Effort: "high"},
+		Review:                Review{Enabled: true},
 	}
 }
 
@@ -186,6 +188,9 @@ func overlay(dst *Config, src *Config, global bool, metadata toml.MetaData) {
 	}
 	if src.BlockedLabel != "" {
 		dst.BlockedLabel = src.BlockedLabel
+	}
+	if src.ChangesRequestedLabel != "" {
+		dst.ChangesRequestedLabel = src.ChangesRequestedLabel
 	}
 	if src.Base != "" {
 		dst.Base = src.Base

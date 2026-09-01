@@ -98,6 +98,7 @@ cancel. `logs` reads log files directly and works either way.
 label          = "romp"           # trigger label
 claimed_label  = "romp:claimed"
 blocked_label  = "romp:blocked"
+changes_requested_label = "romp:changes-requested"
 base           = "main"           # default: repo default branch
 width          = 3
 

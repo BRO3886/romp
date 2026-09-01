@@ -10,6 +10,7 @@ Configuration is TOML. `romp init` writes a starting `romp.toml`:
 label          = "romp"           # trigger label
 claimed_label  = "romp:claimed"
 blocked_label  = "romp:blocked"
+changes_requested_label = "romp:changes-requested"
 base           = "main"           # default: repo default branch
 width          = 3
 
@@ -79,6 +80,7 @@ fix round as one budget. Review does not consume another width slot.
 | `label` | `romp` | The trigger label. |
 | `claimed_label` | `romp:claimed` | Marks an issue as taken. |
 | `blocked_label` | `romp:blocked` | Marks an under-scoped issue. |
+| `changes_requested_label` | `romp:changes-requested` | Marks a job whose blocking review findings survived one fix round. |
 | `base` | repo default branch | Branch worktrees fork from. |
 | `width` | `3` | Max concurrent jobs in this repo. |
 | `timeout` | unbounded | Optional per-job deadline as a Go duration string. |
