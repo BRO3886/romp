@@ -327,14 +327,14 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 				return url, errors.Join(err, recordErr)
 			}
 			metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
-			pr, err = readPR(dir, issue.Title, issueNum)
-			if err != nil {
+			if _, err := readPR(dir, issue.Title, issueNum); err != nil {
 				return url, err
 			}
 			if err := removePRArtifact(dir); err != nil {
 				return url, err
 			}
-			if err := r.Git.CommitAll(runCtx, dir, pr.Commit); err != nil {
+			fixCommit := fmt.Sprintf("fix: address review findings for #%d", issueNum)
+			if err := r.Git.CommitAll(runCtx, dir, fixCommit); err != nil {
 				return url, fmt.Errorf("commit fix round: %w", err)
 			}
 			verification, err = r.verifyWithResults(runCtx, dir)

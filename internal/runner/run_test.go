@@ -39,7 +39,7 @@ type fakeGit struct {
 	fileSequences [][]string
 	diff          string
 	log           string
-	commits       int
+	commits       []string
 	commitCtx     *bool
 	events        *[]string
 }
@@ -97,10 +97,11 @@ func (f *fakeGit) HasChanges(_ context.Context, _, base string) (bool, error) {
 	return f.changed, nil
 }
 
-func (f *fakeGit) CommitAll(ctx context.Context, _ string, _ string) error {
+func (f *fakeGit) CommitAll(ctx context.Context, _ string, msg string) error {
 	if f.commitCtx != nil {
 		_, *f.commitCtx = ctx.Deadline()
 	}
+	f.commits = append(f.commits, msg)
 	return nil
 }
 
@@ -693,6 +694,12 @@ func TestRunReviewGatePaths(t *testing.T) {
 			}
 			if tt.wantFixPrompt && !strings.Contains(builder.requests[1].Prompt, "The error path is lost.") {
 				t.Errorf("fix prompt missing blocking finding:\n%s", builder.requests[1].Prompt)
+			}
+			if tt.wantFixPrompt {
+				want := []string{"fix: a thing", "fix: address review findings for #7"}
+				if !slices.Equal(g.commits, want) {
+					t.Errorf("commit subjects = %v, want %v", g.commits, want)
+				}
 			}
 			if len(c.prComments) != tt.wantComments {
 				t.Errorf("PR comments = %v, want %d", c.prComments, tt.wantComments)
