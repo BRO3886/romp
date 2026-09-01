@@ -21,7 +21,10 @@ import (
 
 // defaultTriggerLabel is the label romp watch polls for, and the one a
 // finished run removes as its completion marker.
-const defaultTriggerLabel = "romp"
+const (
+	defaultTriggerLabel          = "romp"
+	defaultChangesRequestedLabel = "romp:changes-requested"
+)
 
 // ErrTimeout is returned when the job timeout expires while the harness is
 // running. The agent is killed and the job stays labelled so it can retry.
@@ -125,7 +128,7 @@ func (r *Runner) changesRequestedLabel() string {
 	if r.ChangesRequestedLabel != "" {
 		return r.ChangesRequestedLabel
 	}
-	return "romp:changes-requested"
+	return defaultChangesRequestedLabel
 }
 
 // Run executes the full pipeline for one issue and opens a PR on success. It
