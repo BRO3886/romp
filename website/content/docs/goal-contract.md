@@ -51,8 +51,9 @@ artifact. It returns one strict JSON document through `harness.Result.Output`.
 An empty, malformed, or semantically invalid document is an error, never an
 implicit approval. The runner supplies the diff, branch log, changed files,
 lens plan, verification transcript, and convention references, then parses and
-consumes the typed review outcome. Runner integration belongs to issue #33; the
-review renderer and parser perform no filesystem discovery or harness calls.
+consumes the typed review outcome. The runner records each parsed outcome as a
+separate PR comment. The review renderer and parser perform no filesystem
+discovery or harness calls.
 
 ## Customizing the prompt
 

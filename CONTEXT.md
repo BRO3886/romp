@@ -26,7 +26,7 @@ An outcome where the review gate found blocking findings that were not cleared w
 _Avoid_: red, review-failed, rejected
 
 **Review gate**:
-The check between verify and push where a read-only reviewer run evaluates the diff against the issue and repo standards; a single reviewer receives the lens plan romp computed from the changed files.
+The check after verification, push, and PR creation where a read-only reviewer run evaluates the diff against the issue and repo standards; a single reviewer receives the lens plan romp computed from the changed files, and each parsed pass is recorded as a separate PR comment.
 _Avoid_: code review, QA, critic
 
 **Findings**:

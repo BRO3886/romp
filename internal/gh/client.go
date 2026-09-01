@@ -187,6 +187,12 @@ func (c *Client) CreatePR(ctx context.Context, repo, title, body, head, base str
 		"--title", title, "--body", body)
 }
 
+// CommentPR posts a new comment on a pull request without editing prior comments.
+func (c *Client) CommentPR(ctx context.Context, repo, pullRequest, body string) error {
+	_, err := c.run(ctx, "pr", "comment", pullRequest, "--repo", repo, "--body", body)
+	return err
+}
+
 // Comment posts a comment on an issue.
 func (c *Client) Comment(ctx context.Context, repo string, number int, body string) error {
 	_, err := c.run(ctx, "issue", "comment", strconv.Itoa(number), "--repo", repo, "--body", body)

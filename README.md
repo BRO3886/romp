@@ -167,7 +167,7 @@ comment — a plausible PR solving the wrong problem costs more than no PR.
 | **done** | PR opened, trigger label removed. |
 | **blocked** | No PR. `romp:blocked` label + gap comment. |
 | **no-changes** | Agent exited clean with no commits. No PR. |
-| **changes-requested** | Verify passed, but blocking review findings remained after one fix round. No PR, trigger label removed, worktree kept. |
+| **changes-requested** | Verify passed, but blocking review findings remained after one fix round. PR open with both review-pass comments, worktree kept. |
 | **red** | Verify failed on independent re-run. No PR, trigger label removed, worktree kept. |
 | **timeout** | Exceeded `timeout`. Killed, trigger label removed, worktree kept. |
 | **cancelled** | You cancelled. Worktree, branch, and both labels removed. |

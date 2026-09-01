@@ -336,9 +336,10 @@ type refreshOnlyGH struct{ err error }
 func (g refreshOnlyGH) Issue(context.Context, string, int) (gh.Issue, error) {
 	return gh.Issue{}, g.err
 }
-func (refreshOnlyGH) Comment(context.Context, string, int, string) error     { return nil }
-func (refreshOnlyGH) AddLabel(context.Context, string, int, string) error    { return nil }
-func (refreshOnlyGH) RemoveLabel(context.Context, string, int, string) error { return nil }
+func (refreshOnlyGH) Comment(context.Context, string, int, string) error      { return nil }
+func (refreshOnlyGH) CommentPR(context.Context, string, string, string) error { return nil }
+func (refreshOnlyGH) AddLabel(context.Context, string, int, string) error     { return nil }
+func (refreshOnlyGH) RemoveLabel(context.Context, string, int, string) error  { return nil }
 func (refreshOnlyGH) CreatePR(context.Context, string, string, string, string, string) (string, error) {
 	return "", nil
 }

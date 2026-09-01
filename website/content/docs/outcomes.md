@@ -11,7 +11,7 @@ Every job ends in exactly one named outcome. There is no silent grey area.
 | **done** | PR opened, trigger label removed. |
 | **blocked** | No PR. `romp:blocked` label + gap comment. |
 | **no-changes** | Agent exited clean with no commits. No PR. |
-| **changes-requested** | Verification passed, but blocking review findings remained after one fix round. The worktree stays available for inspection. |
+| **changes-requested** | Verification passed, but blocking review findings remained after one fix round. The PR and worktree stay available with both review-pass comments. |
 | **red** | Verify failed on independent re-run. No PR, worktree kept. |
 | **timeout** | Exceeded `timeout`. Killed, worktree kept. |
 | **cancelled** | You cancelled. Worktree, branch, and both labels removed. |

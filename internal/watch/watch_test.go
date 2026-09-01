@@ -430,15 +430,15 @@ func TestRunJobRecordsChangesRequestedOutcome(t *testing.T) {
 
 	w := &Watcher{Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store}
 	w.RunJob = func(context.Context, int) (string, error) {
-		return "", fmt.Errorf("%w: blocking finding", runner.ErrChangesRequested)
+		return "https://github.com/o/r/pull/1", fmt.Errorf("%w: blocking finding", runner.ErrChangesRequested)
 	}
 
 	w.runJobSync(t, 7)
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if len(store.finished) != 1 || store.finished[0].Outcome != "changes-requested" {
-		t.Fatalf("outcomes = %v, want one changes-requested", store.finished)
+	if len(store.finished) != 1 || store.finished[0].Outcome != "changes-requested" || store.finished[0].PRURL != "https://github.com/o/r/pull/1" {
+		t.Fatalf("outcomes = %v, want one changes-requested with its PR URL", store.finished)
 	}
 }
 
