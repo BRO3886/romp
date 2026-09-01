@@ -10,6 +10,7 @@ import (
 
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/harness"
+	"github.com/BRO3886/romp/internal/progress"
 	"github.com/BRO3886/romp/internal/prompt"
 	"github.com/BRO3886/romp/internal/review"
 )
@@ -50,6 +51,14 @@ func (r *Runner) reviewChanges(ctx context.Context, repo string, issueNum int, i
 	if err != nil {
 		return review.Outcome{}, plan, review.PassInstrumentation{}, err
 	}
+	phase := progress.PhaseReviewing
+	detail := "reviewer working (read-only)"
+	if !skipDocsOnly {
+		phase = progress.PhaseRereviewing
+		detail = "reviewer checking fixes (read-only)"
+	}
+	r.logf("review: running %s (read-only)", r.ReviewHarness.Name())
+	r.progress(issueNum, phase, detail, r.ReviewHarness.Name())
 	started := time.Now()
 	result, err := r.ReviewHarness.Run(ctx, harness.Request{Dir: dir, Prompt: contract, Model: r.ReviewModel, ReadOnly: true})
 	pass := review.PassInstrumentation{DurationMS: time.Since(started).Milliseconds()}

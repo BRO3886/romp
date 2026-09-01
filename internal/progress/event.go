@@ -24,6 +24,7 @@ type Event struct {
 	Detail   string
 	Outcome  string
 	URL      string
+	Harness  string
 	At       time.Time
 	Terminal bool
 }

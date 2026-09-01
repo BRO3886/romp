@@ -16,10 +16,11 @@ func TestWatchTUITracksPhaseAndMovesTerminalJobToHistory(t *testing.T) {
 	m := &watchTUIModel{repo: "o/r", active: make(map[int]*watchJobView)}
 
 	m.applyEvent(progress.Event{Issue: 7, Phase: progress.PhaseClaiming, Detail: "Improve watch output", At: started})
-	m.applyEvent(progress.Event{Issue: 7, Phase: progress.PhaseReviewing, Detail: "reviewer working", At: started.Add(time.Minute)})
+	m.applyEvent(progress.Event{Issue: 7, Phase: progress.PhaseAgent, Detail: "agent working", Harness: "codex", At: started.Add(30 * time.Second)})
+	m.applyEvent(progress.Event{Issue: 7, Phase: progress.PhaseReviewing, Detail: "reviewer working (read-only)", Harness: "claude", At: started.Add(time.Minute)})
 
 	active := m.active[7]
-	if active == nil || active.phase != progress.PhaseReviewing || active.title != "Improve watch output" {
+	if active == nil || active.phase != progress.PhaseReviewing || active.title != "Improve watch output" || active.builderHarness != "codex" || active.reviewerHarness != "claude" {
 		t.Fatalf("active job = %+v", active)
 	}
 
@@ -27,7 +28,7 @@ func TestWatchTUITracksPhaseAndMovesTerminalJobToHistory(t *testing.T) {
 	if m.active[7] != nil {
 		t.Fatal("terminal job remains active")
 	}
-	if len(m.history) != 1 || m.history[0].Issue != 7 || m.history[0].Outcome != "done" {
+	if len(m.history) != 1 || m.history[0].Issue != 7 || m.history[0].Outcome != "done" || m.history[0].BuilderHarness != "codex" || m.history[0].ReviewerHarness != "claude" {
 		t.Fatalf("history = %+v", m.history)
 	}
 }
@@ -59,12 +60,12 @@ func TestWatchTUIRendersSemanticPhaseStyles(t *testing.T) {
 		width:  100,
 		height: 30,
 		active: map[int]*watchJobView{
-			7: {issue: 7, title: "Improve watch output", phase: progress.PhaseReviewing, detail: "reviewer working", started: now},
+			7: {issue: 7, title: "Improve watch output", phase: progress.PhaseReviewing, detail: "reviewer working (read-only)", reviewerHarness: "codex", started: now},
 		},
 	}
 
 	view := m.View().Content
-	for _, want := range []string{"ROMP", "o/r", "● WATCHING", "Active 1", "◈ REVIEWING", "Improve watch output", "reviewer working", "tab", "enter"} {
+	for _, want := range []string{"ROMP", "o/r", "● WATCHING", "Active 1", "◈ REVIEWING", "CODEX", "Improve watch output", "reviewer working (read-only)", "tab", "enter"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("dashboard missing %q:\n%s", want, view)
 		}

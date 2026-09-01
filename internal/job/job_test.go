@@ -126,6 +126,16 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 	if err := s.SetSessionID(ctx, "o/r", 7, "session-7"); err != nil {
 		t.Fatalf("SetSessionID: %v", err)
 	}
+	if err := s.SetHarnesses(ctx, "o/r", 7, "codex", "claude"); err != nil {
+		t.Fatalf("SetHarnesses: %v", err)
+	}
+	active, err := s.List(ctx, "o/r")
+	if err != nil {
+		t.Fatalf("List active: %v", err)
+	}
+	if len(active) != 1 || active[0].BuilderHarness != "codex" || active[0].ReviewerHarness != "claude" {
+		t.Fatalf("active harnesses = %+v", active)
+	}
 	metrics := review.Instrumentation{
 		ReviewRan: true, BuilderDurationMS: 1200, FixRoundFired: true, FixRoundOutcome: review.FixApproved,
 		Passes: []review.PassInstrumentation{
@@ -171,6 +181,9 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 	}
 	if o.SessionID != "session-7" {
 		t.Errorf("SessionID = %q, want session-7", o.SessionID)
+	}
+	if o.BuilderHarness != "codex" || o.ReviewerHarness != "claude" {
+		t.Errorf("historical harnesses = %q/%q, want codex/claude", o.BuilderHarness, o.ReviewerHarness)
 	}
 	if !o.Review.ReviewRan || o.Review.BuilderDurationMS != 1200 || len(o.Review.Passes) != 2 || o.Review.Passes[0].Blocking != 1 {
 		t.Errorf("Review = %+v, want persisted instrumentation", o.Review)

@@ -767,7 +767,13 @@ func TestRunReviewGatePaths(t *testing.T) {
 				if instrumentation.metrics.ReviewRan || instrumentation.metrics.SkipReason != review.SkipDocsOnly {
 					t.Errorf("docs-only instrumentation = %+v", instrumentation.metrics)
 				}
+				if strings.Contains(logs.String(), "review: running") {
+					t.Errorf("docs-only job claimed reviewer started:\n%s", logs.String())
+				}
 			} else {
+				if !strings.Contains(logs.String(), "review: running sequence (read-only)") {
+					t.Errorf("logs missing reviewer start:\n%s", logs.String())
+				}
 				if !instrumentation.metrics.ReviewRan || len(instrumentation.metrics.Passes) != tt.wantReviewer {
 					t.Errorf("review instrumentation = %+v, want %d passes", instrumentation.metrics, tt.wantReviewer)
 				}

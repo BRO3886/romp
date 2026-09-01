@@ -25,25 +25,29 @@ import (
 
 // Job is one in-flight row from the table.
 type Job struct {
-	Repo      string
-	Issue     int
-	Branch    string
-	ClaimedAt string
-	SessionID string
+	Repo            string
+	Issue           int
+	Branch          string
+	ClaimedAt       string
+	SessionID       string
+	BuilderHarness  string
+	ReviewerHarness string
 }
 
 // Outcome is one finished job, appended to history on terminal state.
 type Outcome struct {
-	Repo       string
-	Issue      int
-	Outcome    string
-	Branch     string
-	PRURL      string
-	Detail     string
-	StartedAt  string
-	FinishedAt string
-	SessionID  string
-	Review     review.Instrumentation
+	Repo            string
+	Issue           int
+	Outcome         string
+	Branch          string
+	PRURL           string
+	Detail          string
+	StartedAt       string
+	FinishedAt      string
+	SessionID       string
+	BuilderHarness  string
+	ReviewerHarness string
+	Review          review.Instrumentation
 }
 
 // Store is a thin handle over the SQLite job table.
@@ -77,6 +81,12 @@ func Open(path string) (*Store, error) {
 			db.Close()
 			return nil, fmt.Errorf("migrating %s review instrumentation: %w", table, err)
 		}
+		for _, column := range []string{"builder_harness", "reviewer_harness"} {
+			if err := migrateColumn(db, table, column, "TEXT"); err != nil {
+				db.Close()
+				return nil, fmt.Errorf("migrating %s.%s: %w", table, column, err)
+			}
+		}
 	}
 	return &Store{db: db}, nil
 }
@@ -90,6 +100,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 	claimed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
 	session_id TEXT,
 	review_json TEXT,
+	builder_harness TEXT,
+	reviewer_harness TEXT,
 	UNIQUE(repo, issue)
 );
 CREATE TABLE IF NOT EXISTS outcomes (
@@ -103,7 +115,9 @@ CREATE TABLE IF NOT EXISTS outcomes (
 	started_at  TEXT NOT NULL,
 	finished_at TEXT NOT NULL,
 	session_id  TEXT,
-	review_json TEXT
+	review_json TEXT,
+	builder_harness TEXT,
+	reviewer_harness TEXT
 );`
 
 func migrateColumn(db *sql.DB, table, column, dataType string) error {
@@ -198,6 +212,27 @@ func (s *Store) SetSessionID(ctx context.Context, repo string, issue int, sessio
 	return nil
 }
 
+// SetHarnesses records the builder and optional reviewer selected for an in-flight job.
+func (s *Store) SetHarnesses(ctx context.Context, repo string, issue int, builder, reviewer string) error {
+	if builder == "" {
+		return fmt.Errorf("builder harness is empty")
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET builder_harness = ?, reviewer_harness = ? WHERE repo = ? AND issue = ?`,
+		builder, nullable(reviewer), repo, issue)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("in-flight job %s#%d not found", repo, issue)
+	}
+	return nil
+}
+
 // SetReviewInstrumentation records review calibration facts on an in-flight job.
 func (s *Store) SetReviewInstrumentation(ctx context.Context, repo string, issue int, metrics review.Instrumentation) error {
 	data, err := json.Marshal(metrics)
@@ -236,7 +271,7 @@ func (s *Store) ClearRunning(ctx context.Context, repo string) error {
 // List returns the in-flight rows for repo, or every repo when repo is empty,
 // ordered by repo then issue.
 func (s *Store) List(ctx context.Context, repo string) ([]Job, error) {
-	query := `SELECT repo, issue, branch, claimed_at, COALESCE(session_id, '') FROM jobs`
+	query := `SELECT repo, issue, branch, claimed_at, COALESCE(session_id, ''), COALESCE(builder_harness, ''), COALESCE(reviewer_harness, '') FROM jobs`
 	var args []any
 	if repo != "" {
 		query += ` WHERE repo = ?`
@@ -251,7 +286,7 @@ func (s *Store) List(ctx context.Context, repo string) ([]Job, error) {
 	var out []Job
 	for rows.Next() {
 		var j Job
-		if err := rows.Scan(&j.Repo, &j.Issue, &j.Branch, &j.ClaimedAt, &j.SessionID); err != nil {
+		if err := rows.Scan(&j.Repo, &j.Issue, &j.Branch, &j.ClaimedAt, &j.SessionID, &j.BuilderHarness, &j.ReviewerHarness); err != nil {
 			return nil, err
 		}
 		out = append(out, j)
@@ -270,9 +305,9 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 	defer tx.Rollback()
 
 	var startedAt string
-	var sessionID, reviewJSON sql.NullString
+	var sessionID, reviewJSON, builderHarness, reviewerHarness sql.NullString
 	err = tx.QueryRowContext(ctx,
-		`SELECT claimed_at, session_id, review_json FROM jobs WHERE repo = ? AND issue = ?`, o.Repo, o.Issue).Scan(&startedAt, &sessionID, &reviewJSON)
+		`SELECT claimed_at, session_id, review_json, builder_harness, reviewer_harness FROM jobs WHERE repo = ? AND issue = ?`, o.Repo, o.Issue).Scan(&startedAt, &sessionID, &reviewJSON, &builderHarness, &reviewerHarness)
 	if err == sql.ErrNoRows {
 		return nil
 	}
@@ -281,8 +316,8 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO outcomes (repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, session_id, review_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		o.Repo, o.Issue, o.Outcome, o.Branch, nullable(o.PRURL), nullable(o.Detail), startedAt, o.FinishedAt, nullable(sessionID.String), nullable(reviewJSON.String)); err != nil {
+		`INSERT INTO outcomes (repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, session_id, review_json, builder_harness, reviewer_harness) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		o.Repo, o.Issue, o.Outcome, o.Branch, nullable(o.PRURL), nullable(o.Detail), startedAt, o.FinishedAt, nullable(sessionID.String), nullable(reviewJSON.String), nullable(builderHarness.String), nullable(reviewerHarness.String)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -295,7 +330,7 @@ func (s *Store) Finish(ctx context.Context, o Outcome) error {
 // History returns the most recent limit finished jobs for repo, newest first.
 // An empty repo returns outcomes from every repository.
 func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome, error) {
-	query := `SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, COALESCE(session_id, ''), COALESCE(review_json, '') FROM outcomes`
+	query := `SELECT repo, issue, outcome, branch, pr_url, detail, started_at, finished_at, COALESCE(session_id, ''), COALESCE(review_json, ''), COALESCE(builder_harness, ''), COALESCE(reviewer_harness, '') FROM outcomes`
 	var args []any
 	if repo != "" {
 		query += ` WHERE repo = ?`
@@ -313,7 +348,7 @@ func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome,
 		var o Outcome
 		var prURL, detail sql.NullString
 		var reviewJSON string
-		if err := rows.Scan(&o.Repo, &o.Issue, &o.Outcome, &o.Branch, &prURL, &detail, &o.StartedAt, &o.FinishedAt, &o.SessionID, &reviewJSON); err != nil {
+		if err := rows.Scan(&o.Repo, &o.Issue, &o.Outcome, &o.Branch, &prURL, &detail, &o.StartedAt, &o.FinishedAt, &o.SessionID, &reviewJSON, &o.BuilderHarness, &o.ReviewerHarness); err != nil {
 			return nil, err
 		}
 		o.PRURL, o.Detail = prURL.String, detail.String

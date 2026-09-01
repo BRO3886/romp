@@ -47,12 +47,14 @@ var (
 )
 
 type watchJobView struct {
-	issue   int
-	title   string
-	phase   progress.Phase
-	detail  string
-	started time.Time
-	events  []progress.Event
+	issue           int
+	title           string
+	phase           progress.Phase
+	detail          string
+	started         time.Time
+	events          []progress.Event
+	builderHarness  string
+	reviewerHarness string
 }
 
 type watchTUIModel struct {
@@ -165,12 +167,18 @@ func (m *watchTUIModel) applyEvent(event progress.Event) {
 	}
 	view.phase = event.Phase
 	view.detail = event.Detail
+	switch event.Phase {
+	case progress.PhaseAgent, progress.PhaseFixing:
+		view.builderHarness = event.Harness
+	case progress.PhaseReviewing, progress.PhaseRereviewing:
+		view.reviewerHarness = event.Harness
+	}
 	view.events = append(view.events, event)
 	if len(view.events) > 50 {
 		view.events = append([]progress.Event(nil), view.events[len(view.events)-50:]...)
 	}
 	if event.Terminal {
-		m.history = append([]job.Outcome{{Repo: m.repo, Issue: event.Issue, Outcome: event.Outcome, PRURL: event.URL, Detail: event.Detail, StartedAt: view.started.UTC().Format(time.RFC3339Nano), FinishedAt: event.At.UTC().Format(time.RFC3339Nano)}}, m.history...)
+		m.history = append([]job.Outcome{{Repo: m.repo, Issue: event.Issue, Outcome: event.Outcome, PRURL: event.URL, Detail: event.Detail, StartedAt: view.started.UTC().Format(time.RFC3339Nano), FinishedAt: event.At.UTC().Format(time.RFC3339Nano), BuilderHarness: view.builderHarness, ReviewerHarness: view.reviewerHarness}}, m.history...)
 		delete(m.active, event.Issue)
 	}
 	if m.selected >= m.rowCount() && m.selected > 0 {
@@ -264,7 +272,7 @@ func (m *watchTUIModel) renderActiveRow(row *watchJobView, selected bool) string
 	icon, color := phaseAppearance(row.phase)
 	phase := lipgloss.NewStyle().Bold(true).Foreground(color).Render(icon + " " + strings.ToUpper(string(row.phase)))
 	elapsed := watchMetaStyle.Render(time.Since(row.started).Round(time.Second).String())
-	line1 := fmt.Sprintf("%s  %s  %s  %s", selectedGlyph(selected), watchIssueStyle.Render(fmt.Sprintf("#%d", row.issue)), phase, elapsed)
+	line1 := fmt.Sprintf("%s  %s  %s  %s  %s", selectedGlyph(selected), watchIssueStyle.Render(fmt.Sprintf("#%d", row.issue)), phase, activeHarnessLabel(row), elapsed)
 	available := max(20, m.width-12)
 	title := watchTitleStyle.Render(clipText(valueOr(row.title, "Untitled issue"), available))
 	detail := watchMetaStyle.Render(clipText(row.detail, available))
@@ -279,7 +287,7 @@ func (m *watchTUIModel) renderHistoryRow(outcome job.Outcome, selected bool) str
 	icon, color := outcomeAppearance(outcome.Outcome)
 	status := lipgloss.NewStyle().Bold(true).Foreground(color).Render(icon + " " + strings.ToUpper(outcome.Outcome))
 	when := watchMetaStyle.Render(compactTime(outcome.FinishedAt))
-	content := fmt.Sprintf("%s  %s  %-22s  %s", selectedGlyph(selected), watchIssueStyle.Render(fmt.Sprintf("#%d", outcome.Issue)), status, when)
+	content := fmt.Sprintf("%s  %s  %-22s  %-18s  %s", selectedGlyph(selected), watchIssueStyle.Render(fmt.Sprintf("#%d", outcome.Issue)), status, historyHarnessLabel(outcome), when)
 	if selected {
 		return watchSelectedStyle.Width(max(36, m.width-8)).Render(content) + "\n"
 	}
@@ -314,6 +322,8 @@ func (m *watchTUIModel) writeDetail(b *strings.Builder) {
 		writeDetailField(&panel, "Finished", compactTime(o.FinishedAt))
 		writeDetailField(&panel, "Pull request", valueOrDash(o.PRURL))
 		writeDetailField(&panel, "Session", valueOrDash(o.SessionID))
+		writeDetailField(&panel, "Builder", valueOr(o.BuilderHarness, "—"))
+		writeDetailField(&panel, "Reviewer", valueOr(o.ReviewerHarness, "disabled or unknown"))
 		if o.Detail != "" {
 			panel.WriteString("\n" + lipgloss.NewStyle().Foreground(color).Render(clipText(o.Detail, max(30, m.width-12))) + "\n")
 		}
@@ -418,4 +428,25 @@ func valueOr(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func activeHarnessLabel(row *watchJobView) string {
+	name := row.builderHarness
+	color := watchPalette.cyan
+	if row.phase == progress.PhaseReviewing || row.phase == progress.PhaseRereviewing {
+		name = row.reviewerHarness
+		color = watchPalette.violet
+	}
+	if name == "" {
+		return watchMetaStyle.Render("—")
+	}
+	return lipgloss.NewStyle().Bold(true).Foreground(color).Render(strings.ToUpper(name))
+}
+
+func historyHarnessLabel(outcome job.Outcome) string {
+	value := valueOr(outcome.BuilderHarness, "—")
+	if outcome.ReviewerHarness != "" {
+		value += " → " + outcome.ReviewerHarness
+	}
+	return watchMetaStyle.Render(value)
 }

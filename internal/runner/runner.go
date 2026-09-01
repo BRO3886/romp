@@ -115,8 +115,8 @@ func (r *Runner) logf(format string, a ...any) {
 	fmt.Fprintf(r.Stderr, "%s  %s%s\n", time.Now().Format("15:04:05"), prefix, fmt.Sprintf(format, a...))
 }
 
-func (r *Runner) progress(issue int, phase progress.Phase, detail string) {
-	r.Progress.Emit(progress.Event{Issue: issue, Phase: phase, Detail: detail})
+func (r *Runner) progress(issue int, phase progress.Phase, detail, harnessName string) {
+	r.Progress.Emit(progress.Event{Issue: issue, Phase: phase, Detail: detail, Harness: harnessName})
 }
 
 // triggerLabel returns the configured trigger label, falling back to the
@@ -160,7 +160,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	repo := owner + "/" + name
 	metrics := review.Instrumentation{}
 	r.logf("repo %s, issue #%d", repo, issueNum)
-	r.progress(issueNum, progress.PhasePreparing, "refreshing the base branch")
+	r.progress(issueNum, progress.PhasePreparing, "refreshing the base branch", "")
 
 	base := r.Base
 	if base == "" {
@@ -208,7 +208,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 
 	r.logf("worktree %s", dir)
 	r.logf("running %s", r.Harness.Name())
-	r.progress(issueNum, progress.PhaseAgent, "agent working")
+	r.progress(issueNum, progress.PhaseAgent, "agent working", r.Harness.Name())
 
 	start := time.Now()
 	runCtx := ctx
@@ -285,7 +285,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	if err := r.Git.Push(runCtx, dir, branch); err != nil {
 		return "", fmt.Errorf("push: %w", err)
 	}
-	r.progress(issueNum, progress.PhasePublishing, "opening pull request")
+	r.progress(issueNum, progress.PhasePublishing, "opening pull request", "")
 
 	url, err := r.GH.CreatePR(runCtx, repo, pr.Title, prBody(pr.Body, issueNum), branch, base)
 	if err != nil {
@@ -294,7 +294,6 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	r.logf("PR: %s", url)
 
 	if r.ReviewEnabled {
-		r.progress(issueNum, progress.PhaseReviewing, "reviewer working")
 		outcome, plan, pass, err := r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
 		if err != nil {
 			if plan.HasCode {
@@ -325,7 +324,8 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		}
 		if plan.HasCode && outcome.Verdict == review.VerdictFix {
 			metrics.FixRoundFired = true
-			r.progress(issueNum, progress.PhaseFixing, "agent addressing review findings")
+			r.logf("review fix: running %s", r.Harness.Name())
+			r.progress(issueNum, progress.PhaseFixing, "agent addressing review findings", r.Harness.Name())
 			fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
 			fixStarted := time.Now()
 			if _, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns}); err != nil {
@@ -361,7 +361,6 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 				metrics.FixRoundOutcome = "error"
 				return url, errors.Join(fmt.Errorf("push fix round: %w", err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
 			}
-			r.progress(issueNum, progress.PhaseRereviewing, "reviewer checking fixes")
 			outcome, _, pass, err := r.reviewAfterFix(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
 			metrics.Passes = append(metrics.Passes, pass)
 			r.logReviewPass(len(metrics.Passes), pass, err)
@@ -448,7 +447,7 @@ func (r *Runner) verifyWithResults(ctx context.Context, dir string, issue int, p
 		}
 		cmd := exec.CommandContext(ctx, "sh", "-c", v)
 		cmd.Dir = dir
-		r.progress(issue, phase, fmt.Sprintf("%d/%d %s", i+1, len(r.Verify), v))
+		r.progress(issue, phase, fmt.Sprintf("%d/%d %s", i+1, len(r.Verify), v), "")
 		started := time.Now()
 		out, err := cmd.CombinedOutput()
 		if err != nil {
