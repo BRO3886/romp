@@ -7,6 +7,7 @@
 - Runs Claude Code, Codex, or OpenCode locally through the user's existing login.
 - Uses GitHub and the authenticated `gh` CLI as the source of truth.
 - Gives every job a goal contract: GATE, DONE, PROVE IT, and CONSTRAINTS.
+- Bundles the `rompify` skill for compiling short requests and GitHub issues into execution contracts.
 - Never merges pull requests or deploys production.
 - Blocks under-specified issues before code changes and reports the missing detail.
 
