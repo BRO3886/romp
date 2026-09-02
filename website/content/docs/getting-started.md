@@ -111,8 +111,35 @@ romp init --verify "make test" --verify "make lint"
 
 ## Watch it run
 
-```bash
-$ romp watch
+On an interactive terminal, `watch` opens a full-screen dashboard:
+
+```text
+ROMP  you/your-project  2 active  ● WATCHING
+
+Active 2   History 9
+
+╭──────────────────────────────────────────────────────────────╮
+│ ▸ #17  ◈ REVIEWING  CODEX → CLAUDE  18m32s                    │
+│    Synchronize relay device readiness and sender identities   │
+│    reviewer working across 6 lenses (read-only)               │
+│                                                              │
+│   #21  ◆ AGENT  CLAUDE  4m08s                                 │
+│    Retry a failed review verification within budget           │
+│    agent working                                              │
+╰──────────────────────────────────────────────────────────────╯
+
+tab switch   ↑/↓ navigate   enter inspect   q drain
+```
+
+Each active job shows the phase it is in, the harness acting right now, and how
+long it has been running. `CODEX → CLAUDE` reads as builder then reviewer. Tab
+switches between active jobs and history, the arrow keys move the selection, and
+Enter opens the selected job's phase timeline.
+
+When stdout is not a terminal, `watch` falls back to line-oriented output for
+scripts and service managers:
+
+```text
 watching label "romp" every 1m0s (width 3)
 [sunny_naruto] running codex
 [sunny_naruto] verify ok (go test ./... -count=1)

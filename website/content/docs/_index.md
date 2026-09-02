@@ -6,7 +6,11 @@ weight: 1
 
 ## Documentation
 
-Welcome to the romp documentation. Choose a section below.
+romp is an opinionated runner for the coding agent you already have. It makes a
+handful of calls on your behalf — a goal contract instead of a task description,
+verification romp runs itself rather than trusting the agent, a review gate on
+every diff, and a hard stop before merge — and it does not offer a switch to
+unmake them. The pages below describe those choices and how to work with them.
 
 - [Getting Started](/docs/getting-started/) — Requirements, installation, and your first labelled issue
 - [Commands](/docs/commands/) — Reference for every command and flag
