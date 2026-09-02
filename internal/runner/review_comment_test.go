@@ -82,7 +82,7 @@ func TestRunOrdersPullRequestAndReviewPasses(t *testing.T) {
 	if len(c.prComments) != 2 {
 		t.Fatalf("PR comments = %d, want two", len(c.prComments))
 	}
-	if strings.Count(logs.String(), "review: running sequence (read-only)") != 2 || !strings.Contains(logs.String(), "review fix: running sequence") {
+	if strings.Count(logs.String(), "review: running sequence (read-only)") != 2 || !strings.Contains(logs.String(), "review fix 1/2: running sequence") {
 		t.Errorf("review lifecycle logs missing:\n%s", logs.String())
 	}
 	var reviewStarts, fixStarts int

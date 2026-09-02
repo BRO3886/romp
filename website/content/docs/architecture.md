@@ -72,8 +72,9 @@ machinery to claim, isolate, and verify work.
    and opens the PR. PR creation must succeed before review starts.
 7. **Review** — code changes go through one read-only reviewer in the same job
    slot. Each parsed pass becomes a separate PR comment. Blocking findings get
-   one builder fix round on the same branch, followed by fresh verification,
-   push, and review. Documentation-only changes skip review but still open a PR.
+   up to `review.max_fix_rounds` builder rounds on the same branch. Each round
+   includes fresh verification, push, and review. Documentation-only changes
+   skip review but still open a PR.
 8. **Complete or recover** — approval removes the trigger label. Unresolved
    review findings become `changes-requested`. Review failures leave the PR and
    worktree available with a distinct failure comment.

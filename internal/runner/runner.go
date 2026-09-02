@@ -38,7 +38,7 @@ var ErrNoChanges = errors.New("no-changes")
 var ErrRed = errors.New("red")
 
 // ErrChangesRequested is returned when blocking review findings remain after
-// the single fix round.
+// the configured fix rounds.
 var ErrChangesRequested = errors.New("changes-requested")
 
 // GitOps is the git surface a run needs: read the remote and the default
@@ -92,6 +92,7 @@ type Runner struct {
 	Model                 string
 	ReviewModel           string
 	ReviewEnabled         bool
+	MaxFixRounds          int
 	Effort                string
 	MaxTurns              int
 	Codename              string
@@ -322,60 +323,69 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		if recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); recordErr != nil {
 			return url, recordErr
 		}
-		if plan.HasCode && outcome.Verdict == review.VerdictFix {
-			metrics.FixRoundFired = true
-			r.logf("review fix: running %s", r.Harness.Name())
-			r.progress(issueNum, progress.PhaseFixing, "agent addressing review findings", r.Harness.Name())
-			fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
-			fixStarted := time.Now()
-			if _, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns}); err != nil {
+		if plan.HasCode {
+			for fixRound := 1; outcome.Verdict == review.VerdictFix && fixRound <= r.MaxFixRounds; fixRound++ {
+				metrics.FixRoundFired = true
+				r.logf("review fix %d/%d: running %s", fixRound, r.MaxFixRounds, r.Harness.Name())
+				r.progress(issueNum, progress.PhaseFixing, fmt.Sprintf("agent addressing review findings (%d/%d)", fixRound, r.MaxFixRounds), r.Harness.Name())
+				fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
+				fixStarted := time.Now()
+				if _, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns}); err != nil {
+					metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
+					metrics.FixRoundOutcome = "error"
+					recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
+					if runCtx.Err() == context.DeadlineExceeded {
+						return url, errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
+					}
+					return url, errors.Join(err, recordErr)
+				}
 				metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
-				metrics.FixRoundOutcome = "error"
-				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
-				if runCtx.Err() == context.DeadlineExceeded {
-					return url, errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
+				if _, err := readPR(dir, issue.Title, issueNum); err != nil {
+					return url, err
 				}
-				return url, errors.Join(err, recordErr)
-			}
-			metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
-			if _, err := readPR(dir, issue.Title, issueNum); err != nil {
-				return url, err
-			}
-			if err := removePRArtifact(dir); err != nil {
-				return url, err
-			}
-			fixCommit := fmt.Sprintf("fix: address review findings for #%d", issueNum)
-			if err := r.Git.CommitAll(runCtx, dir, fixCommit); err != nil {
-				return url, fmt.Errorf("commit fix round: %w", err)
-			}
-			verification, err = r.verifyWithResults(runCtx, dir, issueNum, progress.PhaseReverifying)
-			if err != nil {
-				metrics.FixRoundOutcome = "red"
-				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
-				if runCtx.Err() == context.DeadlineExceeded {
-					return url, errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
+				if err := removePRArtifact(dir); err != nil {
+					return url, err
 				}
-				return url, errors.Join(fmt.Errorf("%w: %s failed after fix round: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), err, dir), recordErr)
-			}
-			if err := r.Git.Push(runCtx, dir, branch); err != nil {
-				metrics.FixRoundOutcome = "error"
-				return url, errors.Join(fmt.Errorf("push fix round: %w", err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
-			}
-			outcome, _, pass, err := r.reviewAfterFix(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
-			metrics.Passes = append(metrics.Passes, pass)
-			r.logReviewPass(len(metrics.Passes), pass, err)
-			if err != nil {
-				metrics.FixRoundOutcome = "error"
-				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
-				commentErr := r.GH.CommentPR(ctx, repo, url, reviewFailureComment(2))
-				if commentErr != nil {
-					commentErr = fmt.Errorf("posting review failure for pass 2: %w", commentErr)
+				fixCommit := fmt.Sprintf("fix: address review findings for #%d", issueNum)
+				if err := r.Git.CommitAll(runCtx, dir, fixCommit); err != nil {
+					return url, fmt.Errorf("commit fix round %d: %w", fixRound, err)
 				}
-				return url, errors.Join(err, recordErr, commentErr)
-			}
-			if err := r.GH.CommentPR(ctx, repo, url, reviewPassComment(2, outcome)); err != nil {
-				metrics.FixRoundOutcome = "error"
-				return url, errors.Join(fmt.Errorf("posting review pass 2: %w", err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
+				verification, err = r.verifyWithResults(runCtx, dir, issueNum, progress.PhaseReverifying)
+				if err != nil {
+					metrics.FixRoundOutcome = "red"
+					recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
+					if runCtx.Err() == context.DeadlineExceeded {
+						return url, errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
+					}
+					return url, errors.Join(fmt.Errorf("%w: %s failed after fix round %d: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), fixRound, err, dir), recordErr)
+				}
+				if err := r.Git.Push(runCtx, dir, branch); err != nil {
+					metrics.FixRoundOutcome = "error"
+					return url, errors.Join(fmt.Errorf("push fix round %d: %w", fixRound, err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
+				}
+				outcome, _, pass, err = r.reviewAfterFix(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
+				metrics.Passes = append(metrics.Passes, pass)
+				passNumber := len(metrics.Passes)
+				r.logReviewPass(passNumber, pass, err)
+				if err != nil {
+					metrics.FixRoundOutcome = "error"
+					recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
+					commentErr := r.GH.CommentPR(ctx, repo, url, reviewFailureComment(passNumber))
+					if commentErr != nil {
+						commentErr = fmt.Errorf("posting review failure for pass %d: %w", passNumber, commentErr)
+					}
+					return url, errors.Join(err, recordErr, commentErr)
+				}
+				if err := r.GH.CommentPR(ctx, repo, url, reviewPassComment(passNumber, outcome)); err != nil {
+					metrics.FixRoundOutcome = "error"
+					return url, errors.Join(fmt.Errorf("posting review pass %d: %w", passNumber, err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
+				}
+				if outcome.Verdict == review.VerdictApprove {
+					metrics.FixRoundOutcome = review.FixApproved
+				}
+				if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
+					return url, err
+				}
 			}
 			if outcome.Verdict == review.VerdictFix {
 				metrics.FixRoundOutcome = review.FixBlocking
@@ -386,11 +396,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 				if err := r.GH.AddLabel(runCtx, repo, issueNum, r.changesRequestedLabel()); err != nil {
 					return url, fmt.Errorf("adding %s label: %w", r.changesRequestedLabel(), err)
 				}
-				return url, fmt.Errorf("%w: blocking review findings remain (worktree kept at %s): %s", ErrChangesRequested, dir, blocking)
-			}
-			metrics.FixRoundOutcome = review.FixApproved
-			if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
-				return url, err
+				return url, fmt.Errorf("%w: blocking review findings remain after %d fix rounds (worktree kept at %s): %s", ErrChangesRequested, r.MaxFixRounds, dir, blocking)
 			}
 		}
 	} else {

@@ -125,7 +125,7 @@ func seedConfig(commands []string, reviewEnabled bool) string {
 	}
 	b.WriteString("]\n\n")
 	b.WriteString("[harness]\ndefault = \"codex\"\n")
-	fmt.Fprintf(&b, "\n[review]\nenabled = %t\n", reviewEnabled)
+	fmt.Fprintf(&b, "\n[review]\nenabled = %t\nmax_fix_rounds = 2\n", reviewEnabled)
 	return b.String()
 }
 
@@ -160,7 +160,7 @@ func initLabels(cfg *config.Config) []repoLabel {
 		{cfg.Label, "romp will pick this up and open a pull request"},
 		{cfg.ClaimedLabel, "a romp job is working this issue"},
 		{cfg.BlockedLabel, "romp stopped; the issue is under-scoped"},
-		{cfg.ChangesRequestedLabel, "romp review found blocking findings after one fix round"},
+		{cfg.ChangesRequestedLabel, "romp review found blocking findings after exhausting its fix-round budget"},
 	}
 }
 

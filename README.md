@@ -130,6 +130,12 @@ model     = ""
 effort    = "high"               # claude/codex: reasoning effort; opencode: model-specific variant
 max_turns = 30                   # claude only; ignored by codex and opencode
 
+[review]
+enabled        = true
+model          = ""             # missing or empty uses harness.model
+harness        = ""             # missing or empty uses harness.default
+max_fix_rounds = 2              # each round includes build, verify, push, and review
+
 [prompt]
 template = ".romp/prompt.md"     # optional
 brief    = ".romp/DESIGN.md"     # optional
@@ -146,8 +152,8 @@ keep `local.toml` out of git. `history_days` is global-only (user config).
 
 Omit `timeout` to let jobs run without a deadline. Set it to a Go duration
 string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
-The deadline covers the builder, verification, review, and the optional fix
-round as one job budget.
+The deadline covers the builder, verification, review, and all configured fix
+rounds as one job budget.
 
 State lives outside the repo: `~/.local/state/romp/romp.db` (shared job table),
 `~/.local/state/romp/<owner>-<repo>/logs/`, and worktrees under the cache dir.
@@ -178,7 +184,7 @@ comment — a plausible PR solving the wrong problem costs more than no PR.
 | **done** | PR opened, trigger label removed. |
 | **blocked** | No PR. `romp:blocked` label + gap comment. |
 | **no-changes** | Agent exited clean with no commits. No PR. |
-| **changes-requested** | Verify passed, but blocking review findings remained after one fix round. PR open with both review-pass comments, worktree kept. |
+| **changes-requested** | Verify passed, but blocking review findings remained after the configured fix rounds. PR open with every review-pass comment, worktree kept. |
 | **red** | Verify failed on independent re-run. No PR, trigger label removed, worktree kept. |
 | **timeout** | Exceeded `timeout`. Killed, trigger label removed, worktree kept. |
 | **cancelled** | You cancelled. Worktree, branch, and both labels removed. |

@@ -53,7 +53,7 @@ The runner supplies the complete diff, branch log, changed files, deterministic 
 
 ### Fix round
 
-One round by default: a fresh builder run in the same worktree with unresolved blocking findings embedded as constraints, followed by re-verification (the previous green is stale), push to the PR branch, and re-review. Session resume is available only behind the undocumented `ROMP_FIX_MODE=resume` for experimentation; adjacent evidence (weak intrinsic self-correction, context rot, Reflexion's distilled-feedback retries) favors fresh context with findings embedded. If fix rounds prove common enough that re-read cost matters, promote to documented config with data.
+Two rounds by default, configurable through `review.max_fix_rounds`: each round runs a fresh builder in the same worktree with the current blocking findings embedded as constraints, followed by re-verification (the previous green is stale), push to the PR branch, and re-review. A zero budget records `changes-requested` after the first blocking review. Session resume is available only behind the undocumented `ROMP_FIX_MODE=resume` for experimentation; adjacent evidence (weak intrinsic self-correction, context rot, Reflexion's distilled-feedback retries) favors fresh context with findings embedded.
 
 On exhausted rounds the job records `changes-requested`: distinct from red because verify passed — the code works but does not meet the bar.
 
@@ -70,14 +70,14 @@ Worktrees accumulate across kept outcomes, so gc planning (ADR 0010) eventually 
 
 ### Configurability
 
-Per-repo on/off in `romp.toml`, which governs watch mode; `romp run` takes its own flag to skip the gate for one-shot runs. Separate `review.model` defaulting to the builder's model. Same-harness reviewer by default; cross-harness review (`review.harness`) is allowed. Docs-only diffs skip agentic review entirely — no code files means nothing for the gate to judge beyond what verify covers. Disabled and docs-only runs still open the PR, but post no review-pass comment because no review ran.
+Per-repo on/off and maximum fix rounds in `romp.toml`, which governs watch mode; `romp run` takes its own flag to skip the gate for one-shot runs. Separate `review.model` defaulting to the builder's model. Same-harness reviewer by default; cross-harness review (`review.harness`) is allowed. Docs-only diffs skip agentic review entirely — no code files means nothing for the gate to judge beyond what verify covers. Disabled and docs-only runs still open the PR, but post no review-pass comment because no review ran.
 
 Session IDs (ADR 0012) are a prerequisite only for the experimental resume path, not for the gate itself.
 
 ## Consequences
 
 - Every successful code job passed two independent gates: mechanical verification and adversarial review. A PR can remain open when review fails or requests unresolved changes, with the durable pass record showing why.
-- Per-job cost roughly doubles on clean jobs (one extra harness run) plus one builder round when review blocks.
+- Per-job cost roughly doubles on clean jobs (one extra harness run) and grows by one builder plus one reviewer for each blocking fix round.
 - The outcome taxonomy grows by `changes-requested`; labels grow to match.
 - Lens routing lives in Go, so improving review emphasis is ordinary code, not prompt archaeology.
 - Reviewer calibration is now load-bearing: a noisy reviewer burns fix rounds, a quiet one waves bad code through. Findings rates belong in instrumentation from day one.

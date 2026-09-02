@@ -22,6 +22,7 @@ func TestSeedConfig(t *testing.T) {
 		`changes_requested_label = "romp:changes-requested"`,
 		`[review]`,
 		`enabled = true`,
+		`max_fix_rounds = 2`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("seedConfig missing %q:\n%s", want, got)
@@ -48,6 +49,9 @@ func TestSeedConfig(t *testing.T) {
 	}
 	if !cfg.Review.Enabled {
 		t.Error("round-trip Review.Enabled = false, want true")
+	}
+	if cfg.Review.MaxFixRounds != 2 {
+		t.Errorf("round-trip Review.MaxFixRounds = %d, want 2", cfg.Review.MaxFixRounds)
 	}
 }
 

@@ -11,11 +11,40 @@ func TestDefaults(t *testing.T) {
 	cfg := Defaults()
 	if cfg.Label != "romp" || cfg.ClaimedLabel != "romp:claimed" || cfg.BlockedLabel != "romp:blocked" || cfg.ChangesRequestedLabel != "romp:changes-requested" ||
 		cfg.Width != 3 || cfg.Timeout != "" || cfg.HistoryDays != 30 ||
-		cfg.Harness.Default != "codex" || cfg.Harness.Effort != "high" || !cfg.Review.Enabled {
+		cfg.Harness.Default != "codex" || cfg.Harness.Effort != "high" || !cfg.Review.Enabled || cfg.Review.MaxFixRounds != 2 {
 		t.Fatalf("Defaults() = %+v", cfg)
 	}
 	if cfg.ReviewModel() != cfg.Harness.Model || cfg.ReviewHarness() != cfg.Harness.Default {
 		t.Fatalf("review fallback = model %q, harness %q; want builder settings", cfg.ReviewModel(), cfg.ReviewHarness())
+	}
+}
+
+func TestLoadReviewMaxFixRoundsPrecedence(t *testing.T) {
+	user := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", user)
+	write(t, filepath.Join(user, "romp", "config.toml"), "[review]\nmax_fix_rounds = 4\n")
+
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "[review]\nmax_fix_rounds = 3\n")
+	write(t, filepath.Join(root, ".romp", "local.toml"), "[review]\nmax_fix_rounds = 0\n")
+
+	cfg, err := Load(root, Overrides{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Review.MaxFixRounds != 0 {
+		t.Errorf("Review.MaxFixRounds = %d, want explicit local zero", cfg.Review.MaxFixRounds)
+	}
+}
+
+func TestLoadRejectsNegativeReviewMaxFixRounds(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	write(t, filepath.Join(root, "romp.toml"), "[review]\nmax_fix_rounds = -1\n")
+
+	_, err := Load(root, Overrides{})
+	if err == nil || !strings.Contains(err.Error(), "review.max_fix_rounds must be non-negative") {
+		t.Fatalf("Load error = %v, want non-negative max fix rounds error", err)
 	}
 }
 

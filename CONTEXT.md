@@ -34,7 +34,7 @@ The individual issues a reviewer reports, each with a severity of blocking, non-
 _Avoid_: comments, issues, feedback
 
 **Fix round**:
-One builder re-run in the same worktree with unresolved blocking findings embedded as constraints, followed by re-verification and re-review. Capped at one per job by default.
+One builder re-run in the same worktree with unresolved blocking findings embedded as constraints, followed by re-verification and re-review. Capped by `review.max_fix_rounds`, which defaults to two.
 _Avoid_: retry, iteration
 
 **Cancel**:

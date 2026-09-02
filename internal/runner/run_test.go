@@ -290,12 +290,13 @@ func newTestRunner(t *testing.T, g *fakeGit, c *fakeGH, verify []string) *Runner
 	t.Setenv("HOME", cache)
 	t.Setenv("XDG_CACHE_HOME", cache)
 	return &Runner{
-		Harness: fakeHarness{},
-		Git:     g,
-		GH:      c,
-		Prompt:  &prompt.Renderer{Template: prompt.Default()},
-		Verify:  verify,
-		Stderr:  io.Discard,
+		Harness:      fakeHarness{},
+		Git:          g,
+		GH:           c,
+		Prompt:       &prompt.Renderer{Template: prompt.Default()},
+		Verify:       verify,
+		MaxFixRounds: 2,
+		Stderr:       io.Discard,
 	}
 }
 
@@ -676,6 +677,7 @@ func TestRunReviewGatePaths(t *testing.T) {
 	approve := `{"verdict":"approve","findings":[]}`
 	approveWithNit := `{"verdict":"approve","findings":[{"severity":"nit","file":"internal/a.go","line":4,"description":"Use the existing helper."}]}`
 	fix := `{"verdict":"fix","findings":[{"severity":"blocking","file":"internal/a.go","line":7,"description":"The error path is lost."}]}`
+	fixAgain := `{"verdict":"fix","findings":[{"severity":"blocking","file":"internal/b.go","line":9,"description":"The retry path is lost."}]}`
 	tests := []struct {
 		name          string
 		files         []string
@@ -691,7 +693,8 @@ func TestRunReviewGatePaths(t *testing.T) {
 		{name: "approve first", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: approve}}, wantBuilder: 1, wantReviewer: 1, wantComments: 1},
 		{name: "approve with nits", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: approveWithNit}}, wantBuilder: 1, wantReviewer: 1, wantNit: true, wantComments: 1},
 		{name: "fix then approve", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: approve}}, wantBuilder: 2, wantReviewer: 2, wantFixPrompt: true, wantComments: 2},
-		{name: "fix still blocking", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: fix}}, wantBuilder: 2, wantReviewer: 2, wantErr: ErrChangesRequested, wantFixPrompt: true, wantLabel: true, wantComments: 2},
+		{name: "fix twice then approve", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: fixAgain}, {Output: approve}}, wantBuilder: 3, wantReviewer: 3, wantFixPrompt: true, wantComments: 3},
+		{name: "fix rounds exhausted", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: fix}, {Output: fix}, {Output: fix}}, wantBuilder: 3, wantReviewer: 3, wantErr: ErrChangesRequested, wantFixPrompt: true, wantLabel: true, wantComments: 3},
 		{name: "malformed", files: []string{"internal/a.go"}, reviews: []harness.Result{{Output: "not json"}}, wantBuilder: 1, wantReviewer: 1, wantComments: 1},
 		{name: "docs only", files: []string{"docs/readme.md"}, wantBuilder: 1, wantReviewer: 0},
 	}
@@ -739,8 +742,14 @@ func TestRunReviewGatePaths(t *testing.T) {
 			if tt.wantFixPrompt && !strings.Contains(builder.requests[1].Prompt, "The error path is lost.") {
 				t.Errorf("fix prompt missing blocking finding:\n%s", builder.requests[1].Prompt)
 			}
+			if tt.name == "fix twice then approve" && !strings.Contains(builder.requests[2].Prompt, "The retry path is lost.") {
+				t.Errorf("second fix prompt missing current blocking finding:\n%s", builder.requests[2].Prompt)
+			}
 			if tt.wantFixPrompt {
-				want := []string{"fix: a thing", "fix: address review findings for #7"}
+				want := []string{"fix: a thing"}
+				for range tt.wantBuilder - 1 {
+					want = append(want, "fix: address review findings for #7")
+				}
 				if !slices.Equal(g.commits, want) {
 					t.Errorf("commit subjects = %v, want %v", g.commits, want)
 				}
@@ -793,6 +802,30 @@ func TestRunReviewGatePaths(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRunReviewGateHonorsZeroFixRoundBudget(t *testing.T) {
+	fix := `{"verdict":"fix","findings":[{"severity":"blocking","file":"internal/a.go","line":7,"description":"The error path is lost."}]}`
+	g := &fakeGit{changed: true, onAdd: writePR, files: []string{"internal/a.go"}, diff: "diff --git a/a b/a", log: "abc fix: a thing"}
+	c := &fakeGH{}
+	builder := &sequenceHarness{results: []harness.Result{{}}}
+	reviewer := &sequenceHarness{results: []harness.Result{{Output: fix}}}
+	r := newTestRunner(t, g, c, []string{"true"})
+	r.Harness = builder
+	r.ReviewHarness = reviewer
+	r.ReviewEnabled = true
+	r.MaxFixRounds = 0
+
+	_, err := r.Run(context.Background(), 7)
+	if !errors.Is(err, ErrChangesRequested) {
+		t.Fatalf("Run error = %v, want %v", err, ErrChangesRequested)
+	}
+	if len(builder.requests) != 1 || len(reviewer.requests) != 1 {
+		t.Fatalf("calls = builder:%d reviewer:%d, want 1/1", len(builder.requests), len(reviewer.requests))
+	}
+	if len(c.prComments) != 1 || !slices.Contains(c.added, "7:romp:changes-requested") {
+		t.Errorf("comments/labels = %d/%v, want one review comment and changes-requested label", len(c.prComments), c.added)
 	}
 }
 
