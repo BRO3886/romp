@@ -4,7 +4,15 @@
 
 **Label an issue. Get a pull request.**
 
-`romp` watches a GitHub repo for labelled issues, runs your local coding agent on each in an isolated git worktree, independently re-runs your test commands, and opens a PR. It uses your existing Claude Code, Codex, or OpenCode login — no API keys, no cloud runner.
+`romp` is an opinionated runner for the coding agent you already have. It watches a GitHub repo for labelled issues, runs your agent on each in an isolated git worktree, independently re-runs your test commands, reviews the diff before you do, and opens a PR. It uses your existing Claude Code, Codex, or OpenCode login — no API keys, no cloud runner.
+
+Opinionated means romp makes these calls for you, and does not offer a switch to unmake them:
+
+- **The agent gets a finish line, not a task.** Every job is a goal contract — GATE, DONE, PROVE IT, CONSTRAINTS — and an under-scoped issue is rejected before a single file is edited.
+- **The agent's word is never evidence.** romp re-runs your verify commands itself, in the worktree, after the agent exits.
+- **Every diff is reviewed before you see it.** A read-only review gate fans out across lenses picked from the changed files, and blocking findings go back to the builder as constraints.
+- **romp never merges, and never asks to.** It opens the PR and stops.
+- **Your machine, your login, your agent.** No API keys, no cloud runner, no hosted queue.
 
 > **Pre-alpha.** Breaking changes expected. Do not point this at a repo you can't afford a bad branch on.
 
@@ -73,14 +81,21 @@ romp init --verify "make test" --verify "make lint"
 
 ```
 $ romp watch
-Romp  you/your-project
+ROMP  you/your-project  2 active  ● WATCHING
 
-[Active]  History
+Active 2   History 9
 
-> #17  reviewing       18m32s    reviewer working
-  #21  agent            4m08s    agent working
+╭──────────────────────────────────────────────────────────────╮
+│ ▸ #17  ◈ REVIEWING  CODEX → CLAUDE  18m32s                    │
+│    Synchronize relay device readiness and sender identities   │
+│    reviewer working across 6 lenses (read-only)               │
+│                                                              │
+│   #21  ◆ AGENT  CLAUDE  4m08s                                 │
+│    Retry a failed review verification within budget           │
+│    agent working                                              │
+╰──────────────────────────────────────────────────────────────╯
 
-Tab switch  ↑/↓ navigate  Enter details  q drain and quit
+tab switch   ↑/↓ navigate   enter inspect   q drain
 ```
 
 The interactive dashboard shows each job moving through agent, verification,

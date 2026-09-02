@@ -4,7 +4,7 @@ title: "romp — label an issue, get a pull request"
 theme: "romp-docs"
 
 params:
-  description: "romp watches a GitHub repo for labelled issues, runs your local coding agent in an isolated git worktree, independently re-runs your verify command, and opens a pull request. Uses your existing Claude Code, Codex, or OpenCode login — no API keys, no cloud runner."
+  description: "romp is an opinionated runner for the coding agent you already have. It watches a GitHub repo for labelled issues, works each one in an isolated git worktree, re-runs your verify commands itself, reviews the diff, and opens a pull request. Uses your existing Claude Code, Codex, or OpenCode login — no API keys, no cloud runner."
   author: "Siddhartha Varma"
   logo: "/logo.webp"
   github: "https://github.com/BRO3886/romp"
@@ -20,6 +20,8 @@ params:
     - issue triage automation
     - AI pull requests
     - self-hosted coding agent
+    - opinionated agent runner
+    - automated code review gate
 
 markup:
   highlight:

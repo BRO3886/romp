@@ -11,8 +11,9 @@
         <span class="hero-accent">Get a pull request.</span>
       </h1>
       <p class="hero-sub fade-in delay-1">
-        romp runs your coding agent on labelled issues in an isolated worktree,
-        re-runs your verify command, and opens the PR. No API keys, no cloud runner.
+        An opinionated runner for the coding agent you already have. romp works
+        labelled issues in an isolated worktree, re-runs your verify commands itself,
+        reviews the diff, and opens the PR. No API keys, no cloud runner.
       </p>
       <div class="hero-actions fade-in delay-2">
         <a href="{{ "docs/getting-started/" | relURL }}" class="btn btn-primary">Get Started</a>
@@ -28,8 +29,8 @@
 <section class="terminal-section">
   <div class="terminal-inner">
     <h2 class="section-title" data-reveal>Watch it work</h2>
-    <p class="section-subtitle" data-reveal>romp runs several issues at once. One watcher claims the issue, runs each agent in its own worktree, re&#8209;runs verify, and hands back the pull request links.</p>
-    <div class="terminal">
+    <p class="section-subtitle" data-reveal>This is <code>romp watch</code>, the dashboard you actually get. It is live and it is yours to drive &mdash; press <kbd>tab</kbd>, <kbd>&uarr;</kbd><kbd>&darr;</kbd> and <kbd>enter</kbd>, or just click.</p>
+    <div class="terminal terminal--tui">
       <div class="terminal-header">
         <div class="terminal-dots">
           <span class="dot dot-red"></span>
@@ -38,55 +39,94 @@
         </div>
         <span class="terminal-title">romp watch</span>
       </div>
-      <div class="terminal-body">
-        <div class="terminal-view" id="terminal-view">
-          <div class="terminal-stream" id="terminal-stream">
-            <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">romp watch</span></div>
-            <div class="terminal-line"><span class="t-time">21:47:39</span> <span class="t-muted">watching label "romp" every 1m0s (width 3)</span></div>
-            <div class="terminal-line"><span class="t-time">21:47:43</span> claimed #17</div>
-            <div class="terminal-line"><span class="t-time">21:47:44</span> <span class="t-codename t-slot-0">[sunny_naruto]</span> repo BRO3886/romp, issue #17</div>
-            <div class="terminal-line"><span class="t-time">21:47:46</span> claimed #18</div>
-            <div class="terminal-line"><span class="t-time">21:47:47</span> <span class="t-codename t-slot-0">[sunny_naruto]</span> running codex</div>
-            <div class="terminal-line"><span class="t-time">21:47:48</span> <span class="t-codename t-slot-1">[keen_kakashi]</span> repo BRO3886/romp, issue #18</div>
-            <div class="terminal-line"><span class="t-time">21:47:51</span> claimed #19</div>
-            <div class="terminal-line"><span class="t-time">21:47:52</span> <span class="t-codename t-slot-1">[keen_kakashi]</span> running claude</div>
-            <div class="terminal-line"><span class="t-time">21:47:54</span> <span class="t-codename t-slot-2">[lucky_hinata]</span> repo BRO3886/romp, issue #19</div>
-            <div class="terminal-line"><span class="t-time">21:47:56</span> <span class="t-codename t-slot-2">[lucky_hinata]</span> running codex</div>
-            <div class="terminal-line"><span class="t-time">21:50:12</span> <span class="t-codename t-slot-0">[sunny_naruto]</span> agent took 2m25s</div>
-            <div class="terminal-line"><span class="t-time">21:50:41</span> <span class="t-codename t-slot-0">[sunny_naruto]</span> verify ok (go test ./... -count=1)</div>
-            <div class="terminal-line"><span class="t-time">21:50:44</span> <span class="t-codename t-slot-0">[sunny_naruto]</span> PR: <span class="t-link">https://github.com/BRO3886/romp/pull/482</span></div>
-            <div class="terminal-line"><span class="t-time">21:50:44</span> <span class="t-done">#17: done</span></div>
+      <div class="terminal-body terminal-body--tui">
+        <div class="tui" id="watch-tui" tabindex="0" role="application"
+             aria-roledescription="interactive terminal demo"
+             aria-label="romp watch dashboard. A running demonstration you can navigate with tab, the arrow keys and enter.">
+          <div class="tui-screen" id="watch-screen">
+            <div class="tui-header">
+              <span class="tui-logo">ROMP</span>
+              <span class="tui-repo">BRO3886/romp</span>
+              <span class="tui-meta">2 active</span>
+              <span class="tui-state is-watching">&#9679; WATCHING</span>
+            </div>
+            <div class="tui-tabs">
+              <span class="tui-tab is-on">Active 2</span>
+              <span class="tui-tab">History 9</span>
+            </div>
+            <div class="tui-panel">
+              <div class="tui-row is-selected">
+                <div class="tui-row-head">
+                  <span class="tui-caret">&#9656;</span>
+                  <span class="tui-issue">#17</span>
+                  <span class="tui-phase p-reviewing">&#9672; REVIEWING</span>
+                  <span class="tui-harness"><span class="h-builder">CODEX</span><span class="tui-arrow"> &rarr; </span><span class="h-reviewer is-acting">CLAUDE</span></span>
+                  <span class="tui-elapsed">18m32s</span>
+                </div>
+                <div class="tui-row-title">Synchronize relay device readiness and sender identities</div>
+                <div class="tui-row-detail">reviewer working across 6 lenses (read-only)</div>
+              </div>
+              <div class="tui-row">
+                <div class="tui-row-head">
+                  <span class="tui-caret">&nbsp;</span>
+                  <span class="tui-issue">#21</span>
+                  <span class="tui-phase p-agent">&#9670; AGENT</span>
+                  <span class="tui-harness"><span class="h-builder is-acting">CLAUDE</span></span>
+                  <span class="tui-elapsed">4m08s</span>
+                </div>
+                <div class="tui-row-title">Retry a failed review verification within budget</div>
+                <div class="tui-row-detail">agent working</div>
+              </div>
+            </div>
+            <div class="tui-footer">
+              <span class="tui-key">tab</span> switch
+              <span class="tui-key">&uarr;/&darr;</span> navigate
+              <span class="tui-key">enter</span> inspect
+              <span class="tui-key">q</span> drain
+            </div>
           </div>
         </div>
       </div>
     </div>
+    <p class="tui-caption" data-reveal>
+      Every job shows the phase it is in and the harness acting right now &mdash;
+      <span class="tui-caption-chip"><span class="h-builder">CODEX</span> &rarr; <span class="h-reviewer">CLAUDE</span></span>
+      reads as builder then reviewer. Press <kbd>enter</kbd> on a job to open its phase timeline.
+    </p>
   </div>
 </section>
 
 <section class="why">
   <div class="why-inner">
-    <h2 class="section-title" data-reveal>Why romp</h2>
-    <p class="section-subtitle" data-reveal>Three decisions that separate a pull request you can merge from one you have to re&#8209;read line by line.</p>
+    <h2 class="section-title" data-reveal>Opinions, not options</h2>
+    <p class="section-subtitle" data-reveal>Four calls romp makes on your behalf, and does not offer a switch to unmake. They are what separates a pull request you can merge from one you have to re&#8209;read line by line.</p>
     <div class="why-list">
       <div class="why-row" data-reveal>
         <span class="why-num" aria-hidden="true">01</span>
         <div class="why-body">
           <h3>A finish line, not a task</h3>
-          <p>Every job carries a goal contract — <strong>GATE</strong>, <strong>DONE</strong>, <strong>PROVE IT</strong>, <strong>CONSTRAINTS</strong>. The agent has to meet a stated finish line instead of deciding for itself when it is finished.</p>
+          <p>Every job carries a goal contract — <strong>GATE</strong>, <strong>DONE</strong>, <strong>PROVE IT</strong>, <strong>CONSTRAINTS</strong>. The agent has to meet a stated finish line instead of deciding for itself when it is finished, and an under-scoped issue is rejected before a single file is edited.</p>
         </div>
       </div>
       <div class="why-row" data-reveal>
         <span class="why-num" aria-hidden="true">02</span>
         <div class="why-body">
-          <h3>Independent verification</h3>
-          <p>romp re-runs your verify command itself after the agent exits. A job is done when your test suite says so — never because the agent claimed it.</p>
+          <h3>The agent's word is never evidence</h3>
+          <p>romp re-runs your verify commands itself, in the worktree, after the agent exits. A job is done when your test suite says so — never because the agent claimed it.</p>
         </div>
       </div>
       <div class="why-row" data-reveal>
         <span class="why-num" aria-hidden="true">03</span>
         <div class="why-body">
-          <h3>No API keys, no cloud</h3>
-          <p>romp drives the Claude Code, Codex, or OpenCode CLI you are already logged into, and talks to GitHub through the <code>gh</code> CLI. No extra key, no runner, no new account.</p>
+          <h3>Every diff is reviewed before you see it</h3>
+          <p>A read-only review gate fans out across lenses chosen from the changed files — correctness, tests, security, quality, conventions. Blocking findings go back to the builder as constraints, and the whole job re-verifies. You read a diff that has already survived a critic.</p>
+        </div>
+      </div>
+      <div class="why-row" data-reveal>
+        <span class="why-num" aria-hidden="true">04</span>
+        <div class="why-body">
+          <h3>Your machine, your login, your agent</h3>
+          <p>romp drives the Claude Code, Codex, or OpenCode CLI you are already logged into, and talks to GitHub through the <code>gh</code> CLI. No extra key, no runner, no new account. And romp never merges — it opens the pull request and stops.</p>
         </div>
       </div>
     </div>
@@ -204,7 +244,7 @@
       <details class="faq-item" data-reveal open>
         <summary class="faq-question">What is romp?{{ partial "faq-chevron.html" . }}</summary>
         <div class="faq-answer">
-          <p><strong>romp</strong> is an open-source CLI that watches a GitHub repo for labelled issues, runs your local coding agent (Claude Code, Codex, or OpenCode) on each one in an isolated git worktree, independently re-runs your verify command, and opens a pull request.</p>
+          <p><strong>romp</strong> is an open-source, opinionated CLI that watches a GitHub repo for labelled issues, runs your local coding agent (Claude Code, Codex, or OpenCode) on each one in an isolated git worktree, re-runs your verify commands itself, reviews the resulting diff, and opens a pull request. It is opinionated in the sense that the goal contract, the independent verification, the review gate, and the refusal to merge are not configurable away.</p>
         </div>
       </details>
       <details class="faq-item" data-reveal>
