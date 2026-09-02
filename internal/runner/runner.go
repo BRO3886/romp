@@ -15,6 +15,7 @@ import (
 
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/harness"
+	"github.com/BRO3886/romp/internal/progress"
 	"github.com/BRO3886/romp/internal/prompt"
 	"github.com/BRO3886/romp/internal/review"
 )
@@ -103,6 +104,7 @@ type Runner struct {
 	BlockedLabel          string
 	ChangesRequestedLabel string
 	Stderr                io.Writer
+	Progress              progress.Sink
 }
 
 func (r *Runner) logf(format string, a ...any) {
@@ -111,6 +113,10 @@ func (r *Runner) logf(format string, a ...any) {
 		prefix = "[" + r.Codename + "] "
 	}
 	fmt.Fprintf(r.Stderr, "%s  %s%s\n", time.Now().Format("15:04:05"), prefix, fmt.Sprintf(format, a...))
+}
+
+func (r *Runner) progress(issue int, phase progress.Phase, detail, harnessName string) {
+	r.Progress.Emit(progress.Event{Issue: issue, Phase: phase, Detail: detail, Harness: harnessName})
 }
 
 // triggerLabel returns the configured trigger label, falling back to the
@@ -154,6 +160,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	repo := owner + "/" + name
 	metrics := review.Instrumentation{}
 	r.logf("repo %s, issue #%d", repo, issueNum)
+	r.progress(issueNum, progress.PhasePreparing, "refreshing the base branch", "")
 
 	base := r.Base
 	if base == "" {
@@ -201,6 +208,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 
 	r.logf("worktree %s", dir)
 	r.logf("running %s", r.Harness.Name())
+	r.progress(issueNum, progress.PhaseAgent, "agent working", r.Harness.Name())
 
 	start := time.Now()
 	runCtx := ctx
@@ -266,7 +274,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	}
 
 	r.logf("verify: %s", strings.Join(r.Verify, " && "))
-	verification, err := r.verifyWithResults(runCtx, dir)
+	verification, err := r.verifyWithResults(runCtx, dir, issueNum, progress.PhaseVerifying)
 	if err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("%w: %v", ErrTimeout, err)
@@ -277,6 +285,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	if err := r.Git.Push(runCtx, dir, branch); err != nil {
 		return "", fmt.Errorf("push: %w", err)
 	}
+	r.progress(issueNum, progress.PhasePublishing, "opening pull request", "")
 
 	url, err := r.GH.CreatePR(runCtx, repo, pr.Title, prBody(pr.Body, issueNum), branch, base)
 	if err != nil {
@@ -315,6 +324,8 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		}
 		if plan.HasCode && outcome.Verdict == review.VerdictFix {
 			metrics.FixRoundFired = true
+			r.logf("review fix: running %s", r.Harness.Name())
+			r.progress(issueNum, progress.PhaseFixing, "agent addressing review findings", r.Harness.Name())
 			fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
 			fixStarted := time.Now()
 			if _, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns}); err != nil {
@@ -337,7 +348,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 			if err := r.Git.CommitAll(runCtx, dir, fixCommit); err != nil {
 				return url, fmt.Errorf("commit fix round: %w", err)
 			}
-			verification, err = r.verifyWithResults(runCtx, dir)
+			verification, err = r.verifyWithResults(runCtx, dir, issueNum, progress.PhaseReverifying)
 			if err != nil {
 				metrics.FixRoundOutcome = "red"
 				recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
@@ -424,24 +435,26 @@ func (r *Runner) logReviewPass(number int, pass review.PassInstrumentation, err 
 // verify re-runs each verification command itself in the worktree, in order. The
 // agent's own claim that tests pass is not proof.
 func (r *Runner) verify(ctx context.Context, dir string) error {
-	_, err := r.verifyWithResults(ctx, dir)
+	_, err := r.verifyWithResults(ctx, dir, 0, progress.PhaseVerifying)
 	return err
 }
 
-func (r *Runner) verifyWithResults(ctx context.Context, dir string) ([]prompt.VerificationResult, error) {
+func (r *Runner) verifyWithResults(ctx context.Context, dir string, issue int, phase progress.Phase) ([]prompt.VerificationResult, error) {
 	results := make([]prompt.VerificationResult, 0, len(r.Verify))
-	for _, v := range r.Verify {
+	for i, v := range r.Verify {
 		if strings.TrimSpace(v) == "" {
 			return nil, fmt.Errorf("empty verify command")
 		}
 		cmd := exec.CommandContext(ctx, "sh", "-c", v)
 		cmd.Dir = dir
+		r.progress(issue, phase, fmt.Sprintf("%d/%d %s", i+1, len(r.Verify), v), "")
+		started := time.Now()
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return nil, fmt.Errorf("%s", out)
 		}
 		results = append(results, prompt.VerificationResult{Command: v, ExitCode: 0, Output: string(out)})
-		r.logf("verify ok (%s):\n%s", v, out)
+		r.logf("verify ok (%s) in %s", v, time.Since(started).Round(time.Millisecond))
 	}
 	return results, nil
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/job"
+	"github.com/BRO3886/romp/internal/progress"
 	"github.com/BRO3886/romp/internal/runner"
 )
 
@@ -400,6 +401,30 @@ func TestRunJobRecordsHistory(t *testing.T) {
 	}
 	if store.finished[0].Outcome != "done" || store.finished[0].PRURL != "https://github.com/o/r/pull/1" {
 		t.Errorf("outcome = %+v, want done with PR URL", store.finished[0])
+	}
+}
+
+func TestRunJobEmitsTerminalDashboardEvent(t *testing.T) {
+	ghc := &fakeGH{}
+	store := newFakeStore()
+	store.rows[7] = true
+	var events []progress.Event
+	w := &Watcher{
+		Repo: "o/r", Trigger: "romp", Claim: "romp:claimed", GH: ghc, Store: store,
+		Progress: func(event progress.Event) { events = append(events, event) },
+	}
+	w.RunJob = func(context.Context, int) (string, error) {
+		return "https://github.com/o/r/pull/1", nil
+	}
+
+	w.runJobSync(t, 7)
+
+	if len(events) != 1 {
+		t.Fatalf("events = %+v, want one terminal event", events)
+	}
+	event := events[0]
+	if !event.Terminal || event.Phase != progress.PhaseDone || event.Outcome != "done" || event.URL != "https://github.com/o/r/pull/1" {
+		t.Fatalf("terminal event = %+v", event)
 	}
 }
 

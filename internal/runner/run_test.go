@@ -15,6 +15,7 @@ import (
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/harness"
 	"github.com/BRO3886/romp/internal/job"
+	"github.com/BRO3886/romp/internal/progress"
 	"github.com/BRO3886/romp/internal/prompt"
 	"github.com/BRO3886/romp/internal/review"
 )
@@ -403,6 +404,49 @@ func TestRunRecordsAndLogsSessionAfterHarnessSuccess(t *testing.T) {
 	}
 }
 
+func TestRunKeepsSuccessfulVerificationOutputOutOfLogs(t *testing.T) {
+	g := &fakeGit{changed: true, onAdd: writePR}
+	var logs strings.Builder
+	t.Setenv("ROMP_TEST_VERIFY_OUTPUT", "large-build-output")
+	r := newTestRunner(t, g, &fakeGH{}, []string{`printf "$ROMP_TEST_VERIFY_OUTPUT"`})
+	r.Stderr = &logs
+
+	if _, err := r.Run(context.Background(), 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if strings.Contains(logs.String(), "large-build-output") {
+		t.Fatalf("successful command output leaked into logs:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "verify ok (printf \"$ROMP_TEST_VERIFY_OUTPUT\")") {
+		t.Fatalf("compact verification result missing from logs:\n%s", logs.String())
+	}
+}
+
+func TestRunEmitsDashboardPhases(t *testing.T) {
+	g := &fakeGit{changed: true, onAdd: writePR}
+	r := newTestRunner(t, g, &fakeGH{}, []string{"true"})
+	var phases []progress.Phase
+	r.Progress = func(event progress.Event) {
+		if event.Issue != 7 {
+			t.Errorf("event issue = %d, want 7", event.Issue)
+		}
+		phases = append(phases, event.Phase)
+	}
+
+	if _, err := r.Run(context.Background(), 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := []progress.Phase{
+		progress.PhasePreparing,
+		progress.PhaseAgent,
+		progress.PhaseVerifying,
+		progress.PhasePublishing,
+	}
+	if !slices.Equal(phases, want) {
+		t.Fatalf("phases = %v, want %v", phases, want)
+	}
+}
+
 func TestRunDoesNotRecordSessionWhenHarnessFails(t *testing.T) {
 	g := &fakeGit{changed: true, onAdd: writePR}
 	c := &fakeGH{}
@@ -723,7 +767,13 @@ func TestRunReviewGatePaths(t *testing.T) {
 				if instrumentation.metrics.ReviewRan || instrumentation.metrics.SkipReason != review.SkipDocsOnly {
 					t.Errorf("docs-only instrumentation = %+v", instrumentation.metrics)
 				}
+				if strings.Contains(logs.String(), "review: running") {
+					t.Errorf("docs-only job claimed reviewer started:\n%s", logs.String())
+				}
 			} else {
+				if !strings.Contains(logs.String(), "review: running sequence (read-only)") {
+					t.Errorf("logs missing reviewer start:\n%s", logs.String())
+				}
 				if !instrumentation.metrics.ReviewRan || len(instrumentation.metrics.Passes) != tt.wantReviewer {
 					t.Errorf("review instrumentation = %+v, want %d passes", instrumentation.metrics, tt.wantReviewer)
 				}

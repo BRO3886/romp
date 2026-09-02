@@ -10,7 +10,7 @@ directory (resolved from its `origin` remote) unless noted.
 | Command | What it does |
 | --- | --- |
 | `romp init` | Write `romp.toml`, create the labels, update `.gitignore`. |
-| `romp watch` | Poll and work labelled issues. One repo, foreground. |
+| `romp watch` | Open the interactive job dashboard and work labelled issues. |
 | `romp run -i N` | Run one issue now, ignoring the label. |
 | `romp status` | In-flight jobs. `--all` for every repo. |
 | `romp history` | Recently finished jobs. `--all` for every repo. `--review` for reviewer calibration. |
@@ -48,6 +48,19 @@ Poll for trigger-labelled issues and work them at `width`.
 ```bash
 romp watch
 ```
+
+On an interactive terminal, `watch` shows active jobs and recent history in a
+full-screen dashboard. Each active job exposes its current agent, verification,
+review, fix, or publication phase and the harness currently acting. History and
+job details retain both builder and reviewer harness identities. Use Tab to
+switch views, the arrow keys to navigate, Enter to inspect a job's phase
+timeline, and Escape to return.
+
+Successful verification output stays out of the job log. The log records the
+command, duration, and result, while a failed command retains its output for
+diagnosis. Non-interactive runs keep line-oriented output for scripts and
+service managers. Line output announces each read-only reviewer immediately
+before its process starts.
 
 The poll predicate is "has the trigger label and does not have the claim
 label". The poll interval is fixed at 60 seconds.

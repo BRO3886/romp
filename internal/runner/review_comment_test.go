@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/BRO3886/romp/internal/harness"
+	"github.com/BRO3886/romp/internal/progress"
 	"github.com/BRO3886/romp/internal/review"
 )
 
@@ -63,6 +64,10 @@ func TestRunOrdersPullRequestAndReviewPasses(t *testing.T) {
 	r.Harness = builder
 	r.ReviewHarness = reviewer
 	r.ReviewEnabled = true
+	var logs strings.Builder
+	r.Stderr = &logs
+	var progressEvents []progress.Event
+	r.Progress = func(event progress.Event) { progressEvents = append(progressEvents, event) }
 
 	if _, err := r.Run(context.Background(), 7); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -76,6 +81,27 @@ func TestRunOrdersPullRequestAndReviewPasses(t *testing.T) {
 	}
 	if len(c.prComments) != 2 {
 		t.Fatalf("PR comments = %d, want two", len(c.prComments))
+	}
+	if strings.Count(logs.String(), "review: running sequence (read-only)") != 2 || !strings.Contains(logs.String(), "review fix: running sequence") {
+		t.Errorf("review lifecycle logs missing:\n%s", logs.String())
+	}
+	var reviewStarts, fixStarts int
+	for _, event := range progressEvents {
+		switch event.Phase {
+		case progress.PhaseReviewing, progress.PhaseRereviewing:
+			reviewStarts++
+			if event.Harness != "sequence" || !strings.Contains(event.Detail, "read-only") {
+				t.Errorf("review event = %+v", event)
+			}
+		case progress.PhaseFixing:
+			fixStarts++
+			if event.Harness != "sequence" {
+				t.Errorf("fix event = %+v", event)
+			}
+		}
+	}
+	if reviewStarts != 2 || fixStarts != 1 {
+		t.Errorf("review/fix starts = %d/%d, want 2/1", reviewStarts, fixStarts)
 	}
 	if !strings.Contains(c.prComments[0], "pass 1") || !strings.Contains(c.prComments[0], "The error path is lost.") {
 		t.Errorf("pass 1 comment = %q", c.prComments[0])
