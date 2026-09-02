@@ -32,9 +32,10 @@ effort    = "high"               # claude/codex: reasoning effort; opencode: mod
 max_turns = 30                   # claude only; ignored by codex and opencode
 
 [review]
-enabled = true
-model   = ""                     # missing or empty uses harness.model
-harness = ""                     # missing or empty uses harness.default
+enabled        = true
+model          = ""             # missing or empty uses harness.model
+harness        = ""             # missing or empty uses harness.default
+max_fix_rounds = 2              # each round includes build, verify, push, and review
 
 [prompt]
 template = ".romp/prompt.md"     # optional
@@ -54,7 +55,8 @@ Zero means "use the lower layer" for builder settings. This applies to a zero
 `width`, an empty `base`, an unset `max_turns`, and other empty strings. Review
 settings have separate rules. `review.enabled` uses normal field-level layering,
 so omission retains the lower-layer value and an explicit `false` disables
-review. A higher-precedence `[review]` table resets `review.model` and
+review. `review.max_fix_rounds` also uses field-level layering, including an
+explicit zero. A higher-precedence `[review]` table resets `review.model` and
 `review.harness` to the effective builder settings unless that table supplies
 non-empty replacements. Missing and explicit empty values both select
 `harness.model` and `harness.default`, not lower-layer reviewer overrides.
@@ -70,8 +72,9 @@ operator concern, not a team convention.
 
 Omit `timeout` to let jobs run without a deadline. Set it to a Go duration
 string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
-The deadline covers the builder, verification, read-only review, and optional
-fix round as one budget. Review does not consume another width slot.
+The deadline covers the builder, verification, read-only review, and all
+configured fix rounds as one budget. Review does not consume another job-width
+slot, but each pass starts one concurrent harness process per routed lens.
 
 ## Full reference
 
@@ -80,7 +83,7 @@ fix round as one budget. Review does not consume another width slot.
 | `label` | `romp` | The trigger label. |
 | `claimed_label` | `romp:claimed` | Marks an issue as taken. |
 | `blocked_label` | `romp:blocked` | Marks an under-scoped issue. |
-| `changes_requested_label` | `romp:changes-requested` | Marks a job whose blocking review findings survived one fix round. |
+| `changes_requested_label` | `romp:changes-requested` | Marks a job whose blocking review findings exhausted the configured fix rounds. |
 | `base` | repo default branch | Branch worktrees fork from. |
 | `width` | `3` | Max concurrent jobs in this repo. |
 | `timeout` | unbounded | Optional per-job deadline as a Go duration string. |
@@ -91,9 +94,10 @@ fix round as one budget. Review does not consume another width slot.
 | `harness.model` | — | Specific model, or empty for the harness default. |
 | `harness.effort` | `high` | Reasoning effort for Claude/Codex; model-specific OpenCode variant (see below). |
 | `harness.max_turns` | — | Turn cap, claude only. |
-| `review.enabled` | `true` | Enables the review gate for watched and one-shot jobs. |
+| `review.enabled` | `true` | Enables the review gate for watched and one-shot jobs. Each pass runs one concurrent reviewer call per routed lens. |
 | `review.model` | builder model | Reviewer model; missing or empty uses `harness.model`. |
 | `review.harness` | builder harness | Reviewer harness; missing or empty uses `harness.default`. |
+| `review.max_fix_rounds` | `2` | Maximum builder, verification, push, and re-review cycles after a blocking review. Set `0` to report `changes-requested` without a fix attempt. |
 | `prompt.template` | — | Custom goal-contract template. |
 | `prompt.brief` | — | File the agent reads first (e.g. `.romp/DESIGN.md`). |
 | `history_days` | `30` | Global only; outcome retention window. |

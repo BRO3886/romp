@@ -296,6 +296,7 @@ func TestBuildRunnerWiresConfig(t *testing.T) {
 
 	cfg := config.Defaults()
 	cfg.Harness.MaxTurns = 7
+	cfg.Review.MaxFixRounds = 3
 	cfg.ChangesRequestedLabel = "team-review"
 	cfg.Scope.Ignore = []string{"vendor/**"}
 	cfg.Prompt.Template = "prompt.md"
@@ -316,6 +317,9 @@ func TestBuildRunnerWiresConfig(t *testing.T) {
 	}
 	if r.MaxTurns != 7 {
 		t.Errorf("MaxTurns = %d, want 7", r.MaxTurns)
+	}
+	if r.MaxFixRounds != 3 {
+		t.Errorf("MaxFixRounds = %d, want 3", r.MaxFixRounds)
 	}
 	if r.ChangesRequestedLabel != "team-review" {
 		t.Errorf("ChangesRequestedLabel = %q, want team-review", r.ChangesRequestedLabel)

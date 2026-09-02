@@ -171,6 +171,7 @@ func (f runnerFactory) build() (*runner.Runner, error) {
 		Model:                 f.config.Harness.Model,
 		ReviewModel:           f.config.ReviewModel(),
 		ReviewEnabled:         f.config.Review.Enabled,
+		MaxFixRounds:          f.config.Review.MaxFixRounds,
 		Effort:                f.config.Harness.Effort,
 		MaxTurns:              f.config.Harness.MaxTurns,
 		Base:                  f.config.Base,

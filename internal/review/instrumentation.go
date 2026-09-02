@@ -9,13 +9,14 @@ const (
 	FixBlocking  = "blocking"
 )
 
-// PassInstrumentation records one reviewer harness pass.
+// PassInstrumentation records one aggregated review pass.
 type PassInstrumentation struct {
 	Verdict     Verdict `json:"verdict"`
 	Blocking    int     `json:"blocking"`
 	NonBlocking int     `json:"non_blocking"`
 	Nit         int     `json:"nit"`
 	DurationMS  int64   `json:"duration_ms"`
+	LensCount   int     `json:"lens_count,omitempty"`
 }
 
 // Instrumentation records the review-gate facts for one job.

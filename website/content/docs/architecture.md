@@ -70,10 +70,14 @@ machinery to claim, isolate, and verify work.
    "tests pass" is never trusted.
 6. **Push and PR** — after verification passes, romp pushes the builder commit
    and opens the PR. PR creation must succeed before review starts.
-7. **Review** — code changes go through one read-only reviewer in the same job
-   slot. Each parsed pass becomes a separate PR comment. Blocking findings get
-   one builder fix round on the same branch, followed by fresh verification,
-   push, and review. Documentation-only changes skip review but still open a PR.
+7. **Review** — code changes go through one concurrent read-only reviewer call
+   per routed lens in the same job slot. Romp merges all lens outcomes into one
+   pass and posts one PR comment. Any failed lens fails the whole pass instead
+   of allowing partial approval. Blocking findings get up to
+   `review.max_fix_rounds` builder rounds on the same branch. Each round includes
+   fresh verification, push, and a fresh lens fan-out. Re-review receives the
+   prior findings and builder reports, but still sweeps for newly introduced
+   defects. Documentation-only changes skip review but still open a PR.
 8. **Complete or recover** — approval removes the trigger label. Unresolved
    review findings become `changes-requested`. Review failures leave the PR and
    worktree available with a distinct failure comment.

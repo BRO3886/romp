@@ -26,7 +26,7 @@ An outcome where the review gate found blocking findings that were not cleared w
 _Avoid_: red, review-failed, rejected
 
 **Review gate**:
-The check after verification, push, and PR creation where a read-only reviewer run evaluates the diff against the issue and repo standards; a single reviewer receives the lens plan romp computed from the changed files, and each parsed pass is recorded as a separate PR comment.
+The check after verification, push, and PR creation where parallel read-only reviewer runs evaluate the diff against the issue and repo standards; romp runs one focused review per computed lens, merges the outcomes into one pass, and records each pass as a separate PR comment.
 _Avoid_: code review, QA, critic
 
 **Findings**:
@@ -34,7 +34,7 @@ The individual issues a reviewer reports, each with a severity of blocking, non-
 _Avoid_: comments, issues, feedback
 
 **Fix round**:
-One builder re-run in the same worktree with unresolved blocking findings embedded as constraints, followed by re-verification and re-review. Capped at one per job by default.
+One builder re-run in the same worktree with unresolved blocking findings embedded as constraints, followed by re-verification and re-review. Capped by `review.max_fix_rounds`, which defaults to two.
 _Avoid_: retry, iteration
 
 **Cancel**:

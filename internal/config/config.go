@@ -53,9 +53,10 @@ type Harness struct {
 
 // Review configures the review gate independently from the builder.
 type Review struct {
-	Enabled bool   `toml:"enabled"`
-	Model   string `toml:"model"`
-	Harness string `toml:"harness"`
+	Enabled      bool   `toml:"enabled"`
+	Model        string `toml:"model"`
+	Harness      string `toml:"harness"`
+	MaxFixRounds int    `toml:"max_fix_rounds"`
 }
 
 // Prompt points at optional custom goal-contract files.
@@ -75,7 +76,7 @@ func Defaults() Config {
 		Width:                 3,
 		HistoryDays:           30,
 		Harness:               Harness{Default: "codex", Effort: "high"},
-		Review:                Review{Enabled: true},
+		Review:                Review{Enabled: true, MaxFixRounds: 2},
 	}
 }
 
@@ -143,6 +144,9 @@ func Load(root string, o Overrides) (*Config, error) {
 	}
 	if err := validateHarnessName(cfg.ReviewHarness()); err != nil {
 		return nil, fmt.Errorf("review.harness: %w", err)
+	}
+	if cfg.Review.MaxFixRounds < 0 {
+		return nil, fmt.Errorf("review.max_fix_rounds must be non-negative")
 	}
 	return &cfg, nil
 }
@@ -231,6 +235,9 @@ func overlay(dst *Config, src *Config, global bool, metadata toml.MetaData) {
 	if metadata.IsDefined("review") {
 		dst.Review.Model = src.Review.Model
 		dst.Review.Harness = src.Review.Harness
+	}
+	if metadata.IsDefined("review", "max_fix_rounds") {
+		dst.Review.MaxFixRounds = src.Review.MaxFixRounds
 	}
 	if src.Prompt.Template != "" {
 		dst.Prompt.Template = src.Prompt.Template
