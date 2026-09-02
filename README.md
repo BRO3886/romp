@@ -20,6 +20,18 @@
 go install github.com/BRO3886/romp/cmd/romp@latest
 ```
 
+Romp includes the `rompify` agent skill. Install it for a detected agent, or
+select one explicitly:
+
+```bash
+romp skills install --agent codex
+romp skills install --agent claude
+romp skills install --agent codex --dry-run
+```
+
+The skill turns short requests and existing GitHub issues into deterministic,
+repository-grounded execution contracts. It does not implement the issue.
+
 ## Quickstart
 
 `romp` reads the repo from your current directory's `origin` remote.
@@ -94,6 +106,7 @@ scripts and service managers. Ctrl-C drains; twice kills.
 | `cancel <issue>` | Kill a running job and abandon it. |
 | `gc` | Remove stale worktrees and old history. Dry-run unless `--apply`. |
 | `doctor` | Check git, gh auth, harness, config. |
+| `skills install\|uninstall\|status` | Manage the bundled `rompify` agent skill. |
 
 `run` takes repeatable `--verify`, `--harness`, `--model`, and `--effort` flags to override config.
 For OpenCode, `--effort` selects the model-specific `--variant` value.

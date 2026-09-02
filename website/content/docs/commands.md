@@ -18,6 +18,36 @@ directory (resolved from its `origin` remote) unless noted.
 | `romp cancel <issue>` | Kill a running job and abandon it. |
 | `romp gc` | Remove stale worktrees and old history. Dry-run unless `--apply`. |
 | `romp doctor` | Check git, gh auth, harness, config. |
+| `romp skills install\|uninstall\|status` | Manage the bundled `rompify` agent skill. |
+
+## `romp skills`
+
+Romp embeds the `rompify` skill in every binary. The skill inspects a repository
+and converts a short request or existing GitHub issue into a deterministic
+execution contract. It does not implement or run the issue.
+
+```bash
+romp skills install                   # install for detected agents
+romp skills install --agent codex     # Codex CLI only
+romp skills install --agent claude    # Claude Code only
+romp skills install --agent openclaw  # OpenClaw only
+romp skills install --agent all       # every supported agent
+romp skills install --dry-run         # preview exact files
+romp skills status
+romp skills uninstall --agent codex
+```
+
+Install writes `rompify/` below the selected agent's skill directory and records
+the binary version in `.romp-version`. Running install again replaces that
+directory with the skill bundled in the current binary. Without `--agent`,
+install targets detected agent configuration directories. It fails without
+writing when no supported agent is detected.
+
+| Agent | Installation path |
+| --- | --- |
+| Claude Code | `~/.claude/skills/rompify/` |
+| Codex CLI | `~/.agents/skills/rompify/` |
+| OpenClaw | `~/.openclaw/skills/rompify/` |
 
 ## `romp run`
 

@@ -46,6 +46,20 @@ make build
 # Binary at ./bin/romp
 ```
 
+## Install the agent skill
+
+The release binary includes `rompify`, an agent skill that converts short
+requests and existing GitHub issues into repository-grounded execution
+contracts. Install it into an agent's skill directory:
+
+```bash
+romp skills install --agent codex
+```
+
+Use `--agent claude`, `--agent openclaw`, or `--agent all` for other targets.
+Add `--dry-run` to preview the exact files. The skill becomes available in the
+next agent session.
+
 ## Quickstart
 
 romp reads the repo from your current directory's `origin` remote.
