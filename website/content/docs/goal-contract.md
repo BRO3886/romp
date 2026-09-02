@@ -46,14 +46,15 @@ reaches the diff.
 When the artifact is missing or malformed, romp falls back to safe defaults:
 the issue title, a conventional commit, and `Closes #N`.
 
-The review gate uses a different contract. The read-only reviewer writes no
-artifact. It returns one strict JSON document through `harness.Result.Output`.
-An empty, malformed, or semantically invalid document is an error, never an
-implicit approval. The runner supplies the diff, branch log, changed files,
-lens plan, verification transcript, and convention references, then parses and
-consumes the typed review outcome. The runner records each parsed outcome as a
-separate PR comment. The review renderer and parser perform no filesystem
-discovery or harness calls.
+The review gate uses a different contract. Romp starts one independent,
+read-only reviewer call per routed lens. Each call writes no artifact and
+returns one strict JSON document through `harness.Result.Output`. An empty,
+malformed, or semantically invalid document is an error, never an implicit
+approval. The runner supplies the diff, branch log, changed files, focused
+lens, verification transcript, builder reports, prior review outcomes, and
+convention references. It parses every outcome and merges them into one logical
+pass. The runner records that pass as one PR comment. The review renderer,
+parser, and outcome merger perform no filesystem discovery or harness calls.
 
 ## Customizing the prompt
 

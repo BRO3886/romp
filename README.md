@@ -77,7 +77,7 @@ history. Active jobs identify the harness currently acting, while history and
 details retain both builder and reviewer identities. Enter opens the selected
 job's phase timeline. Successful verification output is not copied into the job
 log; failures retain their diagnostic output. A reviewer-start line is emitted
-immediately before each read-only review harness begins.
+immediately before each concurrent read-only lens fan-out begins.
 When stdout is not a terminal, `watch` keeps the line-oriented output used by
 scripts and service managers. Ctrl-C drains; twice kills.
 

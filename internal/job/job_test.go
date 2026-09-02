@@ -139,8 +139,8 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 	metrics := review.Instrumentation{
 		ReviewRan: true, BuilderDurationMS: 1200, FixRoundFired: true, FixRoundOutcome: review.FixApproved,
 		Passes: []review.PassInstrumentation{
-			{Verdict: review.VerdictFix, Blocking: 1, DurationMS: 400},
-			{Verdict: review.VerdictApprove, Nit: 1, DurationMS: 200},
+			{Verdict: review.VerdictFix, Blocking: 1, DurationMS: 400, LensCount: 6},
+			{Verdict: review.VerdictApprove, Nit: 1, DurationMS: 200, LensCount: 6},
 		},
 	}
 	if err := s.SetReviewInstrumentation(ctx, "o/r", 7, metrics); err != nil {
@@ -185,7 +185,7 @@ func TestFinishMovesRowToHistory(t *testing.T) {
 	if o.BuilderHarness != "codex" || o.ReviewerHarness != "claude" {
 		t.Errorf("historical harnesses = %q/%q, want codex/claude", o.BuilderHarness, o.ReviewerHarness)
 	}
-	if !o.Review.ReviewRan || o.Review.BuilderDurationMS != 1200 || len(o.Review.Passes) != 2 || o.Review.Passes[0].Blocking != 1 {
+	if !o.Review.ReviewRan || o.Review.BuilderDurationMS != 1200 || len(o.Review.Passes) != 2 || o.Review.Passes[0].Blocking != 1 || o.Review.Passes[0].LensCount != 6 {
 		t.Errorf("Review = %+v, want persisted instrumentation", o.Review)
 	}
 }

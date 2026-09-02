@@ -6,7 +6,7 @@ Status: accepted
 
 The done contract (ADR 0001) is verify passes plus an opened PR. Verify proves the code works; nothing checks that the change is correct, complete against the issue, or meets repo standards. A builder grading its own diff is self-agreement: the same assumption written twice, in one context window.
 
-Multi-lens review designs (a coordinator agent routing to specialist reviewer subagents) were considered and rejected: once routing and synthesis are deterministic work, the coordinator context buys nothing, and per-lens harness runs multiply cost N× for marginal independence.
+The original gate sent every routed lens to one reviewer. Production history showed that this encouraged early stopping and diluted attention across five to seven concerns. Later passes then found defects that already existed in the first diff. Fix builders also reported test and static-analysis work that the next reviewer could not see, so it sometimes repeated already completed requests.
 
 ## Decision
 
@@ -20,18 +20,24 @@ Every successfully parsed pass is posted as a new ordinary PR comment before the
 
 A harness or parsing failure is not a finding. Romp leaves the PR and worktree in place and posts a distinct comment that says the review did not complete. If PR creation or review-comment publication fails, the pipeline stops before any later reviewer or builder run.
 
-### One consolidated reviewer
+### Focused lens fan-out
 
-Romp runs **one** read-only harness run as the reviewer. Romp itself does the deterministic work in Go and bakes it into the review goal contract:
+Romp runs one independent read-only harness invocation for every lens in the deterministic review plan. The invocations run concurrently within the job deadline. Each invocation receives:
 
 - the diff against base and the changed-file list;
-- a lens plan computed from the changed files (path-token classification: security scrutiny when paths touch auth/crypto/secrets, language conventions from file types);
+- one focused lens selected from the changed-file plan (path-token classification adds security scrutiny when paths touch auth, crypto, or secrets, and language conventions come from file types);
 - discovered repo review skills and conventions as references;
 - verify results;
+- reports from every builder run;
+- all prior review outcomes during re-review;
 - the issue title and body — the reviewer judges **spec compliance** (is this complete against what the issue asked), not just code mistakes;
 - the artifact contract below.
 
-Synthesis is mechanical in Go: any blocking finding triggers the fix round; otherwise the job proceeds.
+The prompt requires each lens to inspect every relevant changed file and not stop after its first finding. A re-review must check prior findings and also perform a fresh sweep, because a fix can introduce a different defect. Builder reports provide evidence for report-only requirements such as showing a RED run, but they do not replace Romp's independent verification transcript.
+
+Synthesis is mechanical in Go. Romp preserves lens-plan order, deduplicates identical file, line, and description tuples, and promotes duplicates to the highest reported severity. Any blocking finding triggers the fix round. Otherwise the job proceeds. Romp posts only the merged pass to the PR, not one comment per lens.
+
+The pass is all-or-nothing. A harness failure, panic, invalid result, or deadline in any lens cancels the sibling invocations and fails the entire pass. Romp never treats a partial set of lens results as approval.
 
 ### Read-only enforcement
 
@@ -49,7 +55,7 @@ The common shape: every harness enforces explicit denials, none enforces allowli
 
 The reviewer returns one strict JSON document as `harness.Result.Output`; it writes no review file. The document contains a verdict (`approve` | `fix`) and findings with severities (`blocking`, `non-blocking`, `nit`). A successful harness exit with empty, malformed, or semantically invalid output is an error, never an implicit approve. One or more blocking findings under `fix` make the fix round mandatory. An `approve` verdict may contain non-blocking findings and nits, but never a blocking finding.
 
-The runner supplies the complete diff, branch log, changed files, deterministic lens plan, verification transcript, and convention references to the review prompt. It then parses `harness.Result.Output` and consumes the typed outcome. The renderer and parser remain pure: they do not discover inputs, inspect configuration, invoke a harness, or access the filesystem.
+The runner supplies the complete diff, branch log, changed files, focused lens, verification transcript, builder reports, prior outcomes, and convention references to each review prompt. It parses every `harness.Result.Output`, merges the typed outcomes, and consumes one logical pass. The renderer, parser, and outcome merger remain pure: they do not discover inputs, inspect configuration, invoke a harness, or access the filesystem.
 
 ### Fix round
 
@@ -77,7 +83,7 @@ Session IDs (ADR 0012) are a prerequisite only for the experimental resume path,
 ## Consequences
 
 - Every successful code job passed two independent gates: mechanical verification and adversarial review. A PR can remain open when review fails or requests unresolved changes, with the durable pass record showing why.
-- Per-job cost roughly doubles on clean jobs (one extra harness run) and grows by one builder plus one reviewer for each blocking fix round.
+- Review compute grows with the routed lens count. The invocations run concurrently, so pass latency is approximately the slowest lens rather than the sum of all lenses, but each lens still consumes a separate harness call. Each blocking fix round adds one builder run plus another full lens fan-out.
 - The outcome taxonomy grows by `changes-requested`; labels grow to match.
 - Lens routing lives in Go, so improving review emphasis is ordinary code, not prompt archaeology.
-- Reviewer calibration is now load-bearing: a noisy reviewer burns fix rounds, a quiet one waves bad code through. Findings rates belong in instrumentation from day one.
+- Reviewer calibration is now load-bearing: a noisy reviewer burns fix rounds, a quiet one waves bad code through. Findings rates, aggregate pass duration, and lens count belong in instrumentation from day one.

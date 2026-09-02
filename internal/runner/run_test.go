@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -207,21 +208,39 @@ func (f fakeHarness) Run(ctx context.Context, _ harness.Request) (harness.Result
 }
 
 type sequenceHarness struct {
-	results  []harness.Result
-	requests []harness.Request
-	delay    time.Duration
-	event    string
-	events   *[]string
+	mu               sync.Mutex
+	results          []harness.Result
+	requests         []harness.Request
+	delay            time.Duration
+	event            string
+	events           *[]string
+	reviewPassEvents map[int]bool
 }
 
 func (f *sequenceHarness) Name() string                          { return "sequence" }
 func (f *sequenceHarness) Check(context.Context) (string, error) { return "sequence", nil }
 func (f *sequenceHarness) Run(_ context.Context, req harness.Request) (harness.Result, error) {
 	time.Sleep(f.delay)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.requests = append(f.requests, req)
+	if req.ReadOnly {
+		pass := strings.Count(req.Prompt, " verdict: ")
+		if pass >= len(f.results) {
+			return harness.Result{}, errors.New("unexpected harness call")
+		}
+		if f.reviewPassEvents == nil {
+			f.reviewPassEvents = make(map[int]bool)
+		}
+		if !f.reviewPassEvents[pass] && f.events != nil && f.event != "" {
+			*f.events = append(*f.events, f.event)
+			f.reviewPassEvents[pass] = true
+		}
+		return f.results[pass], nil
+	}
 	if f.events != nil && f.event != "" {
 		*f.events = append(*f.events, f.event)
 	}
-	f.requests = append(f.requests, req)
 	if len(f.results) == 0 {
 		return harness.Result{}, errors.New("unexpected harness call")
 	}
@@ -725,8 +744,12 @@ func TestRunReviewGatePaths(t *testing.T) {
 			} else if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
-			if len(builder.requests) != tt.wantBuilder || len(reviewer.requests) != tt.wantReviewer {
-				t.Fatalf("calls = builder:%d reviewer:%d, want %d/%d", len(builder.requests), len(reviewer.requests), tt.wantBuilder, tt.wantReviewer)
+			wantReviewCalls := 0
+			if tt.wantReviewer > 0 {
+				wantReviewCalls = tt.wantReviewer * len(review.BuildPlan(tt.files, false).Lenses)
+			}
+			if len(builder.requests) != tt.wantBuilder || len(reviewer.requests) != wantReviewCalls {
+				t.Fatalf("calls = builder:%d reviewer:%d, want %d/%d", len(builder.requests), len(reviewer.requests), tt.wantBuilder, wantReviewCalls)
 			}
 			if len(c.prs) != 1 {
 				t.Errorf("PRs opened = %v, want one before review handling", c.prs)
@@ -780,7 +803,7 @@ func TestRunReviewGatePaths(t *testing.T) {
 					t.Errorf("docs-only job claimed reviewer started:\n%s", logs.String())
 				}
 			} else {
-				if !strings.Contains(logs.String(), "review: running sequence (read-only)") {
+				if !strings.Contains(logs.String(), "review: running sequence across") {
 					t.Errorf("logs missing reviewer start:\n%s", logs.String())
 				}
 				if !instrumentation.metrics.ReviewRan || len(instrumentation.metrics.Passes) != tt.wantReviewer {
@@ -789,6 +812,9 @@ func TestRunReviewGatePaths(t *testing.T) {
 				for passNumber, pass := range instrumentation.metrics.Passes {
 					if pass.DurationMS < 1 {
 						t.Errorf("review pass %d duration = %dms, want measured harness time", passNumber+1, pass.DurationMS)
+					}
+					if pass.LensCount != len(review.BuildPlan(tt.files, false).Lenses) {
+						t.Errorf("review pass %d lens count = %d, want %d", passNumber+1, pass.LensCount, len(review.BuildPlan(tt.files, false).Lenses))
 					}
 				}
 				if tt.name != "malformed" && tt.wantFixPrompt != instrumentation.metrics.FixRoundFired {
@@ -821,8 +847,9 @@ func TestRunReviewGateHonorsZeroFixRoundBudget(t *testing.T) {
 	if !errors.Is(err, ErrChangesRequested) {
 		t.Fatalf("Run error = %v, want %v", err, ErrChangesRequested)
 	}
-	if len(builder.requests) != 1 || len(reviewer.requests) != 1 {
-		t.Fatalf("calls = builder:%d reviewer:%d, want 1/1", len(builder.requests), len(reviewer.requests))
+	wantReviewCalls := len(review.BuildPlan([]string{"internal/a.go"}, false).Lenses)
+	if len(builder.requests) != 1 || len(reviewer.requests) != wantReviewCalls {
+		t.Fatalf("calls = builder:%d reviewer:%d, want 1/%d", len(builder.requests), len(reviewer.requests), wantReviewCalls)
 	}
 	if len(c.prComments) != 1 || !slices.Contains(c.added, "7:romp:changes-requested") {
 		t.Errorf("comments/labels = %d/%v, want one review comment and changes-requested label", len(c.prComments), c.added)

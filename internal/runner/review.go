@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/BRO3886/romp/internal/gh"
 	"github.com/BRO3886/romp/internal/harness"
@@ -15,15 +18,15 @@ import (
 	"github.com/BRO3886/romp/internal/review"
 )
 
-func (r *Runner) review(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
-	return r.reviewChanges(ctx, repo, issueNum, issue, dir, base, verification, true)
+func (r *Runner) review(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult, builderReports []prompt.BuilderReport) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
+	return r.reviewChanges(ctx, repo, issueNum, issue, dir, base, verification, builderReports, nil, true)
 }
 
-func (r *Runner) reviewAfterFix(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
-	return r.reviewChanges(ctx, repo, issueNum, issue, dir, base, verification, false)
+func (r *Runner) reviewAfterFix(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult, builderReports []prompt.BuilderReport, priorOutcomes []review.Outcome) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
+	return r.reviewChanges(ctx, repo, issueNum, issue, dir, base, verification, builderReports, priorOutcomes, false)
 }
 
-func (r *Runner) reviewChanges(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult, skipDocsOnly bool) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
+func (r *Runner) reviewChanges(ctx context.Context, repo string, issueNum int, issue gh.Issue, dir, base string, verification []prompt.VerificationResult, builderReports []prompt.BuilderReport, priorOutcomes []review.Outcome, skipDocsOnly bool) (review.Outcome, review.Plan, review.PassInstrumentation, error) {
 	files, err := r.Git.ChangedFiles(ctx, dir, base)
 	if err != nil {
 		return review.Outcome{}, review.Plan{}, review.PassInstrumentation{}, fmt.Errorf("collect changed files: %w", err)
@@ -43,36 +46,59 @@ func (r *Runner) reviewChanges(ctx context.Context, repo string, issueNum int, i
 	if err != nil {
 		return review.Outcome{}, plan, review.PassInstrumentation{}, fmt.Errorf("collect branch log: %w", err)
 	}
-	contract, err := prompt.RenderReview(prompt.ReviewInput{
-		Repository: repo, BaseRef: base, IssueNumber: issueNum, IssueTitle: issue.Title,
-		IssueBody: issue.Body, Diff: diff, BranchLog: log, ChangedFiles: files,
-		Plan: plan, VerificationResults: verification, ConventionReferences: conventionReferences(dir),
-	})
-	if err != nil {
-		return review.Outcome{}, plan, review.PassInstrumentation{}, err
-	}
+	conventions := conventionReferences(dir)
 	phase := progress.PhaseReviewing
-	detail := "reviewer working (read-only)"
+	detail := fmt.Sprintf("reviewer working across %d lenses (read-only)", len(plan.Lenses))
 	if !skipDocsOnly {
 		phase = progress.PhaseRereviewing
-		detail = "reviewer checking fixes (read-only)"
+		detail = fmt.Sprintf("reviewer checking fixes across %d lenses (read-only)", len(plan.Lenses))
 	}
-	r.logf("review: running %s (read-only)", r.ReviewHarness.Name())
+	r.logf("review: running %s across %d lenses (read-only)", r.ReviewHarness.Name(), len(plan.Lenses))
 	r.progress(issueNum, phase, detail, r.ReviewHarness.Name())
 	started := time.Now()
-	result, err := r.ReviewHarness.Run(ctx, harness.Request{Dir: dir, Prompt: contract, Model: r.ReviewModel, ReadOnly: true})
-	pass := review.PassInstrumentation{DurationMS: time.Since(started).Milliseconds()}
+	outcomes := make([]review.Outcome, len(plan.Lenses))
+	group, groupCtx := errgroup.WithContext(ctx)
+	for index, lens := range plan.Lenses {
+		index, lens := index, lens
+		group.Go(func() (resultErr error) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					resultErr = fmt.Errorf("%s review lens panic: %v\n%s", lens.Name, recovered, debug.Stack())
+				}
+			}()
+			contract, err := prompt.RenderReview(prompt.ReviewInput{
+				Repository: repo, BaseRef: base, IssueNumber: issueNum, IssueTitle: issue.Title,
+				IssueBody: issue.Body, Diff: diff, BranchLog: log, ChangedFiles: files,
+				Plan: plan, Lens: lens, VerificationResults: verification, BuilderReports: builderReports,
+				PriorOutcomes: priorOutcomes, ConventionReferences: conventions,
+			})
+			if err != nil {
+				return fmt.Errorf("%s review lens: %w", lens.Name, err)
+			}
+			result, err := r.ReviewHarness.Run(groupCtx, harness.Request{Dir: dir, Prompt: contract, Model: r.ReviewModel, ReadOnly: true})
+			if err != nil {
+				return fmt.Errorf("%s review lens harness: %w", lens.Name, err)
+			}
+			outcome, err := review.ParseOutcome(result.Output)
+			if err != nil {
+				return fmt.Errorf("%s review lens: %w", lens.Name, err)
+			}
+			outcomes[index] = outcome
+			return nil
+		})
+	}
+	err = group.Wait()
+	pass := review.PassInstrumentation{DurationMS: time.Since(started).Milliseconds(), LensCount: len(plan.Lenses)}
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return review.Outcome{}, plan, pass, fmt.Errorf("%w: review harness: %v", ErrTimeout, err)
+			return review.Outcome{}, plan, pass, fmt.Errorf("%w: review lenses: %v", ErrTimeout, err)
 		}
-		return review.Outcome{}, plan, pass, fmt.Errorf("review harness: %w", err)
-	}
-	outcome, err := review.ParseOutcome(result.Output)
-	if err != nil {
 		return review.Outcome{}, plan, pass, err
 	}
-	return outcome, plan, review.InstrumentPass(outcome, time.Duration(pass.DurationMS)*time.Millisecond), nil
+	outcome := review.MergeOutcomes(outcomes)
+	pass = review.InstrumentPass(outcome, time.Duration(pass.DurationMS)*time.Millisecond)
+	pass.LensCount = len(plan.Lenses)
+	return outcome, plan, pass, nil
 }
 
 func conventionReferences(dir string) []prompt.ConventionReference {

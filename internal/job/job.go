@@ -370,7 +370,7 @@ type ReviewSummary struct {
 	MedianReviewerDuration time.Duration
 }
 
-// ReviewSummary returns calibration rates and reviewer duration since the cutoff.
+// ReviewSummary returns calibration rates and aggregate review-pass duration since the cutoff.
 func (s *Store) ReviewSummary(ctx context.Context, repo string, since time.Time) (ReviewSummary, error) {
 	query := `SELECT review_json FROM outcomes WHERE finished_at >= ? AND review_json IS NOT NULL`
 	args := []any{since.UTC().Format(time.RFC3339Nano)}

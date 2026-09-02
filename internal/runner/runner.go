@@ -218,7 +218,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		runCtx, cancel = context.WithTimeout(ctx, r.Timeout)
 		defer cancel()
 	}
-	_, err = r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
+	builderResult, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: promptText, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
 	metrics.BuilderDurationMS += time.Since(start).Milliseconds()
 	if err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
@@ -227,6 +227,8 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		return "", err
 	}
 	r.logf("agent took %s", time.Since(start).Round(time.Second))
+	builderReports := []prompt.BuilderReport{{Build: 1, Output: builderResult.Output}}
+	var priorOutcomes []review.Outcome
 
 	gap, err := readBlocked(dir)
 	if err != nil {
@@ -295,7 +297,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 	r.logf("PR: %s", url)
 
 	if r.ReviewEnabled {
-		outcome, plan, pass, err := r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
+		outcome, plan, pass, err := r.review(runCtx, repo, issueNum, issue, dir, baseCommit, verification, builderReports)
 		if err != nil {
 			if plan.HasCode {
 				metrics.ReviewRan = true
@@ -324,13 +326,15 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 			return url, recordErr
 		}
 		if plan.HasCode {
+			priorOutcomes = append(priorOutcomes, outcome)
 			for fixRound := 1; outcome.Verdict == review.VerdictFix && fixRound <= r.MaxFixRounds; fixRound++ {
 				metrics.FixRoundFired = true
 				r.logf("review fix %d/%d: running %s", fixRound, r.MaxFixRounds, r.Harness.Name())
 				r.progress(issueNum, progress.PhaseFixing, fmt.Sprintf("agent addressing review findings (%d/%d)", fixRound, r.MaxFixRounds), r.Harness.Name())
 				fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
 				fixStarted := time.Now()
-				if _, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns}); err != nil {
+				fixResult, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
+				if err != nil {
 					metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
 					metrics.FixRoundOutcome = "error"
 					recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
@@ -340,6 +344,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 					return url, errors.Join(err, recordErr)
 				}
 				metrics.BuilderDurationMS += time.Since(fixStarted).Milliseconds()
+				builderReports = append(builderReports, prompt.BuilderReport{Build: fixRound + 1, Output: fixResult.Output})
 				if _, err := readPR(dir, issue.Title, issueNum); err != nil {
 					return url, err
 				}
@@ -363,7 +368,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 					metrics.FixRoundOutcome = "error"
 					return url, errors.Join(fmt.Errorf("push fix round %d: %w", fixRound, err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
 				}
-				outcome, _, pass, err = r.reviewAfterFix(runCtx, repo, issueNum, issue, dir, baseCommit, verification)
+				outcome, _, pass, err = r.reviewAfterFix(runCtx, repo, issueNum, issue, dir, baseCommit, verification, builderReports, priorOutcomes)
 				metrics.Passes = append(metrics.Passes, pass)
 				passNumber := len(metrics.Passes)
 				r.logReviewPass(passNumber, pass, err)
@@ -386,6 +391,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 				if err := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); err != nil {
 					return url, err
 				}
+				priorOutcomes = append(priorOutcomes, outcome)
 			}
 			if outcome.Verdict == review.VerdictFix {
 				metrics.FixRoundOutcome = review.FixBlocking

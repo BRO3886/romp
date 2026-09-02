@@ -73,7 +73,8 @@ operator concern, not a team convention.
 Omit `timeout` to let jobs run without a deadline. Set it to a Go duration
 string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
 The deadline covers the builder, verification, read-only review, and all
-configured fix rounds as one budget. Review does not consume another width slot.
+configured fix rounds as one budget. Review does not consume another job-width
+slot, but each pass starts one concurrent harness process per routed lens.
 
 ## Full reference
 
@@ -93,7 +94,7 @@ configured fix rounds as one budget. Review does not consume another width slot.
 | `harness.model` | — | Specific model, or empty for the harness default. |
 | `harness.effort` | `high` | Reasoning effort for Claude/Codex; model-specific OpenCode variant (see below). |
 | `harness.max_turns` | — | Turn cap, claude only. |
-| `review.enabled` | `true` | Enables the review gate for watched and one-shot jobs. |
+| `review.enabled` | `true` | Enables the review gate for watched and one-shot jobs. Each pass runs one concurrent reviewer call per routed lens. |
 | `review.model` | builder model | Reviewer model; missing or empty uses `harness.model`. |
 | `review.harness` | builder harness | Reviewer harness; missing or empty uses `harness.default`. |
 | `review.max_fix_rounds` | `2` | Maximum builder, verification, push, and re-review cycles after a blocking review. Set `0` to report `changes-requested` without a fix attempt. |
