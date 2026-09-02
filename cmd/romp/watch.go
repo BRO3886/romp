@@ -123,6 +123,7 @@ func runWatch(cmd *cobra.Command, _ []string) error {
 			if err := store.SetHarnesses(ctx, repo, issue, r.Harness.Name(), reviewerName); err != nil {
 				return "", fmt.Errorf("recording harnesses: %w", err)
 			}
+			progressSink.Emit(progress.Event{Issue: issue, BuilderHarness: r.Harness.Name(), ReviewerHarness: reviewerName})
 			r.Sessions = store
 			r.ReviewInstrumentation = store
 			r.Progress = progressSink

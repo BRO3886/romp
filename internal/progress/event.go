@@ -19,14 +19,16 @@ const (
 )
 
 type Event struct {
-	Issue    int
-	Phase    Phase
-	Detail   string
-	Outcome  string
-	URL      string
-	Harness  string
-	At       time.Time
-	Terminal bool
+	Issue           int
+	Phase           Phase
+	Detail          string
+	Outcome         string
+	URL             string
+	Harness         string
+	BuilderHarness  string
+	ReviewerHarness string
+	At              time.Time
+	Terminal        bool
 }
 
 type Sink func(Event)

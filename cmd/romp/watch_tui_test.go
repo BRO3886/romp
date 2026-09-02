@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -28,8 +30,66 @@ func TestWatchTUITracksPhaseAndMovesTerminalJobToHistory(t *testing.T) {
 	if m.active[7] != nil {
 		t.Fatal("terminal job remains active")
 	}
+	m.Update(watchHistoryMsg{outcomes: []job.Outcome{{Repo: "o/r", Issue: 7, Outcome: "done", BuilderHarness: "codex", ReviewerHarness: "claude"}}})
 	if len(m.history) != 1 || m.history[0].Issue != 7 || m.history[0].Outcome != "done" || m.history[0].BuilderHarness != "codex" || m.history[0].ReviewerHarness != "claude" {
 		t.Fatalf("history = %+v", m.history)
+	}
+}
+
+func TestWatchTUIShowsConfiguredReviewerBeforeReviewStarts(t *testing.T) {
+	m := &watchTUIModel{active: make(map[int]*watchJobView)}
+	m.applyEvent(progress.Event{Issue: 7, BuilderHarness: "codex", ReviewerHarness: "claude", At: time.Now()})
+	m.applyEvent(progress.Event{Issue: 7, Phase: progress.PhaseAgent, Detail: "agent working", Harness: "codex", At: time.Now()})
+
+	active := m.active[7]
+	if active.builderHarness != "codex" || active.reviewerHarness != "claude" {
+		t.Fatalf("configured harnesses = %q/%q, want codex/claude", active.builderHarness, active.reviewerHarness)
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "CODEX") || !strings.Contains(view, "CLAUDE") {
+		t.Fatalf("active view does not show configured harnesses:\n%s", view)
+	}
+}
+
+func TestWatchTUITerminalEventDoesNotCreatePartialHistory(t *testing.T) {
+	m := &watchTUIModel{active: map[int]*watchJobView{7: {issue: 7, started: time.Now()}}}
+	m.applyEvent(progress.Event{Issue: 7, Phase: progress.PhaseDone, Outcome: "done", Terminal: true, At: time.Now()})
+
+	if len(m.history) != 0 {
+		t.Fatalf("terminal event created partial history = %+v", m.history)
+	}
+}
+
+func TestWatchTUILoadsCompleteTerminalHistoryFromStore(t *testing.T) {
+	store, err := job.Open(filepath.Join(t.TempDir(), "romp.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ctx := context.Background()
+	if ok, err := store.Claim(ctx, "o/r", 7, "romp-7"); err != nil || !ok {
+		t.Fatalf("Claim: ok=%v err=%v", ok, err)
+	}
+	if err := store.SetSessionID(ctx, "o/r", 7, "session-7"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetHarnesses(ctx, "o/r", 7, "codex", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Finish(ctx, job.Outcome{Repo: "o/r", Issue: 7, Outcome: "done", PRURL: "https://example.test/pr/7", FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)}); err != nil {
+		t.Fatal(err)
+	}
+	m := &watchTUIModel{repo: "o/r", store: store, watchCtx: ctx, active: make(map[int]*watchJobView)}
+	msg := m.loadHistory()().(watchHistoryMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	if len(msg.outcomes) != 1 {
+		t.Fatalf("history = %+v", msg.outcomes)
+	}
+	outcome := msg.outcomes[0]
+	if outcome.SessionID != "session-7" || outcome.BuilderHarness != "codex" || outcome.ReviewerHarness != "claude" || outcome.PRURL != "https://example.test/pr/7" {
+		t.Fatalf("complete history = %+v", outcome)
 	}
 }
 
@@ -60,7 +120,7 @@ func TestWatchTUIRendersSemanticPhaseStyles(t *testing.T) {
 		width:  100,
 		height: 30,
 		active: map[int]*watchJobView{
-			7: {issue: 7, title: "Improve watch output", phase: progress.PhaseReviewing, detail: "reviewer working (read-only)", reviewerHarness: "codex", started: now},
+			7: {issue: 7, title: "Improve watch output", phase: progress.PhaseReviewing, detail: "reviewer working (read-only)", builderHarness: "codex", reviewerHarness: "codex", started: now},
 		},
 	}
 

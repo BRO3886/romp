@@ -19,6 +19,10 @@ import (
 type watchEventMsg progress.Event
 type watchTickMsg time.Time
 type watchDoneMsg struct{ err error }
+type watchHistoryMsg struct {
+	outcomes []job.Outcome
+	err      error
+}
 
 var watchPalette = struct {
 	accent, text, muted, border, selected, cyan, amber, violet, green, red color.Color
@@ -60,6 +64,7 @@ type watchJobView struct {
 type watchTUIModel struct {
 	repo       string
 	watcher    *watch.Watcher
+	store      *job.Store
 	events     <-chan progress.Event
 	history    []job.Outcome
 	active     map[int]*watchJobView
@@ -81,7 +86,7 @@ func runWatchTUI(ctx context.Context, watcher *watch.Watcher, store *job.Store, 
 	}
 	watchCtx, cancel := context.WithCancel(ctx)
 	m := &watchTUIModel{
-		repo: repo, watcher: watcher, events: events, history: history,
+		repo: repo, watcher: watcher, store: store, events: events, history: history,
 		active: make(map[int]*watchJobView), cancel: cancel, watchCtx: watchCtx,
 	}
 	defer cancel()
@@ -118,8 +123,18 @@ func (m *watchTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case watchEventMsg:
-		m.applyEvent(progress.Event(msg))
+		event := progress.Event(msg)
+		m.applyEvent(event)
+		if event.Terminal {
+			return m, tea.Batch(m.waitEvent(), m.loadHistory())
+		}
 		return m, m.waitEvent()
+	case watchHistoryMsg:
+		if msg.err != nil {
+			m.watchError = msg.err
+			return m, tea.Quit
+		}
+		m.history = msg.outcomes
 	case watchTickMsg:
 		return m, m.tick()
 	case watchDoneMsg:
@@ -165,6 +180,15 @@ func (m *watchTUIModel) applyEvent(event progress.Event) {
 	if event.Phase == progress.PhaseClaiming && event.Detail != "" {
 		view.title = event.Detail
 	}
+	if event.BuilderHarness != "" {
+		view.builderHarness = event.BuilderHarness
+	}
+	if event.ReviewerHarness != "" {
+		view.reviewerHarness = event.ReviewerHarness
+	}
+	if event.Phase == "" {
+		return
+	}
 	view.phase = event.Phase
 	view.detail = event.Detail
 	switch event.Phase {
@@ -178,11 +202,17 @@ func (m *watchTUIModel) applyEvent(event progress.Event) {
 		view.events = append([]progress.Event(nil), view.events[len(view.events)-50:]...)
 	}
 	if event.Terminal {
-		m.history = append([]job.Outcome{{Repo: m.repo, Issue: event.Issue, Outcome: event.Outcome, PRURL: event.URL, Detail: event.Detail, StartedAt: view.started.UTC().Format(time.RFC3339Nano), FinishedAt: event.At.UTC().Format(time.RFC3339Nano), BuilderHarness: view.builderHarness, ReviewerHarness: view.reviewerHarness}}, m.history...)
 		delete(m.active, event.Issue)
 	}
 	if m.selected >= m.rowCount() && m.selected > 0 {
 		m.selected--
+	}
+}
+
+func (m *watchTUIModel) loadHistory() tea.Cmd {
+	return func() tea.Msg {
+		outcomes, err := m.store.History(context.WithoutCancel(m.watchCtx), m.repo, 20)
+		return watchHistoryMsg{outcomes: outcomes, err: err}
 	}
 }
 
@@ -431,16 +461,22 @@ func valueOr(value, fallback string) string {
 }
 
 func activeHarnessLabel(row *watchJobView) string {
-	name := row.builderHarness
-	color := watchPalette.cyan
-	if row.phase == progress.PhaseReviewing || row.phase == progress.PhaseRereviewing {
-		name = row.reviewerHarness
-		color = watchPalette.violet
-	}
-	if name == "" {
+	if row.builderHarness == "" {
 		return watchMetaStyle.Render("—")
 	}
-	return lipgloss.NewStyle().Bold(true).Foreground(color).Render(strings.ToUpper(name))
+	builder := lipgloss.NewStyle().Foreground(watchPalette.cyan)
+	reviewer := lipgloss.NewStyle().Foreground(watchPalette.violet)
+	if row.phase == progress.PhaseAgent || row.phase == progress.PhaseFixing {
+		builder = builder.Bold(true)
+	}
+	if row.phase == progress.PhaseReviewing || row.phase == progress.PhaseRereviewing {
+		reviewer = reviewer.Bold(true)
+	}
+	label := builder.Render(strings.ToUpper(row.builderHarness))
+	if row.reviewerHarness != "" {
+		label += watchMetaStyle.Render(" → ") + reviewer.Render(strings.ToUpper(row.reviewerHarness))
+	}
+	return label
 }
 
 func historyHarnessLabel(outcome job.Outcome) string {
