@@ -59,7 +59,7 @@ The runner supplies the complete diff, branch log, changed files, focused lens, 
 
 ### Fix round
 
-Two rounds by default, configurable through `review.max_fix_rounds`: each round runs a fresh builder in the same worktree with the current blocking findings embedded as constraints, followed by re-verification (the previous green is stale), push to the PR branch, and re-review. A zero budget records `changes-requested` after the first blocking review. Session resume is available only behind the undocumented `ROMP_FIX_MODE=resume` for experimentation; adjacent evidence (weak intrinsic self-correction, context rot, Reflexion's distilled-feedback retries) favors fresh context with findings embedded.
+Two rounds by default, configurable through `review.max_fix_rounds`: each round runs a fresh builder in the same worktree, followed by re-verification (the previous green is stale), push to the PR branch, and re-review. A round normally embeds the current blocking findings as constraints. If re-verification fails and another round remains, the next fresh builder also receives the failed command, exit code, and captured output as independent evidence. A failed re-verification consumes its round; the job becomes `red` only when no repair round remains. A zero budget records `changes-requested` after the first blocking review. Session resume is available only behind the undocumented `ROMP_FIX_MODE=resume` for experimentation; adjacent evidence (weak intrinsic self-correction, context rot, Reflexion's distilled-feedback retries) favors fresh context with findings embedded.
 
 On exhausted rounds the job records `changes-requested`: distinct from red because verify passed — the code works but does not meet the bar.
 
@@ -86,4 +86,4 @@ Session IDs (ADR 0012) are a prerequisite only for the experimental resume path,
 - Review compute grows with the routed lens count. The invocations run concurrently, so pass latency is approximately the slowest lens rather than the sum of all lenses, but each lens still consumes a separate harness call. Each blocking fix round adds one builder run plus another full lens fan-out.
 - The outcome taxonomy grows by `changes-requested`; labels grow to match.
 - Lens routing lives in Go, so improving review emphasis is ordinary code, not prompt archaeology.
-- Reviewer calibration is now load-bearing: a noisy reviewer burns fix rounds, a quiet one waves bad code through. Findings rates, aggregate pass duration, and lens count belong in instrumentation from day one.
+- Reviewer calibration is now load-bearing: a noisy reviewer burns fix rounds, a quiet one waves bad code through. Findings rates, aggregate pass duration, lens count, and re-verification failure count belong in instrumentation from day one.

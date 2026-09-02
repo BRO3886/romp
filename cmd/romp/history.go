@@ -78,6 +78,7 @@ func writeReviewSummary(out io.Writer, summary job.ReviewSummary) {
 	fmt.Fprintf(out, "reviewed jobs: %d\n", summary.ReviewedJobs)
 	fmt.Fprintf(out, "clean-pass rate: %.1f%%\n", cleanRate)
 	fmt.Fprintf(out, "fix-round rate: %.1f%%\n", fixRate)
+	fmt.Fprintf(out, "re-verification failures: %d\n", summary.ReverificationFailures)
 	fmt.Fprintf(out, "median reviewer duration: %s\n", summary.MedianReviewerDuration)
 }
 

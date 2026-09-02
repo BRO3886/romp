@@ -76,8 +76,9 @@ review, fix, and publication phases. Tab switches between active jobs and
 history. Active jobs identify the harness currently acting, while history and
 details retain both builder and reviewer identities. Enter opens the selected
 job's phase timeline. Successful verification output is not copied into the job
-log; failures retain their diagnostic output. A reviewer-start line is emitted
-immediately before each concurrent read-only lens fan-out begins.
+log; failures retain their diagnostic output and show any transition into a
+remaining repair round. A reviewer-start line is emitted immediately before
+each concurrent read-only lens fan-out begins.
 When stdout is not a terminal, `watch` keeps the line-oriented output used by
 scripts and service managers. Ctrl-C drains; twice kills.
 
@@ -185,7 +186,7 @@ comment — a plausible PR solving the wrong problem costs more than no PR.
 | **blocked** | No PR. `romp:blocked` label + gap comment. |
 | **no-changes** | Agent exited clean with no commits. No PR. |
 | **changes-requested** | Verify passed, but blocking review findings remained after the configured fix rounds. PR open with every review-pass comment, worktree kept. |
-| **red** | Verify failed on independent re-run. No PR, trigger label removed, worktree kept. |
+| **red** | Independent verification failed with no repair round remaining. A PR may already exist after review. Trigger label removed and worktree kept. Watch jobs retain failed output in `romp logs ISSUE`; one-shot runs print it to stderr. |
 | **timeout** | Exceeded `timeout`. Killed, trigger label removed, worktree kept. |
 | **cancelled** | You cancelled. Worktree, branch, and both labels removed. |
 | **error** | git/gh failure (incl. rate limits outliving retries). Trigger label removed, worktree kept. |

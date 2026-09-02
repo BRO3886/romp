@@ -282,7 +282,7 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		if runCtx.Err() == context.DeadlineExceeded {
 			return "", fmt.Errorf("%w: %v", ErrTimeout, err)
 		}
-		return "", fmt.Errorf("%w: %s failed: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), err, dir)
+		return "", fmt.Errorf("%w: %s; %s failed (worktree kept at %s)", ErrRed, r.verificationOutputHint(issueNum), verificationCommand(err, strings.Join(r.Verify, " && ")), dir)
 	}
 
 	if err := r.Git.Push(runCtx, dir, branch); err != nil {
@@ -327,11 +327,21 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 		}
 		if plan.HasCode {
 			priorOutcomes = append(priorOutcomes, outcome)
+			var verificationRetry *verificationFailure
 			for fixRound := 1; outcome.Verdict == review.VerdictFix && fixRound <= r.MaxFixRounds; fixRound++ {
 				metrics.FixRoundFired = true
-				r.logf("review fix %d/%d: running %s", fixRound, r.MaxFixRounds, r.Harness.Name())
-				r.progress(issueNum, progress.PhaseFixing, fmt.Sprintf("agent addressing review findings (%d/%d)", fixRound, r.MaxFixRounds), r.Harness.Name())
+				repairingVerification := verificationRetry != nil
 				fixPrompt := promptText + "\n\nADDITIONAL CONSTRAINTS FROM THE REVIEW GATE:\n" + formatBlockingFindings(outcome.Findings)
+				fixCommit := fmt.Sprintf("fix: address review findings for #%d", issueNum)
+				if repairingVerification {
+					r.logf("verification repair %d/%d: running %s", fixRound, r.MaxFixRounds, r.Harness.Name())
+					r.progress(issueNum, progress.PhaseFixing, fmt.Sprintf("agent repairing failed verification (%d/%d)", fixRound, r.MaxFixRounds), r.Harness.Name())
+					fixPrompt += verificationRepairConstraints(verificationRetry)
+					fixCommit = fmt.Sprintf("fix: repair verification failure for #%d", issueNum)
+				} else {
+					r.logf("review fix %d/%d: running %s", fixRound, r.MaxFixRounds, r.Harness.Name())
+					r.progress(issueNum, progress.PhaseFixing, fmt.Sprintf("agent addressing review findings (%d/%d)", fixRound, r.MaxFixRounds), r.Harness.Name())
+				}
 				fixStarted := time.Now()
 				fixResult, err := r.runHarness(runCtx, repo, issueNum, r.Harness, harness.Request{Dir: dir, Prompt: fixPrompt, Model: r.Model, Effort: r.Effort, MaxTurns: r.MaxTurns})
 				if err != nil {
@@ -351,19 +361,32 @@ func (r *Runner) Run(ctx context.Context, issueNum int) (string, error) {
 				if err := removePRArtifact(dir); err != nil {
 					return url, err
 				}
-				fixCommit := fmt.Sprintf("fix: address review findings for #%d", issueNum)
 				if err := r.Git.CommitAll(runCtx, dir, fixCommit); err != nil {
 					return url, fmt.Errorf("commit fix round %d: %w", fixRound, err)
 				}
 				verification, err = r.verifyWithResults(runCtx, dir, issueNum, progress.PhaseReverifying)
 				if err != nil {
+					metrics.ReverificationFailures++
+					var failure *verificationFailure
+					if errors.As(err, &failure) && fixRound < r.MaxFixRounds {
+						metrics.FixRoundOutcome = review.FixVerificationRetry
+						if recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics); recordErr != nil {
+							return url, recordErr
+						}
+						nextRound := fixRound + 1
+						r.logf("verification failed after fix %d/%d; retrying builder %d/%d", fixRound, r.MaxFixRounds, nextRound, r.MaxFixRounds)
+						r.progress(issueNum, progress.PhaseFixing, fmt.Sprintf("retrying builder (%d/%d); verification failed (%s)", nextRound, r.MaxFixRounds, failure.Command), r.Harness.Name())
+						verificationRetry = failure
+						continue
+					}
 					metrics.FixRoundOutcome = "red"
 					recordErr := r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics)
 					if runCtx.Err() == context.DeadlineExceeded {
 						return url, errors.Join(fmt.Errorf("%w: %v", ErrTimeout, err), recordErr)
 					}
-					return url, errors.Join(fmt.Errorf("%w: %s failed after fix round %d: %v (worktree kept at %s)", ErrRed, strings.Join(r.Verify, " && "), fixRound, err, dir), recordErr)
+					return url, errors.Join(fmt.Errorf("%w: %s; %s failed after fix round %d/%d (worktree kept at %s)", ErrRed, r.verificationOutputHint(issueNum), verificationCommand(err, strings.Join(r.Verify, " && ")), fixRound, r.MaxFixRounds, dir), recordErr)
 				}
+				verificationRetry = nil
 				if err := r.Git.Push(runCtx, dir, branch); err != nil {
 					metrics.FixRoundOutcome = "error"
 					return url, errors.Join(fmt.Errorf("push fix round %d: %w", fixRound, err), r.recordReviewInstrumentation(runCtx, repo, issueNum, metrics))
@@ -436,6 +459,13 @@ func (r *Runner) recordReviewInstrumentation(ctx context.Context, repo string, i
 	return nil
 }
 
+func (r *Runner) verificationOutputHint(issue int) string {
+	if r.Codename != "" {
+		return fmt.Sprintf("full output: romp logs %d", issue)
+	}
+	return "full output written above"
+}
+
 func (r *Runner) logReviewPass(number int, pass review.PassInstrumentation, err error) {
 	if err != nil {
 		r.logf("review pass %d: error, blocking %d, non-blocking %d, nits %d, took %s", number, pass.Blocking, pass.NonBlocking, pass.Nit, time.Duration(pass.DurationMS)*time.Millisecond)
@@ -462,11 +492,20 @@ func (r *Runner) verifyWithResults(ctx context.Context, dir string, issue int, p
 		r.progress(issue, phase, fmt.Sprintf("%d/%d %s", i+1, len(r.Verify), v), "")
 		started := time.Now()
 		out, err := cmd.CombinedOutput()
+		duration := time.Since(started)
 		if err != nil {
-			return nil, fmt.Errorf("%s", out)
+			failure := newVerificationFailure(v, out, err)
+			r.logf("verify failed (%s) in %s (exit %d)", v, duration.Round(time.Millisecond), failure.ExitCode)
+			if len(out) == 0 {
+				r.logf("verify output (%s): no output", v)
+			} else {
+				r.logf("verify output (%s):\n%s", v, out)
+			}
+			r.progress(issue, phase, fmt.Sprintf("%d/%d %s failed (exit %d)", i+1, len(r.Verify), v, failure.ExitCode), "")
+			return results, failure
 		}
 		results = append(results, prompt.VerificationResult{Command: v, ExitCode: 0, Output: string(out)})
-		r.logf("verify ok (%s) in %s", v, time.Since(started).Round(time.Millisecond))
+		r.logf("verify ok (%s) in %s", v, duration.Round(time.Millisecond))
 	}
 	return results, nil
 }

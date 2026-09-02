@@ -12,7 +12,7 @@ Every job ends in exactly one named outcome. There is no silent grey area.
 | **blocked** | No PR. `romp:blocked` label + gap comment. |
 | **no-changes** | Agent exited clean with no commits. No PR. |
 | **changes-requested** | Verification passed, but blocking review findings remained after the configured fix rounds. The PR and worktree stay available with every review-pass comment. |
-| **red** | Verify failed on independent re-run. No PR, worktree kept. |
+| **red** | Independent verification failed with no repair round remaining. A PR may already exist when this happens after review. The worktree stays available. Watch jobs retain the failed command output in `romp logs ISSUE`; one-shot runs print it to stderr. |
 | **timeout** | Exceeded `timeout`. Killed, worktree kept. |
 | **cancelled** | You cancelled. Worktree, branch, and both labels removed. |
 | **error** | git/gh failure (incl. rate limits outliving retries). Re-claimed later. |

@@ -367,6 +367,7 @@ type ReviewSummary struct {
 	ReviewedJobs           int
 	CleanPassJobs          int
 	FixRoundJobs           int
+	ReverificationFailures int
 	MedianReviewerDuration time.Duration
 }
 
@@ -405,6 +406,7 @@ func (s *Store) ReviewSummary(ctx context.Context, repo string, since time.Time)
 		if metrics.FixRoundFired {
 			summary.FixRoundJobs++
 		}
+		summary.ReverificationFailures += metrics.ReverificationFailures
 		for _, pass := range metrics.Passes {
 			durations = append(durations, pass.DurationMS)
 		}
