@@ -3,10 +3,11 @@ package review
 import "time"
 
 const (
-	SkipDisabled = "disabled"
-	SkipDocsOnly = "docs-only"
-	FixApproved  = "approved"
-	FixBlocking  = "blocking"
+	SkipDisabled         = "disabled"
+	SkipDocsOnly         = "docs-only"
+	FixApproved          = "approved"
+	FixBlocking          = "blocking"
+	FixVerificationRetry = "verification-retry"
 )
 
 // PassInstrumentation records one aggregated review pass.
@@ -21,12 +22,13 @@ type PassInstrumentation struct {
 
 // Instrumentation records the review-gate facts for one job.
 type Instrumentation struct {
-	ReviewRan         bool                  `json:"review_ran"`
-	SkipReason        string                `json:"skip_reason,omitempty"`
-	BuilderDurationMS int64                 `json:"builder_duration_ms"`
-	FixRoundFired     bool                  `json:"fix_round_fired"`
-	FixRoundOutcome   string                `json:"fix_round_outcome,omitempty"`
-	Passes            []PassInstrumentation `json:"passes,omitempty"`
+	ReviewRan              bool                  `json:"review_ran"`
+	SkipReason             string                `json:"skip_reason,omitempty"`
+	BuilderDurationMS      int64                 `json:"builder_duration_ms"`
+	FixRoundFired          bool                  `json:"fix_round_fired"`
+	FixRoundOutcome        string                `json:"fix_round_outcome,omitempty"`
+	ReverificationFailures int                   `json:"reverification_failures,omitempty"`
+	Passes                 []PassInstrumentation `json:"passes,omitempty"`
 }
 
 // InstrumentPass converts a parsed review outcome into calibration counters.

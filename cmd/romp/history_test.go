@@ -70,10 +70,10 @@ func TestHistoryCmdHasAllFlag(t *testing.T) {
 func TestWriteReviewSummary(t *testing.T) {
 	var out bytes.Buffer
 	writeReviewSummary(&out, job.ReviewSummary{
-		ReviewedJobs: 4, CleanPassJobs: 3, FixRoundJobs: 1, MedianReviewerDuration: 1250 * time.Millisecond,
+		ReviewedJobs: 4, CleanPassJobs: 3, FixRoundJobs: 1, ReverificationFailures: 2, MedianReviewerDuration: 1250 * time.Millisecond,
 	})
 	got := out.String()
-	for _, want := range []string{"reviewed jobs: 4", "clean-pass rate: 75.0%", "fix-round rate: 25.0%", "median reviewer duration: 1.25s"} {
+	for _, want := range []string{"reviewed jobs: 4", "clean-pass rate: 75.0%", "fix-round rate: 25.0%", "re-verification failures: 2", "median reviewer duration: 1.25s"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary missing %q:\n%s", want, got)
 		}
@@ -95,7 +95,7 @@ func TestHistoryReviewCommandReportsStoredJobs(t *testing.T) {
 	if ok, err := store.Claim(context.Background(), repo, 34, "romp-34"); err != nil || !ok {
 		t.Fatalf("Claim: ok=%v err=%v", ok, err)
 	}
-	metrics := review.Instrumentation{ReviewRan: true, Passes: []review.PassInstrumentation{{Verdict: review.VerdictApprove, DurationMS: 1250}}}
+	metrics := review.Instrumentation{ReviewRan: true, ReverificationFailures: 1, Passes: []review.PassInstrumentation{{Verdict: review.VerdictApprove, DurationMS: 1250}}}
 	if err := store.SetReviewInstrumentation(context.Background(), repo, 34, metrics); err != nil {
 		t.Fatalf("SetReviewInstrumentation: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestHistoryReviewCommandReportsStoredJobs(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("history --review: %v", err)
 	}
-	for _, want := range []string{"reviewed jobs: 1", "clean-pass rate: 100.0%", "fix-round rate: 0.0%", "median reviewer duration: 1.25s"} {
+	for _, want := range []string{"reviewed jobs: 1", "clean-pass rate: 100.0%", "fix-round rate: 0.0%", "re-verification failures: 1", "median reviewer duration: 1.25s"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
 		}

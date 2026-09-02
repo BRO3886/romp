@@ -75,9 +75,12 @@ machinery to claim, isolate, and verify work.
    pass and posts one PR comment. Any failed lens fails the whole pass instead
    of allowing partial approval. Blocking findings get up to
    `review.max_fix_rounds` builder rounds on the same branch. Each round includes
-   fresh verification, push, and a fresh lens fan-out. Re-review receives the
-   prior findings and builder reports, but still sweeps for newly introduced
-   defects. Documentation-only changes skip review but still open a PR.
+   fresh verification, push, and a fresh lens fan-out. If verification fails
+   and the budget has another round, the next builder receives the failed
+   command, exit code, and captured output before Romp tries verification again.
+   Re-review receives the prior findings and builder reports, but still sweeps
+   for newly introduced defects. Documentation-only changes skip review but
+   still open a PR.
 8. **Complete or recover** — approval removes the trigger label. Unresolved
    review findings become `changes-requested`. Review failures leave the PR and
    worktree available with a distinct failure comment.
@@ -119,6 +122,11 @@ every log line, names the per-job log file, and is the primary column in
 State lives in one SQLite file per machine: `~/.local/state/romp/romp.db`. The
 `jobs` table holds exactly the in-flight set; finished jobs move to the
 append-only `outcomes` table in one transaction.
+
+Failed verification output is written to the per-job log. The phase timeline
+shows the failed command and any transition into another builder round.
+`romp history --review` aggregates re-verification failures across the selected
+history window.
 
 ## Design decisions (ADRs)
 

@@ -198,7 +198,7 @@ func TestReviewSummaryAnswersCalibrationQuestions(t *testing.T) {
 		metrics review.Instrumentation
 	}{
 		{1, review.Instrumentation{ReviewRan: true, Passes: []review.PassInstrumentation{{Verdict: review.VerdictApprove, DurationMS: 100}}}},
-		{2, review.Instrumentation{ReviewRan: true, FixRoundFired: true, FixRoundOutcome: review.FixApproved, Passes: []review.PassInstrumentation{{Verdict: review.VerdictFix, Blocking: 1, DurationMS: 300}, {Verdict: review.VerdictApprove, DurationMS: 500}}}},
+		{2, review.Instrumentation{ReviewRan: true, FixRoundFired: true, FixRoundOutcome: review.FixApproved, ReverificationFailures: 1, Passes: []review.PassInstrumentation{{Verdict: review.VerdictFix, Blocking: 1, DurationMS: 300}, {Verdict: review.VerdictApprove, DurationMS: 500}}}},
 		{3, review.Instrumentation{SkipReason: review.SkipDocsOnly}},
 	}
 	for _, row := range rows {
@@ -217,7 +217,7 @@ func TestReviewSummaryAnswersCalibrationQuestions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReviewSummary: %v", err)
 	}
-	if summary.ReviewedJobs != 2 || summary.CleanPassJobs != 1 || summary.FixRoundJobs != 1 || summary.MedianReviewerDuration != 300*time.Millisecond {
+	if summary.ReviewedJobs != 2 || summary.CleanPassJobs != 1 || summary.FixRoundJobs != 1 || summary.ReverificationFailures != 1 || summary.MedianReviewerDuration != 300*time.Millisecond {
 		t.Errorf("ReviewSummary = %+v", summary)
 	}
 }

@@ -80,11 +80,12 @@ optional `SESSION` identifier. `history` lists recently finished jobs with
 their outcome, branch, PR URL, and optional `SESSION` identifier. A missing
 session identifier appears as `-`.
 
-`history --review` reports the clean-pass rate, fix-round rate, and median
-review-pass wall duration over the selected history window. One pass contains
-all concurrent lens calls, so the duration tracks the slowest completed lens
-rather than the sum of reviewer compute. It uses reviewed jobs as the rate
-denominator, so disabled and docs-only skips do not dilute the rates.
+`history --review` reports the clean-pass rate, fix-round rate, total
+re-verification failures, and median review-pass wall duration over the selected
+history window. One pass contains all concurrent lens calls, so the duration
+tracks the slowest completed lens rather than the sum of reviewer compute. It
+uses reviewed jobs as the rate denominator, so disabled and docs-only skips do
+not dilute the rates.
 
 ## `romp logs`
 
