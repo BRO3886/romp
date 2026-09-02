@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"text/tabwriter"
 	"time"
 
@@ -16,42 +16,79 @@ import (
 )
 
 func newStatusCmd() *cobra.Command {
-	var all bool
+	var (
+		all        bool
+		jsonOutput bool
+	)
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "List in-flight jobs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runStatus(cmd.Context(), all)
+			return runStatus(cmd.Context(), cmd.OutOrStdout(), all, jsonOutput)
 		},
 	}
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "list jobs across every repo on this machine")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "print jobs as JSON")
 	return cmd
 }
 
-func runStatus(ctx context.Context, all bool) error {
+func runStatus(ctx context.Context, out io.Writer, all, jsonOutput bool) error {
 	store, err := job.Open(job.Path())
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	if all {
-		jobs, err := store.List(ctx, "")
+
+	repo := ""
+	if !all {
+		owner, name, err := currentRepo(ctx)
 		if err != nil {
 			return err
 		}
-		printJobs(os.Stdout, jobs, true)
-		return nil
+		repo = owner + "/" + name
 	}
-	owner, name, err := currentRepo(ctx)
+	jobs, err := store.List(ctx, repo)
 	if err != nil {
 		return err
 	}
-	jobs, err := store.List(ctx, owner+"/"+name)
-	if err != nil {
-		return err
+	if jsonOutput {
+		return writeJobsJSON(out, jobs, time.Now())
 	}
-	printJobs(os.Stdout, jobs, false)
+	printJobs(out, jobs, all)
+	return nil
+}
+
+type statusJob struct {
+	Repo           string `json:"repo"`
+	Codename       string `json:"codename"`
+	Issue          int    `json:"issue"`
+	Branch         string `json:"branch"`
+	ClaimedAt      string `json:"claimed_at"`
+	ElapsedSeconds int64  `json:"elapsed_seconds"`
+	SessionID      string `json:"session_id"`
+}
+
+func writeJobsJSON(out io.Writer, jobs []job.Job, now time.Time) error {
+	rows := make([]statusJob, 0, len(jobs))
+	for _, j := range jobs {
+		claimedAt, err := time.Parse(time.RFC3339Nano, j.ClaimedAt)
+		if err != nil {
+			return fmt.Errorf("parsing claimed_at for %s#%d: %w", j.Repo, j.Issue, err)
+		}
+		rows = append(rows, statusJob{
+			Repo:           j.Repo,
+			Codename:       codename.For(j.Repo, j.Issue),
+			Issue:          j.Issue,
+			Branch:         j.Branch,
+			ClaimedAt:      j.ClaimedAt,
+			ElapsedSeconds: int64(now.Sub(claimedAt).Round(time.Second) / time.Second),
+			SessionID:      j.SessionID,
+		})
+	}
+	if err := json.NewEncoder(out).Encode(rows); err != nil {
+		return fmt.Errorf("encoding status JSON: %w", err)
+	}
 	return nil
 }
 
