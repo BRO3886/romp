@@ -2,126 +2,163 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
-func TestCodexArgs(t *testing.T) {
-	base := []string{"exec", "--json", "--sandbox", "workspace-write", "--color", "never"}
-
-	plain := codexArgs(Request{Prompt: "hello"}, nil)
-	if !reflect.DeepEqual(plain, base) {
-		t.Errorf("plain = %v, want %v (prompt stays off argv)", plain, base)
-	}
-
-	withDir := codexArgs(Request{Prompt: "hello", Dir: "/tmp/wt"}, nil)
-	want := append(append([]string{}, base...), "--cd", "/tmp/wt")
-	if !reflect.DeepEqual(withDir, want) {
-		t.Errorf("with dir = %v, want %v", withDir, want)
-	}
-
-	withModel := codexArgs(Request{Prompt: "hello", Model: "gpt-5.6-terra"}, nil)
-	want = append(append([]string{}, base...), "--model", "gpt-5.6-terra")
-	if !reflect.DeepEqual(withModel, want) {
-		t.Errorf("with model = %v, want %v", withModel, want)
-	}
-
-	withEffort := codexArgs(Request{Prompt: "hello", Effort: "high"}, nil)
-	want = append(append([]string{}, base...), "-c", "model_reasoning_effort=high")
-	if !reflect.DeepEqual(withEffort, want) {
-		t.Errorf("with effort = %v, want %v", withEffort, want)
-	}
-
-	both := codexArgs(Request{Prompt: "hello", Dir: "/tmp/wt", Model: "gpt-5.6-terra", Effort: "xhigh"}, []string{"--ephemeral"})
-	want = append(append([]string{}, base...), "--cd", "/tmp/wt", "--model", "gpt-5.6-terra", "-c", "model_reasoning_effort=xhigh", "--ephemeral")
-	if !reflect.DeepEqual(both, want) {
-		t.Errorf("dir model and effort = %v, want %v", both, want)
-	}
-
-	// MaxTurns has no codex exec equivalent; the adapter must not invent one.
-	withTurns := codexArgs(Request{Prompt: "hello", MaxTurns: 30}, nil)
-	if !reflect.DeepEqual(withTurns, base) {
-		t.Errorf("with max turns = %v, want %v (no max-turns flag)", withTurns, base)
-	}
-}
-
-func TestCodexRunParsesStructuredOutputWithStderrDiagnostic(t *testing.T) {
+func TestCodexRunUsesAppServerProtocol(t *testing.T) {
 	bin := t.TempDir()
-	fixture, err := filepath.Abs("testdata/codex-0.147.0-success.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
+	argsFile := filepath.Join(t.TempDir(), "args")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("FIXTURE", fixture)
+	t.Setenv("ARGS_FILE", argsFile)
 	writeHarnessScript(t, bin, "codex", `
-test -n "$(cat)" || exit 12
-while IFS= read -r line || [ -n "$line" ]; do printf '%s\n' "$line"; done < "$FIXTURE"
+printf '%s\n' "$@" > "$ARGS_FILE"
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' '{"id":1,"result":{"userAgent":"codex"}}'
+      ;;
+    *'"method":"thread/start"'*)
+      printf '%s\n' '{"id":2,"result":{"thread":{"id":"thread-1","sessionId":"session-1"},"instructionSources":["/worktree/AGENTS.md"]}}'
+      ;;
+    *'"method":"turn/start"'*)
+      printf '%s\n' '{"id":3,"result":{"turn":{"id":"turn-1","status":"inProgress"}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-1","item":{"type":"agentMessage","text":"Codex completed the task.","phase":"final_answer"}}}'
+      printf '%s\n' '{"method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-1","status":"completed","error":null}}}'
+      ;;
+  esac
+done
 printf '%s\n' 'Codex warning on stderr' >&2
 `)
 
-	result, err := (Codex{}).Run(context.Background(), Request{Dir: t.TempDir(), Prompt: "rendered prompt"})
+	result, err := (Codex{Args: []string{"--strict-config"}}).Run(context.Background(), Request{Dir: t.TempDir(), Prompt: "rendered prompt"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if result.Output != "Codex completed the task." || result.SessionID != "019d1c0a-0137-73f3-bf4a-88c90739150c" {
-		t.Errorf("result = %+v", result)
+	if result.Output != "Codex completed the task." || result.SessionID != "session-1" {
+		t.Fatalf("result = %+v", result)
 	}
-}
-
-func TestParseCodexResultRecordedOutput(t *testing.T) {
-	out, err := os.ReadFile("testdata/codex-0.147.0-success.jsonl")
+	args, err := os.ReadFile(argsFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := parseCodexResult(out)
-	if err != nil {
-		t.Fatalf("parseCodexResult: %v", err)
-	}
-	if result.SessionID != "019d1c0a-0137-73f3-bf4a-88c90739150c" {
-		t.Errorf("SessionID = %q", result.SessionID)
-	}
-	if result.Output != "Codex completed the task." {
-		t.Errorf("Output = %q, want final assistant text", result.Output)
+	if string(args) != "app-server\n--listen\nstdio://\n--strict-config\n" {
+		t.Fatalf("codex arguments = %q", args)
 	}
 }
 
-func TestParseCodexResultRejectsIncompleteOrFailedStreams(t *testing.T) {
-	tests := []struct {
-		name    string
-		fixture string
-		wantErr string
-	}{
-		{name: "thread only", fixture: "codex-0.147.0-thread-only.jsonl", wantErr: "completed"},
-		{name: "turn completed without message", fixture: "codex-0.147.0-turn-completed-no-message.jsonl", wantErr: "agent message"},
-		{name: "empty completed message", fixture: "codex-0.147.0-empty-agent-message.jsonl", wantErr: "agent message"},
-		{name: "turn failed", fixture: "codex-0.147.0-turn-failed.jsonl", wantErr: "turn.failed"},
-		{name: "top-level error", fixture: "codex-0.147.0-error.jsonl", wantErr: "error"},
+func TestCodexRunReportsProtocolFailureWithStderr(t *testing.T) {
+	bin := t.TempDir()
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeHarnessScript(t, bin, "codex", `
+IFS= read -r line
+printf '%s\n' 'not-json'
+printf '%s\n' 'server diagnostic' >&2
+sleep 10
+`)
+
+	result, err := (Codex{}).Run(context.Background(), Request{Dir: t.TempDir(), Prompt: "rendered prompt"})
+	if err == nil || !strings.Contains(err.Error(), "decode message") || !strings.Contains(err.Error(), "server diagnostic") {
+		t.Fatalf("result = %+v, error = %v", result, err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out, err := os.ReadFile(filepath.Join("testdata", tt.fixture))
-			if err != nil {
-				t.Fatal(err)
-			}
-			result, err := parseCodexResult(out)
-			if err == nil {
-				t.Fatalf("parseCodexResult = %+v, nil error; want rejection", result)
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("parseCodexResult error = %q, want %q", err, tt.wantErr)
-			}
-			if result != (Result{}) {
-				t.Errorf("parseCodexResult result = %+v, want empty result", result)
-			}
-		})
+}
+
+func TestCodexRunPreservesCancellation(t *testing.T) {
+	bin := t.TempDir()
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeHarnessScript(t, bin, "codex", `
+IFS= read -r line
+sleep 10
+`)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	result, err := (Codex{}).Run(ctx, Request{Dir: t.TempDir(), Prompt: "rendered prompt"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("result = %+v, error = %v, want deadline exceeded", result, err)
 	}
 }
 
 func TestCodexName(t *testing.T) {
 	if got := (Codex{}).Name(); got != "codex" {
-		t.Errorf("Name() = %q, want codex", got)
+		t.Fatalf("Name() = %q, want codex", got)
+	}
+}
+
+func TestLiveCodexAppServerHandshake(t *testing.T) {
+	if os.Getenv("ROMP_LIVE_CODEX_TESTS") != "1" {
+		t.Skip("set ROMP_LIVE_CODEX_TESTS=1 to test the installed app-server")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	process, err := startCodexServer(ctx, t.TempDir(), codexServerArgs(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := true
+	defer func() {
+		if err := process.shutdown(failed); err != nil {
+			t.Errorf("shutdown: %v\nstderr:\n%s", err, process.stderr.String())
+		}
+	}()
+
+	client := newRPCClient(process)
+	var initialized json.RawMessage
+	if err := client.call("initialize", map[string]any{
+		"clientInfo": map[string]string{"name": "romp_test", "title": "Romp Test", "version": "0.1"},
+	}, &initialized, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.notify("initialized", map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	var skills struct {
+		Data []struct {
+			Skills []struct {
+				Name  string `json:"name"`
+				Path  string `json:"path"`
+				Scope string `json:"scope"`
+			} `json:"skills"`
+		} `json:"data"`
+	}
+	if err := client.call("skills/list", map[string]any{"cwds": []string{t.TempDir()}, "forceReload": true}, &skills, nil); err != nil {
+		t.Fatal(err)
+	}
+	if skills.Data == nil {
+		t.Fatal("skills/list returned nil data")
+	}
+	for _, entry := range skills.Data {
+		for _, skill := range entry.Skills {
+			if skill.Name == "siddhartha-go" {
+				t.Logf("siddhartha-go scope=%s path=%s", skill.Scope, skill.Path)
+			}
+		}
+	}
+	failed = false
+}
+
+func TestLiveCodexAppServerRun(t *testing.T) {
+	if os.Getenv("ROMP_LIVE_CODEX_TESTS") != "1" {
+		t.Skip("set ROMP_LIVE_CODEX_TESTS=1 to run an authenticated app-server turn")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	result, err := (Codex{Ephemeral: true}).Run(ctx, Request{
+		Dir:      t.TempDir(),
+		Prompt:   "Use the supplied Go skill. Reply with exactly server-ok and do not use tools.",
+		Effort:   "low",
+		Skills:   []string{"siddhartha-go"},
+		ReadOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(result.Output) != "server-ok" || result.SessionID == "" || result.Metadata == nil || !slices.Equal(result.Metadata.Skills, []string{"siddhartha-go"}) {
+		t.Fatalf("result = %+v", result)
 	}
 }

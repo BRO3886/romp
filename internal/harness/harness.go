@@ -26,6 +26,9 @@ type Request struct {
 	// --max-turns). Codex and OpenCode have no equivalent and ignore this field.
 	// Zero leaves the harness default in place.
 	MaxTurns int
+	// Skills names agent skills that the harness must load for this run.
+	// Harnesses without first-class skill support may ignore this field.
+	Skills []string
 	// ReadOnly selects the harness's native worktree mutation restrictions.
 	// The zero value preserves the writable builder behavior.
 	ReadOnly bool
@@ -38,6 +41,14 @@ type Result struct {
 	Output string
 	// SessionID identifies the conversation created by the harness run.
 	SessionID string
+	// Metadata carries optional transport details exposed by a harness.
+	Metadata *ResultMetadata
+}
+
+// ResultMetadata records the context a harness loaded for a run.
+type ResultMetadata struct {
+	InstructionSources []string
+	Skills             []string
 }
 
 func diagnosticError(name string, err error, stdout, stderr []byte) error {

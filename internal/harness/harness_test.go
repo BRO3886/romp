@@ -14,7 +14,6 @@ func TestRunFailuresPreserveSeparateDiagnostics(t *testing.T) {
 		run  func(context.Context, Request) (Result, error)
 	}{
 		{name: "claude", run: (Claude{}).Run},
-		{name: "codex", run: (Codex{}).Run},
 		{name: "opencode", run: (OpenCode{}).Run},
 	}
 	for _, tt := range tests {
@@ -49,7 +48,6 @@ func TestStructuredRunFailureDoesNotExposeSessionID(t *testing.T) {
 		run     func(context.Context, Request) (Result, error)
 	}{
 		{name: "claude", fixture: "claude-2.1.235-success.json", run: (Claude{}).Run},
-		{name: "codex", fixture: "codex-0.147.0-success.jsonl", run: (Codex{}).Run},
 		{name: "opencode", fixture: "opencode-1.18.18-success.jsonl", run: (OpenCode{}).Run},
 	}
 	for _, tt := range tests {

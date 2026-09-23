@@ -36,20 +36,6 @@ func TestReadOnlyCommandConstruction(t *testing.T) {
 			want:  []string{"-p", "--output-format", "json", "--model", "sonnet", "--effort", "high", "--max-turns", "12", "--verbose", "--permission-mode", "bypassPermissions", "--disallowedTools=Write,Edit,NotebookEdit,Bash", "review"},
 		},
 		{
-			name:  "codex writable",
-			build: codexArgs,
-			req:   Request{Prompt: "review", Dir: "/tmp/wt", Model: "gpt-5.6-terra", Effort: "high"},
-			extra: []string{"--ephemeral"},
-			want:  []string{"exec", "--json", "--sandbox", "workspace-write", "--color", "never", "--cd", "/tmp/wt", "--model", "gpt-5.6-terra", "-c", "model_reasoning_effort=high", "--ephemeral"},
-		},
-		{
-			name:  "codex read only",
-			build: codexArgs,
-			req:   Request{Prompt: "review", Dir: "/tmp/wt", Model: "gpt-5.6-terra", Effort: "high", ReadOnly: true},
-			extra: []string{"--ephemeral"},
-			want:  []string{"exec", "--json", "--color", "never", "--cd", "/tmp/wt", "--model", "gpt-5.6-terra", "-c", "model_reasoning_effort=high", "--ephemeral", "--sandbox", "read-only"},
-		},
-		{
 			name:  "opencode writable",
 			build: opencodeArgs,
 			req:   Request{Prompt: "review", Model: "openai/gpt-5", Effort: "high"},
@@ -93,23 +79,11 @@ func TestReadOnlyConflictingExtras(t *testing.T) {
 		{name: "claude allow permission bypass equals", validate: validateClaudeReadOnlyExtras, extra: []string{"--allow-dangerously-skip-permissions=true"}, want: "--allow-dangerously-skip-permissions"},
 		{name: "claude permission bypass", validate: validateClaudeReadOnlyExtras, extra: []string{"--dangerously-skip-permissions"}, want: "--dangerously-skip-permissions"},
 		{name: "claude option terminator", validate: validateClaudeReadOnlyExtras, extra: []string{"--"}, want: "--"},
-		{name: "codex sandbox", validate: validateCodexReadOnlyExtras, extra: []string{"--sandbox", "workspace-write"}, want: "--sandbox"},
-		{name: "codex sandbox equals", validate: validateCodexReadOnlyExtras, extra: []string{"--sandbox=danger-full-access"}, want: "--sandbox"},
-		{name: "codex sandbox short", validate: validateCodexReadOnlyExtras, extra: []string{"-s", "workspace-write"}, want: "-s"},
-		{name: "codex sandbox attached short", validate: validateCodexReadOnlyExtras, extra: []string{"-sworkspace-write"}, want: "-s"},
-		{name: "codex writable directory", validate: validateCodexReadOnlyExtras, extra: []string{"--add-dir", "/tmp"}, want: "--add-dir"},
-		{name: "codex writable directory equals", validate: validateCodexReadOnlyExtras, extra: []string{"--add-dir=/tmp"}, want: "--add-dir"},
-		{name: "codex sandbox bypass", validate: validateCodexReadOnlyExtras, extra: []string{"--dangerously-bypass-approvals-and-sandbox"}, want: "--dangerously-bypass-approvals-and-sandbox"},
-		{name: "codex workspace approval", validate: validateCodexReadOnlyExtras, extra: []string{"--approve-for-me"}, want: "--approve-for-me"},
-		{name: "codex output file", validate: validateCodexReadOnlyExtras, extra: []string{"--output-last-message", "review.md"}, want: "--output-last-message"},
-		{name: "codex output file short", validate: validateCodexReadOnlyExtras, extra: []string{"-o", "review.md"}, want: "-o"},
-		{name: "codex output file attached short", validate: validateCodexReadOnlyExtras, extra: []string{"-oreview.md"}, want: "-o"},
 		{name: "codex sandbox config", validate: validateCodexReadOnlyExtras, extra: []string{"-c", `sandbox_mode="workspace-write"`}, want: "sandbox_mode"},
 		{name: "codex sandbox config whitespace", validate: validateCodexReadOnlyExtras, extra: []string{"-c", ` sandbox_mode = "workspace-write"`}, want: "sandbox_mode"},
 		{name: "codex quoted sandbox config", validate: validateCodexReadOnlyExtras, extra: []string{"-c", `"sandbox_mode"="workspace-write"`}, want: "sandbox_mode"},
 		{name: "codex sandbox config attached", validate: validateCodexReadOnlyExtras, extra: []string{`-csandbox_permissions=["disk-full-write-access"]`}, want: "sandbox_permissions"},
 		{name: "codex approval config equals", validate: validateCodexReadOnlyExtras, extra: []string{`--config=approval_policy="never"`}, want: "approval_policy"},
-		{name: "codex option terminator", validate: validateCodexReadOnlyExtras, extra: []string{"--"}, want: "--"},
 		{name: "opencode agent", validate: validateOpenCodeReadOnlyExtras, extra: []string{"--agent", "build"}, want: "--agent"},
 		{name: "opencode agent equals", validate: validateOpenCodeReadOnlyExtras, extra: []string{"--agent=build"}, want: "--agent"},
 		{name: "opencode remote server", validate: validateOpenCodeReadOnlyExtras, extra: []string{"--attach", "http://localhost:4096"}, want: "--attach"},
@@ -134,7 +108,7 @@ func TestReadOnlyConflictFailsBeforeProcessExecution(t *testing.T) {
 	}{
 		{name: "claude permission mode", binary: "claude", run: (Claude{Args: []string{"--permission-mode", "acceptEdits"}}).Run},
 		{name: "claude tools", binary: "claude", run: (Claude{Args: []string{"--tools", "Read,Bash"}}).Run},
-		{name: "codex", binary: "codex", run: (Codex{Args: []string{"--sandbox", "workspace-write"}}).Run},
+		{name: "codex", binary: "codex", run: (Codex{Args: []string{"--config", `sandbox_mode="workspace-write"`}}).Run},
 		{name: "opencode", binary: "opencode", run: (OpenCode{Args: []string{"--agent", "build"}}).Run},
 	}
 
@@ -335,11 +309,6 @@ func TestReadOnlyRunForwardsStructuredOutputWithoutArtifact(t *testing.T) {
 			wantOutput: "Claude completed the task.", wantID: "902816de-f8a8-402b-a198-242830f8d818",
 		},
 		{
-			name: "codex", fixture: "codex-0.147.0-success.jsonl", run: (Codex{}).Run,
-			wantArgs:   []string{"exec", "--json", "--color", "never", "--cd", "WORKTREE", "--sandbox", "read-only"},
-			wantOutput: "Codex completed the task.", wantID: "019d1c0a-0137-73f3-bf4a-88c90739150c",
-		},
-		{
 			name: "opencode", fixture: "opencode-1.18.18-success.jsonl", run: (OpenCode{}).Run,
 			wantArgs:   []string{"run", "--auto", "--format", "json", "--agent", "romp-read-only", "rendered prompt"},
 			wantOutput: "Applied the requested changes.\nOpenCode completed the task.", wantID: "ses_65b3acf58ffeLSa4dfj1RVoPpW",
@@ -483,7 +452,7 @@ func TestLiveReadOnlyEnforcement(t *testing.T) {
 		run  func(context.Context, Request) (Result, error)
 	}{
 		{name: "claude", run: (Claude{Args: []string{"--no-session-persistence"}}).Run},
-		{name: "codex", run: (Codex{Args: []string{"--ephemeral"}}).Run},
+		{name: "codex", run: (Codex{Ephemeral: true}).Run},
 		{name: "opencode", run: (OpenCode{}).Run},
 	}
 

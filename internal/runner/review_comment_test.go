@@ -217,7 +217,7 @@ func TestLiveCodexReviewLensFanout(t *testing.T) {
 	r := newTestRunner(t, g, c, []string{"true"})
 	t.Setenv("HOME", realHome)
 	r.Harness = fakeHarness{result: harness.Result{Output: "GREEN: the configured verification command passed."}}
-	r.ReviewHarness = harness.Codex{Args: []string{"--ephemeral"}}
+	r.ReviewHarness = harness.Codex{Ephemeral: true}
 	r.ReviewEnabled = true
 	r.MaxFixRounds = 0
 	instrumentation := &fakeReviewStore{}

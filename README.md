@@ -232,9 +232,10 @@ worktrees.
 - romp never merges. Review the PRs.
 - Don't run it against a repo with production credentials in the tree.
 - Branch protection on the default branch is strongly recommended.
-- Sandboxing is whatever the harness provides: Codex runs `--sandbox
-  workspace-write`, Claude `--permission-mode bypassPermissions`, and OpenCode
-  runs `--auto` to auto-approve permissions that are not explicitly denied.
+- Sandboxing is whatever the harness provides: Codex app-server receives an
+  explicit `workspaceWrite` policy for builder turns and `readOnly` for review
+  turns, Claude uses `--permission-mode bypassPermissions`, and OpenCode runs
+  `--auto` to auto-approve permissions that are not explicitly denied.
 
 ## Non-goals
 
