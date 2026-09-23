@@ -30,7 +30,8 @@ keep sensitive files nearby.
 
 romp does not add its own sandbox. It relies on whatever the harness provides:
 
-- Codex runs with `--sandbox workspace-write`
+- Codex app-server receives `workspaceWrite` for builder turns and `readOnly`
+  for review turns
 - Claude runs with `--permission-mode bypassPermissions`
 - OpenCode runs with `--auto`, which auto-approves permissions that are not explicitly denied
 

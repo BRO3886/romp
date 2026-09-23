@@ -56,6 +56,13 @@ convention references. It parses every outcome and merges them into one logical
 pass. The runner records that pass as one PR comment. The review renderer,
 parser, and outcome merger perform no filesystem discovery or harness calls.
 
+## Codex skills
+
+An issue can invoke an installed Codex skill with `$skill-name`. The Codex
+adapter force-refreshes app-server skill discovery and sends each matching path
+as a first-class skill input. Dollar-prefixed shell variables such as `$HOME`
+stay ordinary prompt text when no installed skill has that name.
+
 ## Customizing the prompt
 
 Override the built-in template with `.romp/prompt.md` (a Go `text/template`,

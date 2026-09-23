@@ -9,7 +9,7 @@ The runner discards the harness result entirely: `_, err = r.Harness.Run(...)` k
 Each harness CLI exposes an identifier for its conversation, but in different shapes and output modes:
 
 - `claude -p` reports `session_id` only under `--output-format json`; text mode omits it.
-- `codex exec --json` emits JSONL on stdout. Its `thread.started` event carries the identifier in `thread_id`.
+- Codex app-server returns `thread.sessionId` from `thread/start`.
 - `opencode run --format json` carries `sessionID` on every JSONL event; text mode omits it.
 
 ## Decision
@@ -17,10 +17,13 @@ Each harness CLI exposes an identifier for its conversation, but in different sh
 `harness.Result` gains a `SessionID string` field. Each adapter uses the CLI's structured transport and normalizes it at the adapter boundary:
 
 - Claude uses `--output-format json`, reads `session_id`, and returns `result` as the final assistant text.
-- Codex uses `exec --json`, reads `thread.started.thread_id` from the JSONL event stream, and returns the last completed `agent_message` as the final assistant text. `--output-schema` is a separate option that constrains the final agent message; it does not replace the JSONL transport.
+- Codex uses app-server, reads `thread.sessionId`, and returns completed
+  `agentMessage` items from a successfully completed turn. See ADR 0014 for
+  the protocol and lifecycle decision.
 - OpenCode uses `run --format json`, reads `sessionID` from the JSONL events, and returns the ordered text parts as the final assistant text.
 
-All adapters keep stdout and stderr in separate buffers. Structured parsing reads stdout only, while command and parse failures retain raw stdout and stderr as labelled diagnostics.
+All adapters keep protocol output and stderr separate. Command and protocol
+failures retain stderr as a labelled diagnostic.
 
 After a successful harness run, the runner records the session ID on the active `jobs` row and prints it as a codename-prefixed log line. A failed CLI run does neither, even if its partial output contains an identifier. `Store.Finish` copies the active row's session ID into the new `outcomes` row in the same transaction before it deletes the active row. Both columns are nullable, and opening a database created by an earlier release adds either missing column without rebuilding or replacing the tables. Active status and finished history display the identifier when it exists.
 

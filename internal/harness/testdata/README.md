@@ -5,7 +5,6 @@ These fixtures are reduced recordings from the CLI versions named in each filena
 The recordings came from the structured modes used by romp:
 
 - `claude -p --output-format json` on Claude Code 2.1.235
-- `codex exec --json` on Codex CLI 0.147.0
 - `opencode run --format json` on OpenCode 1.18.18
 
 Tests replay these files through local fake executables. They never make live agent calls.

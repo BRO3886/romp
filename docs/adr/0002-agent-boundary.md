@@ -4,11 +4,11 @@ Status: accepted
 
 ## Context
 
-romp supports multiple coding-agent CLIs — claude and codex — and each ships its own structured-output mechanism (claude's `--json-schema`, Codex's `--output-schema`). Coupling romp to any one of them means learning a new output format per harness, and the agent's final free-text message is not a reliable carrier for structured data.
+romp supports multiple coding-agent runtimes. Each has a different transport and result shape. Coupling the runner to any one of them means leaking vendor-specific lifecycle details into the delivery pipeline, and the agent's final free-text message is not a reliable carrier for structured data.
 
 ## Decision
 
-The prompt is the single contract between romp and the agent. The agent reports structured outcomes by writing markdown files under `.romp/` — `pull-request.md` (PR title, conventional commit subject, description, optionally mermaid diagrams) and `blocked.md` (the gap when an issue is under-scoped) — which romp reads after the harness exits. The harness interface stays minimal (`Name` plus `Run`); adapters implement it, and romp never parses a harness's native output.
+The prompt is the single product contract between romp and the agent. The agent reports structured outcomes by writing markdown files under `.romp/` — `pull-request.md` (PR title, conventional commit subject, description, optionally mermaid diagrams) and `blocked.md` (the gap when an issue is under-scoped) — which romp reads after the harness exits. The harness interface stays minimal (`Name`, `Check`, and `Run`); adapters own their native process and protocol lifecycle. Native final output remains diagnostic and review input, not the source of truth for PR publication.
 
 ## Consequences
 
