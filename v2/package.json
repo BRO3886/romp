@@ -11,19 +11,27 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
+    "check": "npm run build && tsc -p tsconfig.test.json --noEmit",
     "test": "npm run build && node --import tsx --test test/*.test.ts",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "lint": "eslint src test",
+    "format": "prettier --write src test *.json *.mjs README.md ARCHITECTURE.md VALIDATION.md",
+    "format:check": "prettier --check src test *.json *.mjs README.md ARCHITECTURE.md VALIDATION.md"
   },
   "dependencies": {
     "@earendil-works/chord": "1.2.0",
     "@earendil-works/pi-ai": "1.2.0",
     "@earendil-works/pi-durable": "1.2.0",
-    "smol-toml": "1.9.1"
+    "smol-toml": "1.9.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "22.19.15",
+    "eslint": "10.12.0",
+    "prettier": "3.9.10",
     "tsx": "4.20.6",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2"
   }
 }

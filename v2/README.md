@@ -1,6 +1,6 @@
 # Romp v2 experiment
 
-This is an independent TypeScript rewrite of Romp's local delivery runtime on Pi Durable 1.2.0. It lives on `codex/experimental-v2`. The Go implementation remains available in the repository and has no dependency on this package.
+This is an independent TypeScript rewrite of Romp's local delivery runtime on Pi Durable 1.2.0. It lives on the remote `v2` branch. The Go implementation remains available in the repository and has no dependency on this package.
 
 V2 runs model conversations directly through Pi. It does not invoke the Codex, Claude Code, or OpenCode CLIs. Changing the model changes the model provider, rather than selecting another installed coding agent.
 
@@ -71,7 +71,8 @@ Successful, blocked, and no-change jobs remove their worktree. Failed, red, reje
 
 ```sh
 npm run check
-npm run build
+npm run lint
+npm run format:check
 npm test
 npm audit --omit=dev
 ```
@@ -81,3 +82,5 @@ Tests use the real Pi Durable runtime, Node SQLite, coding tools, git repositori
 This experiment does not claim V1 feature parity. It has one reviewer per pass rather than V1's lens fan-out. Launchd packaging, the native app protocol, the TUI, skill installation, configuration layering, protected/ignored path configuration, memory-pressure admission, and GC are not implemented here. History is currently retained without a size limit. Global width defaults to one.
 
 GitHub labels are a visible claim signal, not an atomic cross-machine lock. Use one v2 daemon per participating repository. Live model quality, account-specific OAuth access, and hosted GitHub mutation behavior require a separate end-to-end trial. The automated suite does not prove those properties.
+
+The module boundaries, validated contracts, and persistence migration are documented in [ARCHITECTURE.md](ARCHITECTURE.md). Source and tests are typechecked. CI checks types, lint, formatting, and behavior on the remote `v2` branch.

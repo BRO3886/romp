@@ -2,7 +2,7 @@ name: Experimental v2
 
 on:
   push:
-    branches: [codex/experimental-v2]
+    branches: [v2, codex/experimental-v2]
     paths: [v2/**, .github/workflows/v2.yml]
   pull_request:
     paths: [v2/**, .github/workflows/v2.yml]
@@ -22,6 +22,7 @@ jobs:
           cache-dependency-path: v2/package-lock.json
       - run: npm ci --ignore-scripts
       - run: npm run check
-      - run: npm run build
+      - run: npm run lint
+      - run: npm run format:check
       - run: npm test
       - run: npm audit --omit=dev

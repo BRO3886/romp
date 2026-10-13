@@ -1,4 +1,47 @@
-# Experimental v2 validation
+# Refactor validation
+
+Validated locally on macOS on October 14, 2026. The compiler, linter, and default test run use Node 25.8.1. The behavior suite also runs against the CI runtime, Node 22.22.1.
+
+## Current checks
+
+- `npm ci --ignore-scripts` restores the locked dependencies.
+- `npm run check` builds the application and typechecks source and tests with the strict compiler options.
+- `npm run lint` checks types, promise handling, unchecked values, and architecture import boundaries.
+- `npm run format:check` checks the repository's formatting rules.
+- The behavior suite now includes 22 tests, retaining the original 17 cases and adding protocol, checkpoint-invariant, legacy SQLite migration, and inherited-property regressions.
+- `npm audit` reports zero vulnerabilities in the complete dependency graph.
+
+The migration also passed against a checkpoint produced by the actual runtime at commit `9e4c797`. That worker was killed after the test GitHub port created the PR. The refactored runtime migrated the task from version 1 to version 2, reused the PR, ran only the reviewer, and finished successfully.
+
+## New regressions
+
+The original socket client accepted a malformed successful ping result containing a numeric version. The regression was reproduced against the original commit:
+
+```text
+RED original 9e4c797: Missing expected rejection for malformed ping result
+GREEN refactor: malformed ping result rejected
+```
+
+The new client parses the response envelope and the selected method's result schema. A permanent test exercises this through an actual Unix socket.
+
+Job lookup also treated inherited JavaScript properties as stored jobs. Calling `job('toString')` returned a function. The regression test failed before the repair:
+
+```text
+job lookup rejects inherited dictionary properties
+AssertionError: Missing expected rejection.
+```
+
+The shared dictionary lookup now requires an own property. The application lookup and Pi state readers use it. The regression checks `toString`, `constructor`, and `__proto__`.
+
+## Coverage limits
+
+Live model calls, account-specific OAuth login, hosted GitHub mutations, and Cloudflare deployment have not been exercised. The local suite uses the real Pi runtime, SQLite, git, processes, and sockets with scripted model replies and the test GitHub port. Hosted CI status must be checked after pushing the refactor.
+
+The following record preserves the initial experiment's evidence.
+
+---
+
+# Initial experiment validation
 
 Validated locally on macOS on October 13, 2026, using Node 22.22.1 and Pi Durable 1.2.0.
 
