@@ -2,164 +2,114 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
-	"time"
 
-	"github.com/spf13/cobra"
-
-	"github.com/BRO3886/romp/internal/codename"
-	"github.com/BRO3886/romp/internal/config"
-	"github.com/BRO3886/romp/internal/gh"
-	"github.com/BRO3886/romp/internal/git"
-	"github.com/BRO3886/romp/internal/harness"
+	"github.com/BRO3886/romp/internal/daemon"
 	"github.com/BRO3886/romp/internal/job"
 	"github.com/BRO3886/romp/internal/progress"
-	"github.com/BRO3886/romp/internal/watch"
+	"github.com/BRO3886/romp/internal/protocol"
 	"github.com/mattn/go-isatty"
+	"github.com/spf13/cobra"
 )
 
-const defaultPollInterval = 60 * time.Second
-
 func newWatchCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "watch",
-		Short: "Poll for labelled issues and work them",
-		Args:  cobra.NoArgs,
-		RunE:  runWatch,
-	}
+	return &cobra.Command{Use: "watch", Short: "Register this repository and view daemon jobs", Args: cobra.NoArgs, RunE: runWatch}
 }
 
 func runWatch(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
-
 	root, err := repoRoot(ctx)
 	if err != nil {
 		return err
 	}
-	cfg, err := loadConfig(root, config.Overrides{}, cmd.ErrOrStderr())
+	c, err := daemonClient(ctx)
 	if err != nil {
 		return err
 	}
-	verify, err := verifyCommands(cfg, nil, false)
-	if err != nil {
+	defer c.Close()
+	var repo job.Repository
+	if err := c.Call(ctx, "registry.watch", daemon.Params{Path: root}, &repo); err != nil {
 		return err
 	}
-	h, err := buildHarness(cfg.Harness.Default)
-	if err != nil {
+	if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
+		fmt.Fprintf(cmd.OutOrStdout(), "watching %s in rompd at %s\n", repo.Origin, repo.Path)
+		return nil
+	}
+	events := make(chan progress.Event, 256)
+	c.OnNotification = func(method string, raw json.RawMessage) {
+		if method != "jobs.changed" {
+			return
+		}
+		var value struct {
+			Repo  string         `json:"repo"`
+			Event progress.Event `json:"event"`
+		}
+		if json.Unmarshal(raw, &value) != nil || value.Repo != repo.Origin {
+			return
+		}
+		select {
+		case events <- value.Event:
+		default:
+			c.Close()
+		}
+	}
+	if err := c.Call(ctx, "subscribe", nil, nil); err != nil {
 		return err
 	}
-	var reviewer harness.Harness
-	if cfg.Review.Enabled {
-		reviewer, err = buildReviewHarness(cfg)
+	var active []job.Job
+	if err := c.Call(ctx, "jobs.list", daemon.Params{Repo: repo.Origin}, &active); err != nil {
+		return err
+	}
+	for _, j := range active {
+		select {
+		case events <- progress.Event{Issue: j.Issue, Phase: progress.PhasePreparing, Detail: "running in rompd", BuilderHarness: j.BuilderHarness, ReviewerHarness: j.ReviewerHarness}:
+		default:
+			return fmt.Errorf("too many active job events; reconnect the dashboard")
+		}
+	}
+	return runWatchTUI(ctx, &remoteWatch{c, events}, remoteHistory{}, repo.Origin, events)
+}
+
+type remoteWatch struct {
+	client *protocol.Client
+	events chan progress.Event
+}
+
+func (w *remoteWatch) Run(ctx context.Context) error {
+	defer close(w.events)
+	err := w.client.Listen(ctx)
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}
+
+type remoteHistory struct{}
+
+func (remoteHistory) History(ctx context.Context, repo string, limit int) ([]job.Outcome, error) {
+	var out []job.Outcome
+	err := daemonCall(ctx, "jobs.history", daemon.Params{Repo: repo, Limit: limit}, &out)
+	return out, err
+}
+
+func newUnwatchCmd() *cobra.Command {
+	return &cobra.Command{Use: "unwatch", Short: "Stop new claims for this repository", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		owner, name, err := currentRepo(cmd.Context())
 		if err != nil {
 			return err
 		}
-	}
-	timeout, err := parseTimeout(cfg.Timeout)
-	if err != nil {
-		return err
-	}
-
-	repository := &git.Repo{Root: root}
-	owner, name, err := repository.Origin(ctx)
-	if err != nil {
-		return fmt.Errorf("resolve origin: %w", err)
-	}
-	repo := owner + "/" + name
-	factory := runnerFactory{
-		root:       root,
-		config:     cfg,
-		verify:     verify,
-		harness:    h,
-		reviewer:   reviewer,
-		timeout:    timeout,
-		repository: repository,
-	}
-
-	store, err := job.Open(job.Path())
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
-	interactive := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
-	var events chan progress.Event
-	var progressSink progress.Sink
-	if interactive {
-		events = make(chan progress.Event, 256)
-		progressSink = func(event progress.Event) {
-			events <- event
-		}
-	}
-
-	w := &watch.Watcher{
-		Repo:     repo,
-		Trigger:  cfg.Label,
-		Claim:    cfg.ClaimedLabel,
-		Blocked:  cfg.BlockedLabel,
-		Width:    cfg.Width,
-		Interval: defaultPollInterval,
-		GH:       &gh.Client{},
-		Store:    store,
-		RunJob: func(ctx context.Context, issue int) (string, error) {
-			jobName := codename.For(repo, issue)
-			f, err := openJobLog(owner, name, jobName)
-			if err != nil {
-				return "", err
-			}
-			defer f.Close()
-			r, err := factory.build()
-			if err != nil {
-				return "", err
-			}
-			r.Codename = jobName
-			reviewerName := ""
-			if r.ReviewEnabled && r.ReviewHarness != nil {
-				reviewerName = r.ReviewHarness.Name()
-			}
-			if err := store.SetHarnesses(ctx, repo, issue, r.Harness.Name(), reviewerName); err != nil {
-				return "", fmt.Errorf("recording harnesses: %w", err)
-			}
-			progressSink.Emit(progress.Event{Issue: issue, BuilderHarness: r.Harness.Name(), ReviewerHarness: reviewerName})
-			r.Sessions = store
-			r.ReviewInstrumentation = store
-			r.Progress = progressSink
-			if interactive {
-				r.Stderr = f
-			} else {
-				r.Stderr = io.MultiWriter(watch.NewColorWriter(os.Stderr, jobName), f)
-			}
-			return r.Run(ctx, issue)
-		},
-		Progress: progressSink,
-		CleanJob: func(ctx context.Context, issue int) error {
-			cache, err := os.UserCacheDir()
-			if err != nil {
-				return err
-			}
-			dir := filepath.Join(cache, "romp", owner+"-"+name, fmt.Sprintf("romp-%d", issue))
-			if err := repository.RemoveWorktree(ctx, dir); err != nil {
-				return err
-			}
-			return repository.DeleteBranch(ctx, fmt.Sprintf("romp-%d", issue))
-		},
-	}
-	if interactive {
-		w.Stderr = io.Discard
-		return runWatchTUI(ctx, w, store, repo, events)
-	}
-	w.Stderr = watch.NewColorWriter(os.Stderr, "")
-	return w.Run(ctx)
+		return daemonCall(cmd.Context(), "registry.unwatch", daemon.Params{Repo: owner + "/" + name}, nil)
+	}}
 }
-
-// openJobLog creates or appends to the per-job log file for a codename.
-func openJobLog(owner, name, codename string) (*os.File, error) {
-	dir := job.LogsDir(owner, name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("creating log dir: %w", err)
-	}
-	return os.OpenFile(filepath.Join(dir, codename+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+func newRebindCmd() *cobra.Command {
+	return &cobra.Command{Use: "rebind", Short: "Bind a watched origin to this checkout", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		root, err := repoRoot(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return daemonCall(cmd.Context(), "registry.rebind", daemon.Params{Path: root}, nil)
+	}}
 }

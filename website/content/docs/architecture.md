@@ -4,7 +4,8 @@ description: "How romp works under the hood."
 weight: 7
 ---
 
-romp is a Go CLI that drives your local coding agent. It is deliberately
+rompd is a machine-wide Go daemon that drives your local coding agent. The CLI
+and native app are clients of its versioned JSON-RPC socket. It is deliberately
 minimal: the durable source of truth is GitHub, and romp adds only the
 machinery to claim, isolate, and verify work.
 
@@ -58,7 +59,7 @@ machinery to claim, isolate, and verify work.
   </g>
 </svg>
 
-1. **Poll** — `watch` lists open issues carrying the trigger label every 60
+1. **Poll** — `rompd` lists open issues carrying the trigger label every 60
    seconds. The label is the entire queue; there is no local backlog.
 2. **Claim** — atomic insert (unique on repo + issue), claim label, assign
    `@me`. Concurrent watchers on other machines skip claimed issues.
@@ -89,13 +90,17 @@ machinery to claim, isolate, and verify work.
 
 ```
 romp/
-├── cmd/romp/          # Cobra commands (init, watch, run, status, ...)
+├── cmd/romp/          # Cobra client commands
+├── cmd/rompd/         # daemon entry point
 ├── internal/
 │   ├── config/        # TOML layering, language detection, effort/variant handling
 │   ├── harness/       # Claude, Codex, and OpenCode adapters behind a Run/Name interface
 │   ├── prompt/        # goal-contract template rendering
 │   ├── runner/        # job pipeline: worktree → agent → verify → PR → review
-│   ├── watch/         # poll loop + claim + cancel socket
+│   ├── daemon/        # global admission, registry, launchd, and RPC server
+│   ├── protocol/      # generated wire types and JSON-RPC client
+│   ├── execution/     # config-to-runner assembly
+│   ├── watch/         # bounded per-repo claim and job lifecycle
 │   ├── job/           # SQLite job table + outcome history
 │   ├── gh/            # GitHub client with rate-limit retry
 │   ├── git/           # worktree and branch management
@@ -109,8 +114,12 @@ romp/
 - **Width** — an in-memory semaphore bounds concurrent jobs per repo.
 - **Cross-machine dedupe** — the claim label, not any local state, is the
   authority across machines.
-- **Crash recovery** — a fresh watcher clears only its own stale in-flight
-  rows and reconciles issues whose `romp-N` branch already has an open PR.
+- **Admission** — one new watched job per global tick, only at normal macOS
+  memory pressure. Repositories rotate through the first poll position.
+- **Crash recovery** — the daemon moves stale in-flight rows to `interrupted`
+  outcomes without deleting worktrees, branches, or trigger labels.
+- **Ownership** — the daemon exclusively owns SQLite and logs. Clients require
+  initialization and never fall back to local storage.
 
 ## Observability
 
@@ -141,4 +150,4 @@ history window.
 | 0007 | Poll the trigger label in v0; webhooks deferred | accepted |
 | 0008 | Shared SQLite file and append-only outcome history | accepted |
 | 0009 | Cancel over a Unix socket; logs tail files | superseded by 0010 |
-| 0010 | One machine-wide daemon, one socket, HTTP clients | accepted |
+| 0010 | One machine-wide daemon, one JSON-RPC socket, multiple clients | accepted |

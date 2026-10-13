@@ -17,6 +17,7 @@ weight: 2
 
 ```bash
 go install github.com/BRO3886/romp/cmd/romp@latest
+go install github.com/BRO3886/romp/cmd/rompd@latest
 ```
 
 ### Download a release
@@ -128,7 +129,7 @@ Active 2   History 9
 │    agent working                                              │
 ╰──────────────────────────────────────────────────────────────╯
 
-tab switch   ↑/↓ navigate   enter inspect   q drain
+tab switch   ↑/↓ navigate   enter inspect   q disconnect
 ```
 
 Each active job shows the phase it is in, the harness acting right now, and how
@@ -136,20 +137,14 @@ long it has been running. `CODEX → CLAUDE` reads as builder then reviewer. Tab
 switches between active jobs and history, the arrow keys move the selection, and
 Enter opens the selected job's phase timeline.
 
-When stdout is not a terminal, `watch` falls back to line-oriented output for
-scripts and service managers:
+When stdout is not a terminal, `watch` registers the repository, prints its
+binding, and exits. The daemon polls every 60 seconds across all registered
+origins. It admits at most one new job per global tick while macOS memory
+pressure is normal. `width` still bounds concurrent jobs in each repository.
 
-```text
-watching label "romp" every 1m0s (width 3)
-[sunny_naruto] running codex
-[sunny_naruto] verify ok (go test ./... -count=1)
-[sunny_naruto] PR: https://github.com/you/your-project/pull/482
-#17: done
-```
-
-`watch` polls every 60 seconds and works up to `width` issues at once. Ctrl-C
-drains — it stops claiming and waits for running jobs to finish. Ctrl-C twice
-kills everything.
+q or Ctrl-C closes the dashboard while daemon jobs continue. `romp unwatch`
+stops new claims for this origin and lets active jobs drain. `romp daemon stop`
+cancels all jobs, waits for outcome recording and cleanup, then unloads launchd.
 
 ## Next steps
 

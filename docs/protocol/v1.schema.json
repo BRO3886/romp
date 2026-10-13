@@ -1,0 +1,864 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://romp.dev/protocol/v1",
+  "title": "Romp daemon protocol v1",
+  "$ref": "#/$defs/Message",
+  "$defs": {
+    "Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "Message": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0",
+          "x-go-field": "JSONRPC"
+        },
+        "id": {
+          "x-go-type": "json.RawMessage",
+          "x-swift-type": "JSONValue",
+          "x-go-field": "ID"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "x-go-type": "json.RawMessage",
+          "x-swift-type": "JSONValue"
+        },
+        "result": {
+          "x-go-type": "json.RawMessage",
+          "x-swift-type": "JSONValue"
+        },
+        "error": {
+          "$ref": "#/$defs/Error",
+          "x-go-pointer": true
+        }
+      },
+      "required": [
+        "jsonrpc"
+      ]
+    },
+    "Initialize": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_name": {
+          "type": "string"
+        },
+        "client_version": {
+          "type": "string"
+        },
+        "protocol_min": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "protocol_max": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "client_name",
+        "client_version",
+        "protocol_min",
+        "protocol_max",
+        "capabilities"
+      ]
+    },
+    "Initialized": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "daemon_version": {
+          "type": "string"
+        },
+        "protocol_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "health": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "daemon_version",
+        "protocol_version",
+        "capabilities",
+        "health"
+      ]
+    },
+    "Overrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "harness": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "width": {
+          "type": "integer"
+        },
+        "no_review": {
+          "type": "boolean"
+        }
+      },
+      "required": []
+    },
+    "Params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "issue": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "days": {
+          "type": "integer"
+        },
+        "offset": {
+          "type": "integer",
+          "x-go-type": "int64"
+        },
+        "apply": {
+          "type": "boolean"
+        },
+        "overrides": {
+          "$ref": "#/$defs/Overrides"
+        },
+        "verify": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verify_set": {
+          "type": "boolean"
+        }
+      },
+      "required": []
+    },
+    "Repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin",
+        "path"
+      ]
+    },
+    "RegistryHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "health": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin",
+        "path",
+        "health"
+      ]
+    },
+    "LogSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "x-go-type": "int64"
+        },
+        "eof": {
+          "type": "boolean",
+          "x-go-field": "EOF"
+        }
+      },
+      "required": [
+        "text",
+        "offset",
+        "eof"
+      ]
+    },
+    "Check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean",
+          "x-go-field": "OK"
+        }
+      },
+      "required": [
+        "name",
+        "detail",
+        "ok"
+      ]
+    },
+    "GCResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "worktrees": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outcomes": {
+          "type": "integer"
+        },
+        "applied": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "worktrees",
+        "outcomes",
+        "applied"
+      ]
+    },
+    "Health": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "protocol_version": {
+          "type": "integer"
+        },
+        "health": {
+          "type": "string"
+        },
+        "memory_pressure": {
+          "type": "string"
+        },
+        "active_jobs": {
+          "type": "integer"
+        },
+        "restart_ready": {
+          "type": "boolean"
+        },
+        "stopping": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "version",
+        "protocol_version",
+        "health",
+        "memory_pressure",
+        "active_jobs",
+        "restart_ready",
+        "stopping"
+      ]
+    },
+    "ReviewPass": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "type": "string"
+        },
+        "blocking": {
+          "type": "integer"
+        },
+        "non_blocking": {
+          "type": "integer"
+        },
+        "nit": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "x-go-field": "DurationMS",
+          "x-go-type": "int64"
+        },
+        "lens_count": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "verdict",
+        "blocking",
+        "non_blocking",
+        "nit",
+        "duration_ms"
+      ]
+    },
+    "ReviewInstrumentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "review_ran": {
+          "type": "boolean"
+        },
+        "skip_reason": {
+          "type": "string"
+        },
+        "builder_duration_ms": {
+          "type": "integer",
+          "x-go-field": "BuilderDurationMS",
+          "x-go-type": "int64"
+        },
+        "fix_round_fired": {
+          "type": "boolean"
+        },
+        "fix_round_outcome": {
+          "type": "string"
+        },
+        "reverification_failures": {
+          "type": "integer"
+        },
+        "passes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewPass"
+          }
+        }
+      },
+      "required": [
+        "review_ran",
+        "builder_duration_ms",
+        "fix_round_fired"
+      ]
+    },
+    "Job": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "issue": {
+          "type": "integer"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "claimed_at": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "x-go-field": "SessionID"
+        },
+        "builder_harness": {
+          "type": "string"
+        },
+        "reviewer_harness": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "issue",
+        "branch",
+        "claimed_at",
+        "session_id",
+        "builder_harness",
+        "reviewer_harness"
+      ]
+    },
+    "Outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "issue": {
+          "type": "integer"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "x-go-field": "SessionID"
+        },
+        "builder_harness": {
+          "type": "string"
+        },
+        "reviewer_harness": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "pr_url": {
+          "type": "string",
+          "x-go-field": "PRURL"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "review": {
+          "$ref": "#/$defs/ReviewInstrumentation",
+          "x-go-type": "review.Instrumentation"
+        }
+      },
+      "required": [
+        "repo",
+        "issue",
+        "branch",
+        "session_id",
+        "builder_harness",
+        "reviewer_harness",
+        "outcome",
+        "pr_url",
+        "detail",
+        "started_at",
+        "finished_at",
+        "review"
+      ]
+    },
+    "ReviewSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reviewed_jobs": {
+          "type": "integer"
+        },
+        "clean_pass_jobs": {
+          "type": "integer"
+        },
+        "fix_round_jobs": {
+          "type": "integer"
+        },
+        "reverification_failures": {
+          "type": "integer"
+        },
+        "median_reviewer_duration": {
+          "type": "integer",
+          "x-go-type": "time.Duration"
+        }
+      },
+      "required": [
+        "reviewed_jobs",
+        "clean_pass_jobs",
+        "fix_round_jobs",
+        "reverification_failures",
+        "median_reviewer_duration"
+      ]
+    },
+    "Event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "issue": {
+          "type": "integer"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "x-go-field": "URL"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "builder_harness": {
+          "type": "string"
+        },
+        "reviewer_harness": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-type": "time.Time",
+          "x-swift-type": "String"
+        },
+        "terminal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "issue",
+        "phase",
+        "detail",
+        "outcome",
+        "url",
+        "harness",
+        "builder_harness",
+        "reviewer_harness",
+        "at",
+        "terminal"
+      ]
+    },
+    "Ready": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready"
+      ]
+    },
+    "Subscribed": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subscribed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "subscribed"
+      ]
+    },
+    "Cancelled": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cancelled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cancelled"
+      ]
+    },
+    "Unwatched": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unwatched": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "unwatched"
+      ]
+    },
+    "RunStarted": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "issue": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "issue",
+        "name"
+      ]
+    },
+    "JobChanged": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "event": {
+          "$ref": "#/$defs/Event"
+        }
+      },
+      "required": [
+        "repo",
+        "event"
+      ]
+    },
+    "LogRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "name",
+        "text"
+      ]
+    },
+    "RegistryChanged": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "health": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin"
+      ]
+    },
+    "RegistryStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "health": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "health"
+      ]
+    },
+    "Pressure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ]
+    },
+    "Shutdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ]
+    }
+  },
+  "x-methods": {
+    "initialize": {
+      "params": "Initialize",
+      "result": "Initialized"
+    },
+    "daemon.health": {
+      "params": "Params",
+      "result": "Health"
+    },
+    "daemon.version": {
+      "params": "Params",
+      "result": "Health"
+    },
+    "daemon.restartReady": {
+      "params": "Params",
+      "result": "Health"
+    },
+    "registry.list": {
+      "params": "Params",
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/RegistryHealth"
+        }
+      }
+    },
+    "registry.watch": {
+      "params": "Params",
+      "result": "Repository"
+    },
+    "registry.rebind": {
+      "params": "Params",
+      "result": "Repository"
+    },
+    "registry.unwatch": {
+      "params": "Params",
+      "result": "Unwatched"
+    },
+    "jobs.list": {
+      "params": "Params",
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/Job"
+        }
+      }
+    },
+    "jobs.history": {
+      "params": "Params",
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/Outcome"
+        }
+      }
+    },
+    "jobs.reviewSummary": {
+      "params": "Params",
+      "result": "ReviewSummary"
+    },
+    "jobs.run": {
+      "params": "Params",
+      "result": "RunStarted"
+    },
+    "jobs.cancel": {
+      "params": "Params",
+      "result": "Cancelled"
+    },
+    "logs.snapshot": {
+      "params": "Params",
+      "result": "LogSnapshot"
+    },
+    "logs.subscribe": {
+      "params": "Params",
+      "result": "LogSnapshot"
+    },
+    "doctor": {
+      "params": "Params",
+      "result": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/Check"
+        }
+      }
+    },
+    "gc": {
+      "params": "Params",
+      "result": "GCResult"
+    },
+    "subscribe": {
+      "params": "Params",
+      "result": "Subscribed"
+    },
+    "daemon.prepareShutdown": {
+      "params": "Params",
+      "result": "Ready"
+    },
+    "daemon.prepareRestart": {
+      "params": "Params",
+      "result": "Ready"
+    }
+  },
+  "x-notifications": {
+    "jobs.changed": {
+      "$ref": "#/$defs/JobChanged"
+    },
+    "jobs.finished": {
+      "$ref": "#/$defs/Outcome"
+    },
+    "logs.record": {
+      "$ref": "#/$defs/LogRecord"
+    },
+    "registry.changed": {
+      "$ref": "#/$defs/RegistryChanged"
+    },
+    "registry.health": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RegistryHealth"
+        },
+        {
+          "$ref": "#/$defs/RegistryStatus"
+        }
+      ]
+    },
+    "memory.changed": {
+      "$ref": "#/$defs/Pressure"
+    },
+    "daemon.shutdown": {
+      "$ref": "#/$defs/Shutdown"
+    }
+  },
+  "x-go-imports": [
+    "time",
+    "github.com/BRO3886/romp/internal/review"
+  ]
+}

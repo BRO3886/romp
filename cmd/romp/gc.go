@@ -2,17 +2,12 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/BRO3886/romp/internal/config"
-	"github.com/BRO3886/romp/internal/git"
-	"github.com/BRO3886/romp/internal/job"
+	"github.com/BRO3886/romp/internal/daemon"
 )
 
 func newGcCmd() *cobra.Command {
@@ -32,93 +27,33 @@ func newGcCmd() *cobra.Command {
 }
 
 func runGc(cmd *cobra.Command, apply bool, historyDays int) error {
-	ctx := cmd.Context()
-	root, err := repoRoot(ctx)
+	root, err := repoRoot(cmd.Context())
 	if err != nil {
 		return err
 	}
-	owner, name, err := (&git.Repo{Root: root}).Origin(ctx)
-	if err != nil {
-		return fmt.Errorf("resolve origin: %w", err)
-	}
-
-	cfg, err := loadConfig(root, config.Overrides{}, cmd.ErrOrStderr())
-	if err != nil {
-		return err
-	}
-	days := cfg.HistoryDays
+	days := -1
 	if cmd.Flags().Changed("history-days") {
 		days = historyDays
-	}
-
-	store, err := job.Open(job.Path())
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
-	jobs, err := store.List(ctx, owner+"/"+name)
-	if err != nil {
-		return err
-	}
-	active := make(map[int]bool)
-	for _, j := range jobs {
-		active[j.Issue] = true
-	}
-
-	cacheRoot, err := os.UserCacheDir()
-	if err != nil {
-		return err
-	}
-	wtDir := filepath.Join(cacheRoot, "romp", owner+"-"+name)
-
-	var names []string
-	entries, err := os.ReadDir(wtDir)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err == nil {
-		for _, e := range entries {
-			names = append(names, e.Name())
+		if days < 0 {
+			return fmt.Errorf("history-days must be non-negative")
 		}
 	}
-
-	any := false
-	g := &git.Repo{Root: root}
-	for _, n := range staleWorktrees(names, active) {
-		any = true
-		dir := filepath.Join(wtDir, n)
-		if apply {
-			if err := g.RemoveWorktree(ctx, dir); err != nil {
-				return err
-			}
-			fmt.Printf("removed %s\n", n)
-		} else {
-			fmt.Printf("would remove %s (pass --apply to delete)\n", n)
-		}
+	var result daemon.GCResult
+	if err := daemonCall(cmd.Context(), "gc", daemon.Params{Path: root, Days: days, Apply: apply}, &result); err != nil {
+		return err
 	}
-
-	if days > 0 {
-		cutoff := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour).Format(time.RFC3339Nano)
-		n, err := store.CountBefore(ctx, cutoff)
-		if err != nil {
-			return err
-		}
-		if n > 0 {
-			any = true
-			if apply {
-				if _, err := store.Prune(ctx, cutoff); err != nil {
-					return err
-				}
-				fmt.Printf("pruned %s older than %dd\n", outcomeWord(n), days)
-			} else {
-				fmt.Printf("would prune %s older than %dd (pass --apply to delete)\n", outcomeWord(n), days)
-			}
-		}
+	verb := "would remove"
+	if apply {
+		verb = "removed"
 	}
-
-	if !any {
-		fmt.Println("nothing to clean")
+	for _, path := range result.Worktrees {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", verb, path)
+	}
+	if result.Outcomes > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", verb, outcomeWord(result.Outcomes))
+	}
+	if len(result.Worktrees) == 0 && result.Outcomes == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "nothing to clean")
 	}
 	return nil
 }

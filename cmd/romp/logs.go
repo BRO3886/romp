@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/BRO3886/romp/internal/codename"
+	"github.com/BRO3886/romp/internal/daemon"
 	"github.com/BRO3886/romp/internal/job"
 )
 
@@ -29,27 +29,60 @@ func newLogsCmd() *cobra.Command {
 	return cmd
 }
 
-func runLogs(ctx context.Context, codename string, follow bool) error {
+func runLogs(ctx context.Context, arg string, follow bool) error {
 	owner, name, err := currentRepo(ctx)
 	if err != nil {
 		return err
 	}
-	path := jobLogPath(owner, name, codename)
-	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("no log for %s (is the job running?)", codename)
-	}
-	if !follow {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		_, err = os.Stdout.Write(data)
+	c, err := daemonClient(ctx)
+	if err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, "tail", "-f", path)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	defer c.Close()
+	p := daemon.Params{Repo: owner + "/" + name, Name: logCodename(owner, name, arg)}
+	var pending []string
+	c.OnNotification = func(method string, raw json.RawMessage) {
+		if method == "logs.record" {
+			var record struct {
+				Text string `json:"text"`
+			}
+			if json.Unmarshal(raw, &record) == nil {
+				pending = append(pending, record.Text)
+			}
+		}
+	}
+	method := "logs.snapshot"
+	if follow {
+		method = "logs.subscribe"
+	}
+	for {
+		var snapshot daemon.LogSnapshot
+		if err := c.Call(ctx, method, p, &snapshot); err != nil {
+			return err
+		}
+		fmt.Print(snapshot.Text)
+		p.Offset = snapshot.Offset
+		if snapshot.EOF {
+			break
+		}
+	}
+	for _, text := range pending {
+		fmt.Print(text)
+	}
+	if !follow {
+		return nil
+	}
+	c.OnNotification = func(method string, raw json.RawMessage) {
+		if method == "logs.record" {
+			var record struct {
+				Text string `json:"text"`
+			}
+			if json.Unmarshal(raw, &record) == nil {
+				fmt.Print(record.Text)
+			}
+		}
+	}
+	return c.Listen(ctx)
 }
 
 // jobLogPath is the per-repo log file for a job, addressed by codename or

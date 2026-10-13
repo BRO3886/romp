@@ -90,7 +90,7 @@ func TestHistoryReviewCommandReportsStoredJobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() { store.Close() })
 	repo := owner + "/" + name
 	if ok, err := store.Claim(context.Background(), repo, 34, "romp-34"); err != nil || !ok {
 		t.Fatalf("Claim: ok=%v err=%v", ok, err)
@@ -102,6 +102,7 @@ func TestHistoryReviewCommandReportsStoredJobs(t *testing.T) {
 	if err := store.Finish(context.Background(), job.Outcome{Repo: repo, Issue: 34, Outcome: "done", FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)}); err != nil {
 		t.Fatalf("Finish: %v", err)
 	}
+	testDaemon(t, store)
 
 	cmd := newHistoryCmd()
 	var out bytes.Buffer

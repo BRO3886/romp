@@ -26,6 +26,7 @@ Opinionated means romp makes these calls for you, and does not offer a switch to
 
 ```bash
 go install github.com/BRO3886/romp/cmd/romp@latest
+go install github.com/BRO3886/romp/cmd/rompd@latest
 ```
 
 Romp includes the `rompify` agent skill. Install it for a detected agent, or
@@ -47,8 +48,11 @@ repository-grounded execution contracts. It does not implement the issue.
 ```bash
 cd ~/code/your-project
 
-romp doctor        # verify git, gh, harness, config
 romp init          # choose verification commands, then write romp.toml
+romp daemon install --dry-run  # resolve tools without installing
+romp daemon install           # stage the canonical daemon and launchd plist
+romp daemon start             # start the user agent
+romp doctor                   # check the daemon environment and repo config
 romp run -i 17     # run one issue in the foreground
 romp watch         # then let it run
 ```
@@ -95,7 +99,7 @@ Active 2   History 9
 │    agent working                                              │
 ╰──────────────────────────────────────────────────────────────╯
 
-tab switch   ↑/↓ navigate   enter inspect   q drain
+tab switch   ↑/↓ navigate   enter inspect   q disconnect
 ```
 
 The interactive dashboard shows each job moving through agent, verification,
@@ -106,15 +110,20 @@ job's phase timeline. Successful verification output is not copied into the job
 log; failures retain their diagnostic output and show any transition into a
 remaining repair round. A reviewer-start line is emitted immediately before
 each concurrent read-only lens fan-out begins.
-When stdout is not a terminal, `watch` keeps the line-oriented output used by
-scripts and service managers. Ctrl-C drains; twice kills.
+When stdout is not a terminal, `watch` registers the repository, prints its
+binding, and exits. In a terminal, q or Ctrl-C disconnects the dashboard. The
+daemon continues polling and running jobs. Use `unwatch` to stop new claims
+for this origin, or `romp daemon stop` to cancel all jobs and unload the agent.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `init` | Write `romp.toml`, create the labels, update `.gitignore`. |
-| `watch` | Open the interactive job dashboard and work labelled issues. |
+| `watch` | Register this origin and open the daemon job dashboard. |
+| `unwatch` | Stop new claims for this origin; active jobs drain. |
+| `rebind` | Bind a watched origin to this checkout after a move. |
+| `daemon install\|start\|stop\|restart\|status\|version` | Manage the shared launchd user agent. |
 | `run -i N` | Run one issue now, ignoring the label. |
 | `status` | In-flight jobs. `--all` for every repo. |
 | `history` | Recently finished jobs. `--all` for every repo. `--review` for reviewer calibration. |
@@ -127,8 +136,22 @@ scripts and service managers. Ctrl-C drains; twice kills.
 `run` takes repeatable `--verify`, `--harness`, `--model`, and `--effort` flags to override config.
 For OpenCode, `--effort` selects the model-specific `--variant` value.
 
-`cancel` talks to the live watcher over a socket — no watcher, nothing to
-cancel. `logs` reads log files directly and works either way.
+The CLI talks to `rompd` through versioned JSON-RPC over
+`~/.local/state/romp/romp.sock`. Only the daemon opens SQLite and job logs.
+Status, history, logs, doctor, GC, cancellation, and foreground runs require a
+running daemon. Foreground runs bypass trigger-label admission but still receive
+an active row, logs, and an outcome for cancellation and crash recovery.
+
+The canonical daemon lives at `~/Library/Application Support/romp/bin/rompd`.
+Installation saves the login PATH and absolute tool paths for launchd. Reinstall
+after tools move. A new binary can be staged during jobs; `daemon restart`
+blocks new claims and waits for active jobs to finish. Installation refuses older versions. A crashed daemon
+records stale rows as `interrupted` and leaves their worktrees and labels intact.
+
+The daemon admits at most one new watched job per global minute tick while macOS
+memory pressure is normal. Warning or critical pressure pauses admission and
+leaves running jobs alone. Repositories rotate through the first poll position.
+The schema and generated Go and Swift records live in `docs/protocol/`.
 
 ## Configuration
 
@@ -184,7 +207,7 @@ string such as `25m`, `1.5h`, or `2h45m` when a job needs a deadline.
 The deadline covers the builder, verification, review, and all configured fix
 rounds as one job budget.
 
-State lives outside the repo: `~/.local/state/romp/romp.db` (shared job table),
+The daemon owns state outside the repo: `~/.local/state/romp/romp.db` (shared job table),
 `~/.local/state/romp/<owner>-<repo>/logs/`, and worktrees under the cache dir.
 
 ## The goal contract
@@ -214,8 +237,9 @@ comment — a plausible PR solving the wrong problem costs more than no PR.
 | **blocked** | No PR. `romp:blocked` label + gap comment. |
 | **no-changes** | Agent exited clean with no commits. No PR. |
 | **changes-requested** | Verify passed, but blocking review findings remained after the configured fix rounds. PR open with every review-pass comment, worktree kept. |
-| **red** | Independent verification failed with no repair round remaining. A PR may already exist after review. Trigger label removed and worktree kept. Watch jobs retain failed output in `romp logs ISSUE`; one-shot runs print it to stderr. |
+| **red** | Independent verification failed with no repair round remaining. A PR may already exist after review. Trigger label removed and worktree kept. All jobs retain failed output in `romp logs ISSUE`; foreground clients also stream it to stderr. |
 | **timeout** | Exceeded `timeout`. Killed, trigger label removed, worktree kept. |
+| **interrupted** | Daemon exited before completion; worktree, branch, and labels kept. |
 | **cancelled** | You cancelled. Worktree, branch, and both labels removed. |
 | **error** | git/gh failure (incl. rate limits outliving retries). Trigger label removed, worktree kept. |
 

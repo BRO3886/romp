@@ -116,6 +116,7 @@ func (f *fakeStore) Finish(_ context.Context, o job.Outcome) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.finished = append(f.finished, o)
+	delete(f.rows, o.Issue)
 	return nil
 }
 

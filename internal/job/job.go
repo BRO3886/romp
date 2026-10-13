@@ -18,37 +18,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BRO3886/romp/internal/protocol"
 	"github.com/BRO3886/romp/internal/review"
+	"github.com/BRO3886/romp/internal/state"
 
 	_ "modernc.org/sqlite"
 )
 
 // Job is one in-flight row from the table.
-type Job struct {
-	Repo            string
-	Issue           int
-	Branch          string
-	ClaimedAt       string
-	SessionID       string
-	BuilderHarness  string
-	ReviewerHarness string
-}
+type Job = protocol.Job
 
-// Outcome is one finished job, appended to history on terminal state.
-type Outcome struct {
-	Repo            string
-	Issue           int
-	Outcome         string
-	Branch          string
-	PRURL           string
-	Detail          string
-	StartedAt       string
-	FinishedAt      string
-	SessionID       string
-	BuilderHarness  string
-	ReviewerHarness string
-	Review          review.Instrumentation
-}
+// Outcome is one terminal workflow result.
+type Outcome = protocol.Outcome
 
 // Store is a thin handle over the SQLite job table.
 type Store struct {
@@ -64,6 +45,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("sqlite pragmas: %w", err)
@@ -92,6 +74,10 @@ func Open(path string) (*Store, error) {
 }
 
 const schema = `
+CREATE TABLE IF NOT EXISTS repositories (
+	origin TEXT PRIMARY KEY,
+	path TEXT NOT NULL UNIQUE
+);
 CREATE TABLE IF NOT EXISTS jobs (
 	id         TEXT PRIMARY KEY,
 	repo       TEXT NOT NULL,
@@ -283,7 +269,7 @@ func (s *Store) List(ctx context.Context, repo string) ([]Job, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Job
+	out := []Job{}
 	for rows.Next() {
 		var j Job
 		if err := rows.Scan(&j.Repo, &j.Issue, &j.Branch, &j.ClaimedAt, &j.SessionID, &j.BuilderHarness, &j.ReviewerHarness); err != nil {
@@ -343,7 +329,7 @@ func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome,
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Outcome
+	out := []Outcome{}
 	for rows.Next() {
 		var o Outcome
 		var prURL, detail sql.NullString
@@ -362,14 +348,7 @@ func (s *Store) History(ctx context.Context, repo string, limit int) ([]Outcome,
 	return out, rows.Err()
 }
 
-// ReviewSummary is the aggregate calibration view over reviewed jobs.
-type ReviewSummary struct {
-	ReviewedJobs           int
-	CleanPassJobs          int
-	FixRoundJobs           int
-	ReverificationFailures int
-	MedianReviewerDuration time.Duration
-}
+type ReviewSummary = protocol.ReviewSummary
 
 // ReviewSummary returns calibration rates and aggregate review-pass duration since the cutoff.
 func (s *Store) ReviewSummary(ctx context.Context, repo string, since time.Time) (ReviewSummary, error) {
@@ -476,13 +455,4 @@ func StateDir() string {
 	return stateDir()
 }
 
-func stateDir() string {
-	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
-		return filepath.Join(dir, "romp")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".local", "state", "romp")
-}
+func stateDir() string { return state.Dir() }

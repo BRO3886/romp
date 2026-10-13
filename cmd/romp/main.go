@@ -2,9 +2,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/BRO3886/romp/internal/runner"
 )
@@ -17,7 +20,9 @@ var (
 )
 
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := newRootCmd().ExecuteContext(ctx); err != nil {
 		if errors.Is(err, runner.ErrBlocked) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(0)
