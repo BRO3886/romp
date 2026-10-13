@@ -16,6 +16,8 @@ Opinionated means romp makes these calls for you, and does not offer a switch to
 
 > **Pre-alpha.** Breaking changes expected. Do not point this at a repo you can't afford a bad branch on.
 
+An independent TypeScript rewrite is available as the [experimental v2 runtime](v2/README.md) on `codex/experimental-v2`. It uses separate configuration and state and does not replace this Go implementation.
+
 ## Requirements
 
 - `git` 2.35+, `gh` (authenticated via `gh auth login`)

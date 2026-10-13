@@ -1,0 +1,27 @@
+name: Experimental v2
+
+on:
+  push:
+    branches: [codex/experimental-v2]
+    paths: [v2/**, .github/workflows/v2.yml]
+  pull_request:
+    paths: [v2/**, .github/workflows/v2.yml]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1
+          cache: npm
+          cache-dependency-path: v2/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run build
+      - run: npm test
+      - run: npm audit --omit=dev
