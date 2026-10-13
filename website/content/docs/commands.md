@@ -10,7 +10,10 @@ directory (resolved from its `origin` remote) unless noted.
 | Command | What it does |
 | --- | --- |
 | `romp init` | Write `romp.toml`, create the labels, update `.gitignore`. |
-| `romp watch` | Open the interactive job dashboard and work labelled issues. |
+| `romp watch` | Register this origin and open the daemon dashboard. |
+| `romp unwatch` | Stop new claims; active jobs drain. |
+| `romp rebind` | Bind a watched origin to this checkout. |
+| `romp daemon` | Install and manage the launchd user agent. |
 | `romp run -i N` | Run one issue now, ignoring the label. |
 | `romp status` | In-flight jobs. `--all` for every repo. |
 | `romp history` | Recently finished jobs. `--all` for every repo. `--review` for reviewer calibration. |
@@ -51,7 +54,7 @@ writing when no supported agent is detected.
 
 ## `romp run`
 
-Run one issue now, in the foreground, without claiming it in the job table.
+Run one issue now through the daemon, without requiring a trigger label.
 
 ```bash
 romp run -i 17
@@ -68,12 +71,13 @@ romp run -i 17
 | `--no-review` | Skip the review gate for this run without changing `romp.toml`. |
 | `--width` | Concurrent jobs (ignored by `run`). |
 
-`run` is a pure foreground bypass: no job row, no dedupe, absent from `status`,
-no log file. It only cleans its own stale `romp-N` branch and worktree.
+`run` bypasses registry polling and trigger-label admission. The daemon records
+an active row, logs, and an outcome, and rejects a duplicate local run of the
+same issue. Ctrl-C requests cancellation.
 
 ## `romp watch`
 
-Poll for trigger-labelled issues and work them at `width`.
+Register this origin and view its daemon jobs. The daemon polls at `width`.
 
 ```bash
 romp watch
@@ -88,12 +92,15 @@ timeline, and Escape to return.
 
 Successful verification output stays out of the job log. The log records the
 command, duration, and result, while a failed command retains its output for
-diagnosis. Non-interactive runs keep line-oriented output for scripts and
-service managers. Line output announces each read-only reviewer immediately
-before its process starts.
+diagnosis. Non-interactive `watch` prints the registry binding and exits. Use
+`romp logs ISSUE -f` to stream job output. q or Ctrl-C disconnects the dashboard
+while the daemon keeps working.
 
 The poll predicate is "has the trigger label and does not have the claim
-label". The poll interval is fixed at 60 seconds.
+label". One daemon polls all origins every 60 seconds. It admits at most one
+new job per global tick while macOS memory pressure is normal and rotates the
+first repository considered. Warning or critical pressure stops new admission.
+Per-repo `width` still bounds concurrency.
 
 ## `romp status` and `romp history`
 
@@ -125,8 +132,8 @@ romp logs 17                 # or by issue number
 romp logs sunny_naruto -f    # follow new lines
 ```
 
-`logs` reads the per-job log file directly, so it works with no watcher
-running.
+`logs` asks the daemon for bounded snapshots or a live JSON-RPC subscription.
+The daemon must be running; the CLI does not read log files directly.
 
 ## `romp cancel`
 
@@ -134,8 +141,7 @@ running.
 romp cancel 17
 ```
 
-Cancel talks to the live watcher over a Unix socket — no watcher, nothing to
-cancel. Cancelling kills the agent, records a `cancelled` outcome, and removes
+Cancel asks the daemon to abandon the active job. Cancelling kills the agent, records a `cancelled` outcome, and removes
 the claim label, the trigger label, the job row, and the worktree and `romp-N`
 branch. The issue stays label-free until a human re-labels it.
 
@@ -161,13 +167,45 @@ finished-job history older than `history_days` (default 30, from user config).
 romp doctor
 ```
 
-Checks five things and prints a table:
+Checks the running daemon environment and prints a table:
 
 - `git` — installed and 2.35+
 - `gh` — installed and authenticated
-- `harness` — at least one of `claude`, `codex`, or `opencode` is healthy
+- `builder` — the configured builder CLI is healthy
 - `config` — `romp.toml` loads and a verify command is present
-- `review` — the effective reviewer CLI is healthy, or review is disabled
+- `reviewer` — the effective reviewer CLI is healthy, or review is disabled
+- executable paths and the installer-resolved environment
+
+## `romp daemon`
+
+```bash
+romp daemon install --dry-run
+romp daemon install                 # optionally --binary /absolute/path/rompd
+romp daemon start
+romp daemon status
+romp daemon version
+romp daemon restart                 # drains active jobs before restarting
+romp daemon stop
+```
+
+Install resolves tools from the initiating user's login PATH and stages one
+canonical binary at `~/Library/Application Support/romp/bin/rompd`. It writes
+`~/Library/LaunchAgents/com.romp.daemon.plist` with RunAtLoad and KeepAlive.
+Install refuses downgrades and does not interrupt active jobs. Reinstall when
+program paths move, then restart to drain active jobs and load the staged binary.
+
+Stop first blocks admission, requests cancellation, and waits for recorded
+outcomes and cleanup. It then boots the agent out of the login session, so
+KeepAlive does not restart it. A failed cleanup prevents a successful stop.
+
+```bash
+romp unwatch    # stop new claims for this origin; active work drains
+romp rebind     # attach an existing origin to this checkout after a move
+```
+
+A second checkout of a watched origin is rejected. Missing paths remain in the
+registry with an unhealthy status. Rebind requires the origin to match and its
+jobs to be idle. All storage-backed commands require a running daemon.
 
 ## `romp init`
 

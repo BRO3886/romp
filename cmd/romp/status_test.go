@@ -118,6 +118,7 @@ func TestStatusJSONAllIncludesEveryRepoAndEmptySession(t *testing.T) {
 
 func TestStatusJSONEmptyResultIsArray(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	testDaemon(t, nil)
 	cmd := newStatusCmd()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -137,7 +138,7 @@ func seedStatusJobs(t *testing.T, jobs []job.Job) {
 	if err != nil {
 		t.Fatalf("job.Open: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() { store.Close() })
 	for _, j := range jobs {
 		ok, err := store.Claim(context.Background(), j.Repo, j.Issue, j.Branch)
 		if err != nil || !ok {
@@ -149,6 +150,7 @@ func seedStatusJobs(t *testing.T, jobs []job.Job) {
 			}
 		}
 	}
+	testDaemon(t, store)
 }
 
 func executeStatusJSON(t *testing.T, args ...string) []statusJSONJob {

@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/BRO3886/romp/internal/watch"
+	"github.com/BRO3886/romp/internal/daemon"
 )
 
 func newCancelCmd() *cobra.Command {
@@ -30,7 +30,7 @@ func runCancel(ctx context.Context, issue int) error {
 	if err != nil {
 		return err
 	}
-	if err := watch.CancelJob(owner+"/"+name, issue); err != nil {
+	if err := daemonCall(ctx, "jobs.cancel", daemon.Params{Repo: owner + "/" + name, Issue: issue}, nil); err != nil {
 		return err
 	}
 	fmt.Printf("cancelled #%d\n", issue)

@@ -13,8 +13,12 @@ import (
 
 	"github.com/BRO3886/romp/internal/job"
 	"github.com/BRO3886/romp/internal/progress"
-	"github.com/BRO3886/romp/internal/watch"
 )
+
+type watchConnection interface{ Run(context.Context) error }
+type historyReader interface {
+	History(context.Context, string, int) ([]job.Outcome, error)
+}
 
 type watchEventMsg progress.Event
 type watchTickMsg time.Time
@@ -63,8 +67,8 @@ type watchJobView struct {
 
 type watchTUIModel struct {
 	repo       string
-	watcher    *watch.Watcher
-	store      *job.Store
+	watcher    watchConnection
+	store      historyReader
 	events     <-chan progress.Event
 	history    []job.Outcome
 	active     map[int]*watchJobView
@@ -79,7 +83,7 @@ type watchTUIModel struct {
 	watchError error
 }
 
-func runWatchTUI(ctx context.Context, watcher *watch.Watcher, store *job.Store, repo string, events <-chan progress.Event) error {
+func runWatchTUI(ctx context.Context, watcher watchConnection, store historyReader, repo string, events <-chan progress.Event) error {
 	history, err := store.History(ctx, repo, 20)
 	if err != nil {
 		return fmt.Errorf("loading watch history: %w", err)
@@ -249,7 +253,7 @@ func (m *watchTUIModel) View() tea.View {
 func (m *watchTUIModel) writeHeader(b *strings.Builder) {
 	state := lipgloss.NewStyle().Bold(true).Foreground(watchPalette.green).Render("● WATCHING")
 	if m.draining {
-		state = lipgloss.NewStyle().Bold(true).Foreground(watchPalette.amber).Render("◌ DRAINING")
+		state = lipgloss.NewStyle().Bold(true).Foreground(watchPalette.amber).Render("◌ DISCONNECTING")
 	}
 	active := watchMetaStyle.Render(fmt.Sprintf("%d active", len(m.active)))
 	fmt.Fprintf(b, "%s  %s  %s  %s\n\n", watchLogoStyle.Render("ROMP"), watchRepoStyle.Render(m.repo), active, state)
@@ -283,7 +287,7 @@ func (m *watchTUIModel) writeDashboard(b *strings.Builder) {
 	b.WriteString("\n\n")
 	m.writeFooter(b, false)
 	if m.draining {
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(watchPalette.amber).Render("◌ Finishing running jobs. Press Ctrl-C again to stop them."))
+		b.WriteString("\n" + lipgloss.NewStyle().Foreground(watchPalette.amber).Render("◌ Disconnecting. Jobs continue in rompd."))
 	}
 }
 
@@ -365,10 +369,10 @@ func (m *watchTUIModel) writeDetail(b *strings.Builder) {
 
 func (m *watchTUIModel) writeFooter(b *strings.Builder, detail bool) {
 	if detail {
-		fmt.Fprintf(b, "%s back   %s drain and quit", watchKeyStyle.Render("esc"), watchKeyStyle.Render("q"))
+		fmt.Fprintf(b, "%s back   %s disconnect", watchKeyStyle.Render("esc"), watchKeyStyle.Render("q"))
 		return
 	}
-	fmt.Fprintf(b, "%s switch   %s navigate   %s inspect   %s drain", watchKeyStyle.Render("tab"), watchKeyStyle.Render("↑/↓"), watchKeyStyle.Render("enter"), watchKeyStyle.Render("q"))
+	fmt.Fprintf(b, "%s switch   %s navigate   %s inspect   %s disconnect", watchKeyStyle.Render("tab"), watchKeyStyle.Render("↑/↓"), watchKeyStyle.Render("enter"), watchKeyStyle.Render("q"))
 }
 
 func (m *watchTUIModel) contentHeight() int {

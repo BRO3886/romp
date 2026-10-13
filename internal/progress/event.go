@@ -1,8 +1,11 @@
 package progress
 
-import "time"
+import (
+	"github.com/BRO3886/romp/internal/protocol"
+	"time"
+)
 
-type Phase string
+type Phase = string
 
 const (
 	PhaseClaiming    Phase = "claiming"
@@ -18,18 +21,7 @@ const (
 	PhaseFailed      Phase = "failed"
 )
 
-type Event struct {
-	Issue           int
-	Phase           Phase
-	Detail          string
-	Outcome         string
-	URL             string
-	Harness         string
-	BuilderHarness  string
-	ReviewerHarness string
-	At              time.Time
-	Terminal        bool
-}
+type Event = protocol.Event
 
 type Sink func(Event)
 

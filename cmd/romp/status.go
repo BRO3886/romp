@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/BRO3886/romp/internal/codename"
+	"github.com/BRO3886/romp/internal/daemon"
 	"github.com/BRO3886/romp/internal/git"
 	"github.com/BRO3886/romp/internal/job"
 )
@@ -34,12 +35,6 @@ func newStatusCmd() *cobra.Command {
 }
 
 func runStatus(ctx context.Context, out io.Writer, all, jsonOutput bool) error {
-	store, err := job.Open(job.Path())
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
 	repo := ""
 	if !all {
 		owner, name, err := currentRepo(ctx)
@@ -48,7 +43,8 @@ func runStatus(ctx context.Context, out io.Writer, all, jsonOutput bool) error {
 		}
 		repo = owner + "/" + name
 	}
-	jobs, err := store.List(ctx, repo)
+	var jobs []job.Job
+	err := daemonCall(ctx, "jobs.list", daemon.Params{Repo: repo}, &jobs)
 	if err != nil {
 		return err
 	}

@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"io"
 	"text/tabwriter"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/BRO3886/romp/internal/codename"
+	"github.com/BRO3886/romp/internal/daemon"
 	"github.com/BRO3886/romp/internal/job"
 )
 
@@ -33,12 +33,6 @@ func newHistoryCmd() *cobra.Command {
 }
 
 func runHistory(cmd *cobra.Command, all, reviewOnly bool, days int) error {
-	store, err := job.Open(job.Path())
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
 	repo := ""
 	if !all {
 		owner, name, err := currentRepo(cmd.Context())
@@ -51,14 +45,16 @@ func runHistory(cmd *cobra.Command, all, reviewOnly bool, days int) error {
 		if days < 1 {
 			return fmt.Errorf("days must be at least 1")
 		}
-		summary, err := store.ReviewSummary(cmd.Context(), repo, time.Now().AddDate(0, 0, -days))
+		var summary job.ReviewSummary
+		err := daemonCall(cmd.Context(), "jobs.reviewSummary", daemon.Params{Repo: repo, Days: days}, &summary)
 		if err != nil {
 			return err
 		}
 		writeReviewSummary(cmd.OutOrStdout(), summary)
 		return nil
 	}
-	outcomes, err := store.History(cmd.Context(), repo, 20)
+	var outcomes []job.Outcome
+	err := daemonCall(cmd.Context(), "jobs.history", daemon.Params{Repo: repo, Limit: 20}, &outcomes)
 	if err != nil {
 		return err
 	}

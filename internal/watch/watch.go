@@ -4,15 +4,11 @@ package watch
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/BRO3886/romp/internal/gh"
@@ -37,7 +33,6 @@ type GHOps interface {
 type Store interface {
 	Claim(ctx context.Context, repo string, issue int, branch string) (bool, error)
 	Delete(ctx context.Context, repo string, issue int) error
-	ClearRunning(ctx context.Context, repo string) error
 	Finish(ctx context.Context, o job.Outcome) error
 }
 
@@ -50,9 +45,10 @@ type Watcher struct {
 	Width    int
 	Interval time.Duration
 
-	GH     GHOps
-	Store  Store
-	RunJob func(ctx context.Context, issue int) (string, error)
+	GH         GHOps
+	Store      Store
+	RunJob     func(ctx context.Context, issue int) (string, error)
+	AllowClaim func() bool
 	// CleanJob removes a cancelled job's worktree and branch. It is the
 	// runner's counterpart, invoked only for an abandon so the watcher does
 	// not need git access.
@@ -61,9 +57,78 @@ type Watcher struct {
 	Stderr   io.Writer
 	Progress progress.Sink
 
-	mu        sync.Mutex
-	cancels   map[int]context.CancelFunc
-	cancelled map[int]bool
+	mu           sync.Mutex
+	cancels      map[int]context.CancelFunc
+	cancelled    map[int]bool
+	terminal     map[int]bool
+	slots        chan struct{}
+	workers      sync.WaitGroup
+	admissions   uint64
+	lifecycleErr error
+}
+
+// PollOne admits at most one job. Its caller owns polling and shutdown.
+func (w *Watcher) PollOne(ctx context.Context) (bool, error) {
+	if w.slots == nil {
+		w.slots = make(chan struct{}, max(1, w.Width))
+		for range cap(w.slots) {
+			w.slots <- struct{}{}
+		}
+	}
+	if len(w.slots) == 0 {
+		return false, nil
+	}
+	before := w.admissions
+	err := w.claimBatchLimit(ctx, w.slots, &w.workers, context.WithoutCancel(ctx), 1)
+	return w.admissions != before, err
+}
+
+// Cancel requests abandonment of one active job.
+func (w *Watcher) Cancel(issue int) bool { return w.cancelIssue(issue) }
+
+// CancelAll abandons every owned job before shutdown.
+func (w *Watcher) CancelAll() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for issue, cancel := range w.cancels {
+		if w.terminal[issue] {
+			continue
+		}
+		w.cancelled[issue] = true
+		cancel()
+	}
+}
+
+// Wait waits for outcomes and cleanup. No new admissions may race this call.
+func (w *Watcher) Wait() error {
+	w.workers.Wait()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.lifecycleErr
+}
+
+func (w *Watcher) recordLifecycleError(err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.lifecycleErr = errors.Join(w.lifecycleErr, err)
+}
+
+// ActiveIssues includes jobs still releasing labels or cleaning worktrees.
+func (w *Watcher) ActiveIssues() []int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	issues := make([]int, 0, len(w.cancels))
+	for issue := range w.cancels {
+		issues = append(issues, issue)
+	}
+	return issues
+}
+
+// Active returns the number of jobs still completing their lifecycle.
+func (w *Watcher) Active() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.cancels)
 }
 
 func (w *Watcher) logf(format string, a ...any) {
@@ -79,85 +144,22 @@ func (w *Watcher) logf(format string, a ...any) {
 	fmt.Fprintln(stderr, msg)
 }
 
-// Run clears stale in-flight rows, then polls and dispatches until the first
-// signal (graceful drain) or a parent cancellation. A second signal cancels
-// running jobs immediately.
-func (w *Watcher) Run(ctx context.Context) error {
-	if w.Width < 1 {
-		w.Width = 1
-	}
-
-	sigCh := make(chan os.Signal, 2)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
-
-	if err := w.Store.ClearRunning(ctx, w.Repo); err != nil {
-		return fmt.Errorf("clearing stale jobs: %w", err)
-	}
-
-	jobCtx, cancelAll := context.WithCancel(context.WithoutCancel(ctx))
-	defer cancelAll()
-
-	slots := make(chan struct{}, w.Width)
-	for i := 0; i < w.Width; i++ {
-		slots <- struct{}{}
-	}
-	var wg sync.WaitGroup
-
-	w.logf("watching label %q every %s (width %d)", w.Trigger, w.Interval, w.Width)
-
-	if ln, err := listen(w.Repo); err != nil {
-		w.logf("cancel socket: %v", err)
-	} else {
-		defer ln.Close()
-		go w.serve(ln)
-	}
-
-	if err := w.claimBatch(ctx, slots, &wg, jobCtx); err != nil {
-		w.logf("poll: %v", err)
-	}
-
-	ticker := time.NewTicker(w.Interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case s := <-sigCh:
-			w.logf("received %v; finishing running jobs, no new claims", s)
-			return w.drain(sigCh, &wg, cancelAll)
-		case <-ctx.Done():
-			return w.drain(sigCh, &wg, cancelAll)
-		case <-ticker.C:
-			if err := w.claimBatch(ctx, slots, &wg, jobCtx); err != nil {
-				w.logf("poll: %v", err)
-			}
-		}
-	}
-}
-
-func (w *Watcher) drain(sigCh <-chan os.Signal, wg *sync.WaitGroup, cancelAll context.CancelFunc) error {
-	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-		return nil
-	case <-sigCh:
-		w.logf("second interrupt; killing running jobs")
-		cancelAll()
-		<-done
-		return nil
-	}
-}
-
 // claimBatch lists trigger-labelled issues and dispatches each unclaimed one,
 // stopping early when every slot is busy so the leftover issues stay unclaimed
 // for another watcher (or the next tick).
 func (w *Watcher) claimBatch(ctx context.Context, slots chan struct{}, wg *sync.WaitGroup, jobCtx context.Context) error {
+	return w.claimBatchLimit(ctx, slots, wg, jobCtx, 0)
+}
+
+func (w *Watcher) claimBatchLimit(ctx context.Context, slots chan struct{}, wg *sync.WaitGroup, jobCtx context.Context, limit int) error {
 	issues, err := w.GH.ListIssues(ctx, w.Repo, w.Trigger)
 	if err != nil {
 		return err
 	}
 	for _, iss := range issues {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if iss.HasLabel(w.Claim) || iss.HasLabel(w.Blocked) {
 			continue
 		}
@@ -181,12 +183,22 @@ func (w *Watcher) claimBatch(ctx context.Context, slots chan struct{}, wg *sync.
 		}
 		select {
 		case <-slots:
+			if w.AllowClaim != nil && !w.AllowClaim() {
+				slots <- struct{}{}
+				return nil
+			}
 			if !w.claim(ctx, iss) {
 				slots <- struct{}{}
 				continue
 			}
 			wg.Add(1)
-			go w.runJob(jobCtx, iss, slots, wg)
+			runCtx, cancel := context.WithCancel(jobCtx)
+			w.register(iss.Number, cancel)
+			w.admissions++
+			go w.runRegistered(runCtx, cancel, iss, slots, wg)
+			if limit == 1 {
+				return nil
+			}
 		default:
 			return nil
 		}
@@ -229,6 +241,7 @@ func (w *Watcher) register(issue int, cancel context.CancelFunc) {
 	if w.cancels == nil {
 		w.cancels = map[int]context.CancelFunc{}
 		w.cancelled = map[int]bool{}
+		w.terminal = map[int]bool{}
 	}
 	w.cancels[issue] = cancel
 }
@@ -238,6 +251,7 @@ func (w *Watcher) unregister(issue int) {
 	defer w.mu.Unlock()
 	delete(w.cancels, issue)
 	delete(w.cancelled, issue)
+	delete(w.terminal, issue)
 }
 
 // cancelIssue kills the job for issue and records it as cancelled, reporting
@@ -246,7 +260,7 @@ func (w *Watcher) cancelIssue(issue int) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	cancel, ok := w.cancels[issue]
-	if !ok {
+	if !ok || w.terminal[issue] {
 		return false
 	}
 	w.cancelled[issue] = true
@@ -260,54 +274,28 @@ func (w *Watcher) wasCancelled(issue int) bool {
 	return w.cancelled[issue]
 }
 
-// serve accepts control-socket connections until the listener is closed.
-func (w *Watcher) serve(ln net.Listener) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				return
-			}
-			w.logf("cancel socket: accept: %v", err)
-			continue
-		}
-		go w.handleConn(conn)
-	}
-}
-
-func (w *Watcher) handleConn(conn net.Conn) {
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
-
-	var req CancelRequest
-	if err := json.NewDecoder(conn).Decode(&req); err != nil {
-		_ = json.NewEncoder(conn).Encode(CancelResponse{Error: "invalid request"})
-		return
-	}
-	if req.Issue <= 0 {
-		_ = json.NewEncoder(conn).Encode(CancelResponse{Error: "invalid issue number"})
-		return
-	}
-	if !w.cancelIssue(req.Issue) {
-		_ = json.NewEncoder(conn).Encode(CancelResponse{Error: fmt.Sprintf("no running job for issue %d", req.Issue)})
-		return
-	}
-	w.logf("cancelled #%d", req.Issue)
-	_ = json.NewEncoder(conn).Encode(CancelResponse{OK: true})
+func (w *Watcher) finishExecution(issue int) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.terminal[issue] = true
+	return w.cancelled[issue]
 }
 
 func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{}, wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer func() { slots <- struct{}{} }()
-	unassign := true
-	defer func() { w.release(ctx, iss, unassign) }()
-
 	runCtx, cancel := context.WithCancel(ctx)
 	w.register(iss.Number, cancel)
-	defer w.unregister(iss.Number)
+	w.runRegistered(runCtx, cancel, iss, slots, wg)
+}
 
-	prURL, err := w.RunJob(runCtx, iss.Number)
-	cancelled := w.wasCancelled(iss.Number)
+func (w *Watcher) runRegistered(ctx context.Context, cancel context.CancelFunc, iss gh.Issue, slots chan<- struct{}, wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer func() { slots <- struct{}{} }()
+	defer cancel()
+	defer w.unregister(iss.Number)
+	unassign := true
+	defer func() { w.release(ctx, iss, unassign) }()
+	prURL, err := w.RunJob(ctx, iss.Number)
+	cancelled := w.finishExecution(iss.Number)
 	unassign = cancelled || err != nil
 	outcome := classifyOutcome(err)
 	if cancelled {
@@ -325,6 +313,7 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{
 		FinishedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}); err != nil {
 		w.logf("#%d: recording history: %v", iss.Number, err)
+		w.recordLifecycleError(fmt.Errorf("recording %s#%d outcome: %w", w.Repo, iss.Number, err))
 	}
 	phase := progress.PhaseDone
 	if outcome != "done" {
@@ -353,6 +342,9 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{
 	if cancelled || (err != nil && !errors.Is(err, runner.ErrBlocked)) {
 		if err := w.GH.RemoveLabel(context.WithoutCancel(ctx), w.Repo, iss.Number, w.Trigger); err != nil {
 			w.logf("#%d: removing trigger label: %v", iss.Number, err)
+			if cancelled {
+				w.recordLifecycleError(err)
+			}
 		}
 	}
 
@@ -362,6 +354,7 @@ func (w *Watcher) runJob(ctx context.Context, iss gh.Issue, slots chan<- struct{
 		if w.CleanJob != nil {
 			if err := w.CleanJob(context.WithoutCancel(ctx), iss.Number); err != nil {
 				w.logf("#%d: cleaning up job: %v", iss.Number, err)
+				w.recordLifecycleError(err)
 			}
 		}
 	}
@@ -402,13 +395,16 @@ func (w *Watcher) release(ctx context.Context, iss gh.Issue, unassign bool) {
 	ctx = context.WithoutCancel(ctx)
 	if err := w.GH.RemoveLabel(ctx, w.Repo, iss.Number, w.Claim); err != nil {
 		w.logf("#%d: removing claim label: %v", iss.Number, err)
+		if w.wasCancelled(iss.Number) {
+			w.recordLifecycleError(err)
+		}
 	}
 	if unassign {
 		if err := w.GH.Unassign(ctx, w.Repo, iss.Number); err != nil {
 			w.logf("#%d: unassigning: %v", iss.Number, err)
+			if w.wasCancelled(iss.Number) {
+				w.recordLifecycleError(err)
+			}
 		}
-	}
-	if err := w.Store.Delete(ctx, w.Repo, iss.Number); err != nil {
-		w.logf("#%d: deleting job row: %v", iss.Number, err)
 	}
 }
