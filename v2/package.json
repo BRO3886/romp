@@ -10,7 +10,7 @@
     "romp-v2": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build --workspace @romp/cloud",
     "check": "npm run build && tsc -p tsconfig.test.json --noEmit",
     "test": "npm run build && node --import tsx --test test/*.test.ts",
     "start": "node dist/cli.js",

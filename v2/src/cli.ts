@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { stringify } from 'smol-toml';
 import { preflight, providerModels } from './composition/node.js';
@@ -20,6 +21,8 @@ const help = `Romp v2 (experimental, independent of v1)
   models [--provider NAME]
   login --provider NAME | logout --provider NAME
   doctor
+  cloud setup | cloud doctor | cloud status
+  cloud configure --concurrency N | cloud pause | cloud resume
   daemon start [--width N] | daemon stop | daemon status
   run --issue N [--detach]
   watch | unwatch
@@ -31,6 +34,18 @@ Run daemon start in a persistent terminal. Disconnecting clients leaves work run
 ROMP_V2_STATE overrides the state directory. Config: romp-v2.toml.
 `;
 export async function main(args: string[]) {
+  if (args[0] === 'cloud') {
+    const file = fileURLToPath(new URL('../cloud/dist/cloud/src/setup/cli.js', import.meta.url));
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(process.execPath, [file, ...args.slice(1)], { stdio: 'inherit' });
+      child.once('error', reject);
+      child.once('exit', (code) => {
+        process.exitCode = code ?? 1;
+        resolve();
+      });
+    });
+    return;
+  }
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,

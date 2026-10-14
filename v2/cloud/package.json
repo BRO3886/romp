@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "tsc -p tsconfig.cli.json",
+    "test:setup": "node --import tsx --test test/setup.node.ts",
     "types": "wrangler types --include-runtime false",
     "check": "tsc --noEmit",
     "test": "vitest run",

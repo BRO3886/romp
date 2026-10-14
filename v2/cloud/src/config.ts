@@ -54,6 +54,13 @@ export function preflight(
   env: Pick<Bindings, 'REPOSITORIES' | 'CONCURRENCY' | 'GITHUB_APP_ID'> & Secrets,
 ) {
   const config = configuration(env);
+  validateAuthentication(config, env);
+  return config;
+}
+export function validateAuthentication(
+  config: { repositories: readonly { config: { model: { provider: string } } }[] },
+  env: { GITHUB_APP_ID: string } & Secrets,
+) {
   if (!/^\d+$/.test(env.GITHUB_APP_ID)) throw new Error('GITHUB_APP_ID must be a numeric app ID');
   for (const value of [env.GITHUB_WEBHOOK_SECRET, env.GITHUB_PRIVATE_KEY, env.ADMIN_TOKEN]) {
     if (!value?.trim())
@@ -68,5 +75,4 @@ export function preflight(
     if (!(model.provider === 'openai' ? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY))
       throw new Error(`Missing API key for ${model.provider}`);
   }
-  return config;
 }

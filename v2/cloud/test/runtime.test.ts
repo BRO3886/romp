@@ -1,5 +1,10 @@
 import { env } from 'cloudflare:workers';
-import { runInDurableObject, evictDurableObject, reset } from 'cloudflare:test';
+import {
+  runInDurableObject,
+  evictDurableObject,
+  runDurableObjectAlarm,
+  reset,
+} from 'cloudflare:test';
 import { afterEach, beforeAll, expect, test } from 'vitest';
 import worker from '../src/worker.js';
 import { runId, type Bindings, type Submission } from '../src/config.js';
@@ -159,4 +164,27 @@ test('doctor and administration require authentication and validate configuratio
       )
     ).status,
   ).toBe(422);
+});
+test('pause survives eviction, keeps arrivals queued, and resume grants their slots', async () => {
+  const scheduler = env.SCHEDULER.getByName('installation');
+  const toggle = (path: string, authorized = true) =>
+    worker.fetch(
+      new Request(`https://romp/${path}`, {
+        method: 'POST',
+        headers: authorized ? { authorization: `Bearer ${bindings.ADMIN_TOKEN}` } : {},
+      }),
+      bindings,
+    );
+  expect((await toggle('pause', false)).status).toBe(401);
+  expect((await toggle('pause')).status).toBe(200);
+  await evictDurableObject(scheduler);
+  await scheduler.enqueue(submission(51));
+  await runDurableObjectAlarm(scheduler);
+  expect(await scheduler.status()).toMatchObject({ paused: true, runs: [{ state: 'queued' }] });
+  expect(
+    await runInDurableObject(scheduler, (_instance, ctx) => ctx.storage.getAlarm()),
+  ).toBeNull();
+  expect((await toggle('resume')).status).toBe(200);
+  await runDurableObjectAlarm(scheduler);
+  expect(await scheduler.status()).toMatchObject({ paused: false, runs: [{ state: 'active' }] });
 });

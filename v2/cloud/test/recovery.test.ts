@@ -180,3 +180,41 @@ test('expired admission stops before model or workspace provisioning', async () 
     expect(await ctx.storage.get('model-calls')).toBeUndefined();
   });
 });
+test('paused scheduler recovers active cleanup while retaining queued work across eviction', async () => {
+  const active = submission(61);
+  const queued = submission(62);
+  const scheduler = env.SCHEDULER.getByName('installation');
+  await scheduler.enqueue(active);
+  await scheduler.enqueue(queued);
+  await runInDurableObject(scheduler, (_instance, ctx) => {
+    ctx.storage.sql.exec("UPDATE queue SET state='active' WHERE id=?", active.id);
+  });
+  await runInDurableObject(env.RUNS.getByName(active.id), async (_instance, ctx) => {
+    await ctx.storage.put('run', {
+      submission: active,
+      state: 'cleanup',
+      startedAt: Date.now(),
+      cancellation: true,
+      error: '',
+    });
+  });
+  await scheduler.pause(true);
+  await evictDurableObject(scheduler);
+  await runDurableObjectAlarm(scheduler);
+  const run = env.RUNS.getByName(active.id);
+  await runDurableObjectAlarm(run);
+  await until(async () => (await run.status()).state === 'finished');
+  await runDurableObjectAlarm(scheduler);
+  expect(await scheduler.status()).toMatchObject({
+    paused: true,
+    runs: [
+      { id: active.id, state: 'finished' },
+      { id: queued.id, state: 'queued' },
+    ],
+  });
+  expect(
+    await runInDurableObject(env.RUNS.getByName(queued.id), (_instance, ctx) =>
+      ctx.storage.get('run'),
+    ),
+  ).toBeUndefined();
+});

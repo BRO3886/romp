@@ -1,7 +1,15 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 export default tseslint.config(
-  { ignores: ['node_modules/**', '.build/**', '.wrangler/**', 'worker-configuration.d.ts'] },
+  {
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      '.build/**',
+      '.wrangler/**',
+      'worker-configuration.d.ts',
+    ],
+  },
   {
     files: ['src/**/*.ts', 'test/**/*.ts', 'scripts/**/*.ts', 'vitest.config.ts'],
     extends: [eslint.configs.recommended, ...tseslint.configs.recommendedTypeChecked],

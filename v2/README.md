@@ -87,4 +87,4 @@ The module boundaries, validated contracts, and persistence migration are docume
 
 ## Cloud host
 
-The experimental [Cloud runtime](cloud/README.md) accepts GitHub issue webhooks and runs jobs in disposable Cloudflare containers. It has separate deployment configuration and recovery tests. The local daemon commands above remain available.
+The experimental [Cloud runtime](cloud/README.md) accepts GitHub issue webhooks and runs jobs in disposable Cloudflare containers. `cloud setup --dry-run` validates account/App access and builds the deployment before provisioning. `cloud setup` deploys the Worker and connects the App webhook. `cloud doctor`, `cloud status`, `cloud configure --concurrency N`, `cloud pause`, and `cloud resume` operate the deployment using a private local profile. See the cloud guide for first-time credentials, commands, and recovery tests. The local daemon commands above remain available.

@@ -47,11 +47,23 @@ export class Scheduler extends DurableObject<Bindings> {
       .toArray()[0];
     return {
       concurrency: setting?.value ?? configuration(this.env).concurrency,
+      paused:
+        this.ctx.storage.sql
+          .exec<{ value: number }>("SELECT value FROM settings WHERE key='paused'")
+          .toArray()[0]?.value === 1,
       runs: this.ctx.storage.sql
         .exec<Row>('SELECT id, submission, state, error FROM queue ORDER BY created, id')
         .toArray()
         .map(({ id, state, error }) => ({ id, state, error })),
     };
+  }
+  async pause(paused: boolean) {
+    this.ctx.storage.sql.exec(
+      "INSERT INTO settings VALUES ('paused', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      paused ? 1 : 0,
+    );
+    await this.ctx.storage.setAlarm(Date.now() + 100);
+    return this.status();
   }
   async cancel(id: string) {
     const row = this.ctx.storage.sql.exec<Row>('SELECT * FROM queue WHERE id=?', id).toArray()[0];
@@ -89,7 +101,8 @@ export class Scheduler extends DurableObject<Bindings> {
       const active = this.ctx.storage.sql
         .exec<{ n: number }>("SELECT COUNT(*) AS n FROM queue WHERE state='active'")
         .one().n;
-      const available = Math.max(0, this.status().concurrency - active);
+      const status = this.status();
+      const available = status.paused ? 0 : Math.max(0, status.concurrency - active);
       this.ctx.storage.sql.exec(
         "UPDATE queue SET state='active' WHERE id IN (SELECT id FROM queue WHERE state='queued' ORDER BY created, id LIMIT ?)",
         available,
@@ -112,7 +125,10 @@ export class Scheduler extends DurableObject<Bindings> {
     }
     if (
       !this.ctx.storage.sql
-        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM queue WHERE state!='finished'")
+        .exec<{ n: number }>(
+          "SELECT COUNT(*) AS n FROM queue WHERE state='active' OR (state='queued' AND ?=0)",
+          this.status().paused ? 1 : 0,
+        )
         .one().n
     )
       await this.ctx.storage.deleteAlarm();

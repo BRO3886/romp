@@ -91,6 +91,8 @@ export default {
     }
     if (path === '/status' && request.method === 'GET')
       return Response.json(await scheduler.status());
+    if ((path === '/pause' || path === '/resume') && request.method === 'POST')
+      return Response.json(await scheduler.pause(path === '/pause'));
     if (path === '/concurrency' && request.method === 'PUT') {
       try {
         const body = z
