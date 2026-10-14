@@ -8,7 +8,8 @@ Validated locally on macOS on October 14, 2026. The compiler, linter, and defaul
 - `npm run check` builds the application and typechecks source and tests with the strict compiler options.
 - `npm run lint` checks types, promise handling, unchecked values, and architecture import boundaries.
 - `npm run format:check` checks the repository's formatting rules.
-- The behavior suite now includes 22 tests, retaining the original 17 cases and adding protocol, checkpoint-invariant, legacy SQLite migration, and inherited-property regressions.
+- The behavior suite includes 25 tests: the original runtime cases, protocol and checkpoint contracts, legacy SQLite migration, inherited-property regressions, and three installer cases.
+- Installer checks run the real shell, HTTP downloads, checksum verification, archive extraction, Node validation, launcher activation, and PATH invocation. They cover repeat installation, literal arguments and quoted paths, checksum/dependency failures, and refusal to overwrite unrelated files. The fixture replaces npm for fault injection; a separate live install of the published release used real npm and passed both launcher smoke checks on macOS.
 - `npm audit` reports zero vulnerabilities in the complete dependency graph.
 
 The migration also passed against a checkpoint produced by the actual runtime at commit `9e4c797`. That worker was killed after the test GitHub port created the PR. The refactored runtime migrated the task from version 1 to version 2, reused the PR, ran only the reviewer, and finished successfully.

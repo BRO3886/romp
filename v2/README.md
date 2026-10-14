@@ -4,7 +4,25 @@ This is an independent TypeScript rewrite of Romp's local delivery runtime on Pi
 
 V2 runs model conversations directly through Pi. It does not invoke the Codex, Claude Code, or OpenCode CLIs. Changing the model changes the model provider, rather than selecting another installed coding agent.
 
-## Build and configure
+## Install as `romp`
+
+The release installer puts a `romp` launcher in `~/.local/bin` and the versioned v2 package in `~/.local/share/romp/releases`. Node.js 22.19 or newer, npm, curl, and tar must already be installed. The launcher invokes Node internally.
+
+```sh
+romp_installer="$(mktemp)"
+curl -fsSL --retry 3 https://github.com/BRO3886/romp/releases/download/v2.0.0-experimental.1/install.sh -o "$romp_installer" &&
+  sh "$romp_installer" &&
+  rm "$romp_installer"
+export PATH="$HOME/.local/bin:$PATH"
+romp --help
+romp cloud --help
+```
+
+Keep `~/.local/bin` on PATH in your shell configuration. Use `sh install.sh --prefix /another/location` for an alternate install directory. The installer verifies the archive checksum and version, installs the locked dependencies, and checks both CLI entry points before activation. Reinstalling switches the active package and retains previous installs. A failed download or dependency install keeps the current version active. An unrelated existing binary or application directory stops installation.
+
+Run commands as `romp` from your target repository after installation, including `romp init`, `romp daemon start`, and `romp cloud setup`. The cloud host still requires its own account and GitHub App configuration; see [Cloud setup](cloud/README.md).
+
+## Build and configure from source
 
 Requires macOS or Linux, Node 22.19 or newer, git, and an authenticated GitHub CLI with a GitHub.com origin remote. Windows and GitHub Enterprise are not supported by this experiment.
 
