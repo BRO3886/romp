@@ -1,0 +1,31 @@
+{
+  "name": "romp-container-probe",
+  "main": "test/integration/worker.ts",
+  "compatibility_date": "2026-10-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PROBE",
+        "class_name": "SandboxProbe",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["SandboxProbe"],
+    },
+  ],
+  "containers": [
+    {
+      "class_name": "SandboxProbe",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "runner": {
+          "dockerfile": "./Dockerfile",
+        },
+      },
+    },
+  ],
+}

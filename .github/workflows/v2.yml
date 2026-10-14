@@ -26,3 +26,24 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm audit --omit=dev
+
+  cloud:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1
+          cache: npm
+          cache-dependency-path: v2/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run cloud:check
+      - run: npm run types --workspace @romp/cloud -- --check
+      - run: npm run cloud:test
+      - run: npm run test:preflight --workspace @romp/cloud
+      - run: npm run test:container --workspace @romp/cloud
+      - run: npm run bundle --workspace @romp/cloud
+      - run: npm audit --omit=dev

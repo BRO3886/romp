@@ -84,3 +84,7 @@ This experiment does not claim V1 feature parity. It has one reviewer per pass r
 GitHub labels are a visible claim signal, not an atomic cross-machine lock. Use one v2 daemon per participating repository. Live model quality, account-specific OAuth access, and hosted GitHub mutation behavior require a separate end-to-end trial. The automated suite does not prove those properties.
 
 The module boundaries, validated contracts, and persistence migration are documented in [ARCHITECTURE.md](ARCHITECTURE.md). Source and tests are typechecked. CI checks types, lint, formatting, and behavior on the remote `v2` branch.
+
+## Cloud host
+
+The experimental [Cloud runtime](cloud/README.md) accepts GitHub issue webhooks and runs jobs in disposable Cloudflare containers. It has separate deployment configuration and recovery tests. The local daemon commands above remain available.

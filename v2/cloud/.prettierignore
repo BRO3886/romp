@@ -1,0 +1,5 @@
+node_modules
+.build
+.wrangler
+package-lock.json
+worker-configuration.d.ts

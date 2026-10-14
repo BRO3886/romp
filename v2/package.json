@@ -16,7 +16,9 @@
     "start": "node dist/cli.js",
     "lint": "eslint src test",
     "format": "prettier --write src test *.json *.mjs README.md ARCHITECTURE.md VALIDATION.md",
-    "format:check": "prettier --check src test *.json *.mjs README.md ARCHITECTURE.md VALIDATION.md"
+    "format:check": "prettier --check src test *.json *.mjs README.md ARCHITECTURE.md VALIDATION.md",
+    "cloud:check": "npm run check --workspace @romp/cloud && npm run lint --workspace @romp/cloud && npm run format:check --workspace @romp/cloud",
+    "cloud:test": "npm test --workspace @romp/cloud"
   },
   "dependencies": {
     "@earendil-works/chord": "1.2.0",
@@ -33,5 +35,8 @@
     "tsx": "4.20.6",
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.2"
-  }
+  },
+  "workspaces": [
+    "cloud"
+  ]
 }
