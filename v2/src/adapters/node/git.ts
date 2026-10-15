@@ -1,5 +1,6 @@
 import type { Workspace } from '../../application/ports.js';
 import { hasErrorCode } from '../../shared/errors.js';
+import { randomUUID } from 'node:crypto';
 import { mkdir, stat, readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { command } from './process.js';
@@ -9,8 +10,20 @@ import { supervisedArguments } from './supervision.js';
 export class Git implements Workspace {
   async base(root: string, base: string): Promise<string> {
     await command('git', ['check-ref-format', '--branch', base], root);
-    await command('git', ['fetch', 'origin', base], root);
-    return (await command('git', ['rev-parse', 'FETCH_HEAD'], root)).stdout.trim();
+    const ref = `refs/romp/fetch/${randomUUID()}`;
+    const source = base.startsWith('refs/heads/') ? base : `refs/heads/${base}`;
+    try {
+      await command(
+        'git',
+        ['fetch', '--no-write-fetch-head', '--no-tags', '--refmap=', 'origin', `${source}:${ref}`],
+        root,
+      );
+      return (
+        await command('git', ['rev-parse', '--verify', `${ref}^{commit}`], root)
+      ).stdout.trim();
+    } finally {
+      await command('git', ['update-ref', '-d', ref], root);
+    }
   }
   async prepare(job: JobInput, signal: AbortSignal) {
     let exists = false;

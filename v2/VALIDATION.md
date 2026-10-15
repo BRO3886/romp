@@ -90,3 +90,11 @@ The first dependency audit found a high-severity advisory in the initially selec
 - The retained Go implementation was not changed or retested. The experiment uses a separate package and state directory.
 
 Feature differences and operating instructions are in `README.md`.
+
+## Concurrent base resolution, 15 October 2026
+
+Linux CI exposed a pre-existing race in the local Git adapter during concurrent admission. Both requests fetched into the shared `FETCH_HEAD` and resolved it after the fetch process exited. One fetch could truncate or replace that file before the other request read it. The existing admission/deadline test failed with `fatal: ambiguous argument 'FETCH_HEAD'` instead of the required duplicate-issue rejection.
+
+A real-Git regression test first failed because base resolution replaced a different branch's existing `FETCH_HEAD`. The adapter now fetches the requested branch into a unique temporary ref, with `--no-write-fetch-head`, `--no-tags`, and an empty `--refmap`. It resolves that ref as a commit and deletes it in `finally`. The test then passed for eight concurrent calls across two branch tips, existing fetch-state preservation, qualified branch refs, and temporary-ref cleanup after success and failure. The existing concurrent-admission/deadline test also passed unchanged.
+
+The Node adapter is used by local admission and persistence-migration tests. The cloud workspace has one checkout per issue actor and does not share its fetch state between admission requests; this correction does not change its adapter. The complete local suite now contains 26 tests.
