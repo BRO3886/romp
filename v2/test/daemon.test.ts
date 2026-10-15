@@ -47,7 +47,7 @@ await test(
         const { worker, exited } = await start(i === 1);
         try {
           assert.deepEqual(await createClient(directory).ping({}), {
-            version: '2.0.0-experimental.2',
+            version: '2.0.0-experimental.3',
           });
           await assert.rejects(acquireLock(directory), /already owned/);
           assert.match(await malformedRequest(directory), /Unknown method/);
@@ -62,7 +62,7 @@ await test(
               { env: { ...process.env, ROMP_V2_STATE: directory } },
             );
           const ping: unknown = JSON.parse((await cli(['status'])).stdout);
-          assert.deepEqual(ping, { version: '2.0.0-experimental.2' });
+          assert.deepEqual(ping, { version: '2.0.0-experimental.3' });
           await cli(['stop']);
           assert.equal(await exited, 0);
         } finally {

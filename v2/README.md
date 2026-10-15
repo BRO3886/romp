@@ -10,7 +10,7 @@ The release installer puts a `romp` launcher in `~/.local/bin` and the versioned
 
 ```sh
 romp_installer="$(mktemp)"
-curl -fsSL --retry 3 https://github.com/BRO3886/romp/releases/download/v2.0.0-experimental.2/install.sh -o "$romp_installer" &&
+curl -fsSL --retry 3 https://github.com/BRO3886/romp/releases/download/v2.0.0-experimental.3/install.sh -o "$romp_installer" &&
   sh "$romp_installer" &&
   rm "$romp_installer"
 export PATH="$HOME/.local/bin:$PATH"
@@ -87,9 +87,9 @@ Successful, blocked, and no-change jobs remove their worktree. Failed, red, reje
 
 ## Command help and local state
 
-The current `v2` branch uses Commander.js for commands, options, argument validation, and generated help. Use `romp --help`, `romp run --help`, or `romp cloud setup --help` to inspect the relevant command. These help commands do not open the durable runtime or create state.
+Release `v2.0.0-experimental.3` uses Commander.js for commands, options, argument validation, and generated help. Use `romp --help`, `romp run --help`, or `romp cloud setup --help` to inspect the relevant command. These help commands do not open the durable runtime or create state.
 
-Local state defaults to `~/.local/state/romp-v2`. `XDG_STATE_HOME` changes its parent directory; `ROMP_V2_STATE` overrides the complete path. On the current `v2` branch, model credentials use the OS credential vault by default. macOS uses Keychain and Linux uses Secret Service. The binding also exposes Windows Credential Manager, which has not been validated. Romp uses `@napi-rs/keyring` through native APIs; tokens are not passed as process arguments. Login prints the selected storage location. The vault service name is `com.romp.v2`.
+Local state defaults to `~/.local/state/romp-v2`. `XDG_STATE_HOME` changes its parent directory; `ROMP_V2_STATE` overrides the complete path. Since `v2.0.0-experimental.3`, model credentials use the OS credential vault by default. macOS uses Keychain and Linux uses Secret Service. The binding also exposes Windows Credential Manager, which has not been validated. Romp uses `@napi-rs/keyring` through native APIs; tokens are not passed as process arguments. Login prints the selected storage location. The vault service name is `com.romp.v2`.
 
 `auth.json` now contains an opaque vault reference rather than credentials. Cloud profile and pending-session files use the same storage boundary. Existing private plaintext files migrate on first access: Romp writes the complete value to the vault, reads it back, and only then replaces the plaintext file with a reference. A failed migration preserves its source. Stop older Romp processes before upgrading; the older `.2` release cannot read the new references. Existing installations and their credentials are not migrated merely by downloading this source.
 
