@@ -1,7 +1,6 @@
-import { constants } from 'node:fs';
-import { chmod, lstat, mkdir, open, rename, rm } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
+import { SecretStorage } from '../../../src/adapters/node/secret-storage.js';
+export { privateDirectory } from '../../../src/adapters/node/private-files.js';
 import { z } from 'zod';
 import { OpenAIAuth } from '../subscription-schema.js';
 import { CloudConfig, Repository, type Secrets } from '../config.js';
@@ -56,49 +55,12 @@ export function profilePath(home: string, name: string) {
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Invalid profile name');
   return join(home, '.romp-v2', 'cloud', `${name}.json`);
 }
-export async function readPrivateJson(file: string): Promise<unknown> {
-  try {
-    const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      const stat = await handle.stat();
-      if (!stat.isFile() || stat.mode & 0o077)
-        throw new Error('Cloud profile must be a private file (chmod 600)');
-      return JSON.parse(await handle.readFile('utf8')) as unknown;
-    } finally {
-      await handle.close();
-    }
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
-    throw error;
-  }
-}
 export async function loadProfile(file: string): Promise<Profile | undefined> {
-  const value = await readPrivateJson(file);
+  const value = await new SecretStorage(file).read();
   return value === undefined ? undefined : Profile.parse(value);
 }
-export async function privateDirectory(path: string) {
-  await mkdir(path, { recursive: true, mode: 0o700 });
-  if (!(await lstat(path)).isDirectory())
-    throw new Error('Profile directory must not be a symlink');
-  await chmod(path, 0o700);
-}
-export async function savePrivateJson(file: string, value: unknown) {
-  const temp = `${file}.${randomBytes(8).toString('hex')}`;
-  try {
-    const handle = await open(temp, 'wx', 0o600);
-    try {
-      await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(temp, file);
-  } finally {
-    await rm(temp, { force: true });
-  }
-}
 export async function saveProfile(file: string, profile: Profile) {
-  await savePrivateJson(file, Profile.parse(profile));
+  await new SecretStorage(file).write(Profile.parse(profile));
 }
 export function environment(profile: Profile) {
   return {

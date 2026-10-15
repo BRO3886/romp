@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { FileCredentials } from '../../src/adapters/node/auth.js';
+import { SecretStorage } from '../../src/adapters/node/secret-storage.js';
 import { SubscriptionImport } from '../src/subscription-schema.js';
 import { pendingSubscription, subscriptionDirectory } from '../src/setup/subscription.js';
 import { main } from '../src/setup/cli.js';
@@ -16,6 +17,7 @@ import { loadProfile, profilePath } from '../src/setup/profile.js';
 import { runWrangler, type Runner } from '../src/setup/deployment.js';
 
 const root = resolve('.');
+process.env['ROMP_SECRET_STORAGE'] = 'file';
 const exec = promisify(execFile);
 const config = `[agent]\nprovider="openai"\nmodel="gpt-5.4"\n[verify]\ncommands=["node --version"]\n[review]\nenabled=false\n`;
 const permissions = { contents: 'write', issues: 'write', pull_requests: 'write' };
@@ -672,6 +674,60 @@ await test('cloud logout before deployment revokes the pending session and retai
   }
 });
 
+await test(
+  'native credential vault protects cloud transfer and deployment secrets through upload recovery',
+  {
+    skip:
+      process.platform !== 'darwin' &&
+      process.env['ROMP_TEST_NATIVE_VAULT'] !== '1' &&
+      'coverage gap: native credential vault not runnable on this host',
+  },
+  async () => {
+    process.env['ROMP_SECRET_STORAGE'] = 'keyring';
+    const f = await fixture();
+    const file = profilePath(f.directory, 'default');
+    const directory = subscriptionDirectory(file);
+    try {
+      delete f.env['OPENAI_API_KEY'];
+      await f.run(['login']);
+      assert.equal(
+        (await readFile(join(directory, 'transfer.json'), 'utf8')).includes('cloud-refresh-token'),
+        false,
+      );
+      const pending = await pendingSubscription(directory);
+      assert.ok(pending);
+      f.loseImportResponse(true);
+      await assert.rejects(
+        f.run([...f.args, '--openai-auth', 'subscription']),
+        /lost upload response/,
+      );
+      assert.equal((await readFile(file, 'utf8')).includes('GITHUB_PRIVATE_KEY'), false);
+      const legacyProfile = await loadProfile(file);
+      assert.ok(legacyProfile);
+      await new SecretStorage(file).delete();
+      await writeFile(file, JSON.stringify(legacyProfile), { mode: 0o600 });
+      assert.deepEqual(await loadProfile(file), legacyProfile);
+      assert.equal((await readFile(file, 'utf8')).includes('GITHUB_PRIVATE_KEY'), false);
+      assert.deepEqual(await pendingSubscription(directory), pending);
+      f.loseImportResponse(false);
+      await f.run(['setup']);
+      assert.equal(f.imports[1]?.sessionId, pending.sessionId);
+      assert.equal(await pendingSubscription(directory), undefined);
+      await f.run(['doctor']);
+      await f.run(['logout']);
+    } finally {
+      for (const reference of [
+        file,
+        join(directory, 'auth.json'),
+        join(directory, 'transfer.json'),
+      ]) {
+        await new SecretStorage(reference, { mode: 'keyring' }).delete();
+      }
+      process.env['ROMP_SECRET_STORAGE'] = 'file';
+      await f.cleanup();
+    }
+  },
+);
 await test('profiles written before subscription support retain API-key authentication', async () => {
   const f = await fixture();
   try {

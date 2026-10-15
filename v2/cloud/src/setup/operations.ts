@@ -1,4 +1,5 @@
 import type { authenticate } from '../../../src/adapters/node/login.js';
+import { SecretStorage } from '../../../src/adapters/node/secret-storage.js';
 import { dirname } from 'node:path';
 import { mkdir, rm } from 'node:fs/promises';
 import { preflight } from '../config.js';
@@ -52,6 +53,7 @@ export async function setup(
     ...d,
     subscriptionPreflight: () => subscriptionPreflight(directory, previous, d.fetch),
   });
+  await new SecretStorage(file).checkAvailable();
   draft.endpoint = await cloudflarePreflight(draft, d.env['CLOUDFLARE_API_TOKEN'] ?? '', d.fetch);
   const github = await githubPreflight(draft, d.fetch, values.replaceWebhook ?? false);
   const profile = Profile.parse({ ...draft, repositories: github.repositories });

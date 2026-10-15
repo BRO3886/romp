@@ -8,6 +8,30 @@ on:
     paths: [v2/**, .github/workflows/v2.yml]
 
 jobs:
+  vault:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1
+          cache: npm
+          cache-dependency-path: v2/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: sudo apt-get update && sudo apt-get install -y dbus gnome-keyring
+      - name: Test the native Secret Service vault
+        env:
+          ROMP_TEST_NATIVE_VAULT: '1'
+        run: |
+          dbus-run-session -- bash -e -c '
+            printf "%s" "romp-disposable-test-keyring" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            node --import tsx --test test/vault.test.ts
+            cd cloud
+            node --import tsx --test --test-name-pattern="native credential vault" test/setup.node.ts
+          '
   check:
     runs-on: ubuntu-latest
     defaults:

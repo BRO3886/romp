@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { SecretStorage } from '../../../src/adapters/node/secret-storage.js';
 import {
   cloudLogin,
   cloudLogout,
@@ -103,7 +104,7 @@ Review the dry run, then repeat without --dry-run to deploy.
             d.output(`Cloud subscription connected to ${previous.endpoint}. Profile: ${file}`);
           } else
             d.output(
-              `Cloud login saved to ${join(directory, 'transfer.json')}.\nRun romp cloud setup --profile ${name} --openai-auth subscription to configure the deployment.`,
+              `Cloud login saved in ${await new SecretStorage(join(directory, 'transfer.json')).location()}.\nRun romp cloud setup --profile ${name} --openai-auth subscription to configure the deployment.`,
             );
         },
         previous,

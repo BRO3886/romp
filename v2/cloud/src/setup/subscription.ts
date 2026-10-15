@@ -1,32 +1,33 @@
 import { revokeSubscription } from '../subscription-oauth.js';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { authenticate } from '../../../src/adapters/node/login.js';
-import { FileCredentials } from '../../../src/adapters/node/auth.js';
+import { createCredentials } from '../../../src/adapters/node/auth.js';
+import { SecretStorage } from '../../../src/adapters/node/secret-storage.js';
 import { SubscriptionImport, SubscriptionStatus } from '../subscription-schema.js';
-import { privateDirectory, readPrivateJson, savePrivateJson, type Profile } from './profile.js';
+import { privateDirectory, type Profile } from './profile.js';
 import { checkWorker, workerRequest, type Fetch } from './api.js';
 
 export function subscriptionDirectory(profileFile: string) {
   return `${profileFile}.auth`;
 }
 export async function pendingSubscription(directory: string) {
-  const value = await readPrivateJson(join(directory, 'transfer.json'));
+  const value = await new SecretStorage(join(directory, 'transfer.json')).read();
   return value === undefined ? undefined : SubscriptionImport.parse(value);
 }
 export async function cloudLogin(directory: string, login: typeof authenticate = authenticate) {
   await privateDirectory(directory);
   await login('login', 'openai', directory, 'Romp Cloud');
-  const credential = await new FileCredentials(directory).read('openai');
+  const credential = await createCredentials(directory).read('openai');
   const pending = SubscriptionImport.parse({
     sessionId: randomUUID(),
     hostId: (await readFile(join(directory, 'device-id'), 'utf8')).trim(),
     credential,
   });
-  await savePrivateJson(join(directory, 'transfer.json'), pending);
-  await new FileCredentials(directory).delete('openai');
+  await new SecretStorage(join(directory, 'transfer.json')).write(pending);
+  await createCredentials(directory).delete('openai');
   return pending;
 }
 export async function transferSubscription(profile: Profile, directory: string, fetcher: Fetch) {
@@ -38,8 +39,8 @@ export async function transferSubscription(profile: Profile, directory: string, 
   if (!status.configured || status.requiresLogin || status.sessionId !== pending.sessionId)
     throw new Error('Cloud subscription needs login. Run romp cloud login');
   // Remove the renewable local copy only after the Worker acknowledges this exact session.
-  await new FileCredentials(directory).delete('openai');
-  await rm(join(directory, 'transfer.json'));
+  await createCredentials(directory).delete('openai');
+  await new SecretStorage(join(directory, 'transfer.json')).delete();
 }
 export async function subscriptionPreflight(
   directory: string,
@@ -70,7 +71,7 @@ export async function cloudLogout(profile: Profile | undefined, directory: strin
   if (pending)
     result.remoteRevocation =
       (await revokeSubscription(pending.credential, fetcher)) && result.remoteRevocation;
-  await rm(join(directory, 'transfer.json'), { force: true });
-  await new FileCredentials(directory).delete('openai');
+  await new SecretStorage(join(directory, 'transfer.json')).delete();
+  await createCredentials(directory).delete('openai');
   return result;
 }

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { providerModels } from './models.js';
 import { hasErrorCode } from '../../shared/errors.js';
 import { acquireLock } from './owner-lock.js';
+import { SecretStorage } from './secret-storage.js';
 
 export async function authenticate(
   action: 'login' | 'logout',
@@ -20,6 +21,7 @@ export async function authenticate(
       await models.logout(provider);
       return;
     }
+    await new SecretStorage(join(directory, 'auth.json')).checkAvailable();
     const path = join(directory, 'device-id');
     let deviceId: string;
     try {
@@ -59,7 +61,7 @@ export async function authenticate(
     process.stdout.write(
       agentName
         ? `Authenticated ${provider} for ${agentName}.\n`
-        : `Saved ${provider} login to ${join(directory, 'auth.json')}.\n`,
+        : `Saved ${provider} login in ${await new SecretStorage(join(directory, 'auth.json')).location()}.\n`,
     );
   } finally {
     terminal.close();

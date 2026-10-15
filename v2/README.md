@@ -89,9 +89,13 @@ Successful, blocked, and no-change jobs remove their worktree. Failed, red, reje
 
 The current `v2` branch uses Commander.js for commands, options, argument validation, and generated help. Use `romp --help`, `romp run --help`, or `romp cloud setup --help` to inspect the relevant command. These help commands do not open the durable runtime or create state.
 
-Local state defaults to `~/.local/state/romp-v2`. `XDG_STATE_HOME` changes its parent directory; `ROMP_V2_STATE` overrides the complete path. `romp login --provider openai` stores local credentials in `auth.json` inside that directory and prints its full path. Treat that file as a secret.
+Local state defaults to `~/.local/state/romp-v2`. `XDG_STATE_HOME` changes its parent directory; `ROMP_V2_STATE` overrides the complete path. On the current `v2` branch, model credentials use the OS credential vault by default. macOS uses Keychain and Linux uses Secret Service. The binding also exposes Windows Credential Manager, which has not been validated. Romp uses `@napi-rs/keyring` through native APIs; tokens are not passed as process arguments. Login prints the selected storage location. The vault service name is `com.romp.v2`.
 
-Cloud deployment profiles and cloud login sessions use `~/.romp-v2/cloud` separately. `romp cloud login --profile personal` prepares a dedicated cloud session; it does not sign the local daemon in or create a deployed Worker. See the cloud guide for the pending credential path and deployment steps.
+`auth.json` now contains an opaque vault reference rather than credentials. Cloud profile and pending-session files use the same storage boundary. Existing private plaintext files migrate on first access: Romp writes the complete value to the vault, reads it back, and only then replaces the plaintext file with a reference. A failed migration preserves its source. Stop older Romp processes before upgrading; the older `.2` release cannot read the new references. Existing installations and their credentials are not migrated merely by downloading this source.
+
+A locked or unavailable vault stops the operation. Headless environments without a credential service can explicitly select `ROMP_SECRET_STORAGE=file` before login or first setup. That fallback keeps secrets in mode-0600 files and directories in mode 0700. It does not downgrade existing vault references or export their contents. Linux requires a persistent Secret Service; Romp does not use the library's volatile kernel-keyring fallback. Keep reference files and the corresponding vault entries together; copying the files alone does not copy credentials. Environment-supplied model keys are not persisted by local model lookup.
+
+Cloud deployment profiles and cloud login sessions use `~/.romp-v2/cloud` separately. `romp cloud login --profile personal` prepares a dedicated cloud session; it does not sign the local daemon in or create a deployed Worker. See the cloud guide for storage references and deployment steps.
 
 ## Verification and limits
 
