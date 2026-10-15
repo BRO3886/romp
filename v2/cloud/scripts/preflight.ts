@@ -15,6 +15,7 @@ const configuration = z
       REPOSITORIES: z.string(),
       CONCURRENCY: z.string(),
       GITHUB_APP_ID: z.string(),
+      OPENAI_AUTH: z.enum(['api-key', 'subscription']).default('api-key'),
     }),
   })
   .parse(raw);
@@ -29,6 +30,7 @@ const environment = {
   GITHUB_WEBHOOK_SECRET: process.env['GITHUB_WEBHOOK_SECRET'] ?? '',
   GITHUB_PRIVATE_KEY: process.env['GITHUB_PRIVATE_KEY'] ?? '',
   ADMIN_TOKEN: process.env['ADMIN_TOKEN'] ?? '',
+  ...(process.env['SUBSCRIPTION_KEY'] ? { SUBSCRIPTION_KEY: process.env['SUBSCRIPTION_KEY'] } : {}),
   ...(process.env['OPENAI_API_KEY'] ? { OPENAI_API_KEY: process.env['OPENAI_API_KEY'] } : {}),
   ...(process.env['ANTHROPIC_API_KEY']
     ? { ANTHROPIC_API_KEY: process.env['ANTHROPIC_API_KEY'] }
@@ -36,6 +38,10 @@ const environment = {
 };
 const resolved = preflight(environment);
 await appJwt(environment.GITHUB_APP_ID, environment.GITHUB_PRIVATE_KEY);
+if (environment.OPENAI_AUTH === 'subscription')
+  throw new Error(
+    'Subscription preflight requires the cloud profile. Use romp cloud setup --dry-run or romp cloud doctor',
+  );
 await checkModels(resolved, environment);
 console.log(
   JSON.stringify({

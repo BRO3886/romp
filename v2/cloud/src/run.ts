@@ -39,7 +39,7 @@ export class IssueRun extends DurableObject<Bindings> {
     return new GitHubApp(this.env, submission);
   }
   protected createModels(): Models {
-    return cloudModels(this.env);
+    return cloudModels(this.env, () => this.env.AUTH.getByName('openai').access());
   }
   async start(value: Submission) {
     const submission = Submission.parse(value);

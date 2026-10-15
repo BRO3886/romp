@@ -15,6 +15,7 @@ export default defineConfig({
           GITHUB_WEBHOOK_SECRET: 'w'.repeat(32),
           ADMIN_TOKEN: 'a'.repeat(32),
           OPENAI_API_KEY: 'test',
+          SUBSCRIPTION_KEY: '11'.repeat(32),
           TEST_RUNNER_URL: ctx.inject<string>('runnerUrl'),
         },
       },

@@ -3,11 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseConfig } from '../../../src/domain/config.js';
 import { validateAuthentication } from '../config.js';
-import { checkModels } from '../models.js';
+import { checkModels, checkModelSelection } from '../models.js';
 import { appJwt } from '../github.js';
 import { SetupDraft, type Profile } from './profile.js';
 
 export type SetupOptions = {
+  'openai-auth'?: string | undefined;
   account?: string | undefined;
   name?: string | undefined;
   'app-id'?: string | undefined;
@@ -20,7 +21,12 @@ export type SetupOptions = {
 export async function resolveSetup(
   values: SetupOptions,
   previous: Profile | undefined,
-  context: { cwd: string; root: string; env: NodeJS.ProcessEnv },
+  context: {
+    cwd: string;
+    root: string;
+    env: NodeJS.ProcessEnv;
+    subscriptionPreflight?: () => Promise<void>;
+  },
 ) {
   if (
     previous &&
@@ -36,7 +42,9 @@ export async function resolveSetup(
   const repos = values.repo ?? previous?.repositories.map((r) => r.repo);
   if (!repos?.length)
     throw new Error('First setup requires --repo OWNER/REPO (repeat for multiple repositories)');
+  const mode = values['openai-auth'] ?? previous?.openaiAuth ?? 'api-key';
   const draft = SetupDraft.parse({
+    openaiAuth: mode,
     accountId: values.account ?? previous?.accountId,
     name: values.name ?? previous?.name,
     appId: values['app-id'] ?? previous?.appId,
@@ -59,7 +67,13 @@ export async function resolveSetup(
       GITHUB_WEBHOOK_SECRET:
         previous?.secrets.GITHUB_WEBHOOK_SECRET ?? randomBytes(32).toString('hex'),
       ADMIN_TOKEN: previous?.secrets.ADMIN_TOKEN ?? randomBytes(32).toString('hex'),
-      ...((context.env['OPENAI_API_KEY'] ?? previous?.secrets.OPENAI_API_KEY)
+      ...(mode === 'subscription' || previous?.secrets.SUBSCRIPTION_KEY
+        ? {
+            SUBSCRIPTION_KEY: previous?.secrets.SUBSCRIPTION_KEY ?? randomBytes(32).toString('hex'),
+          }
+        : {}),
+      ...(mode !== 'subscription' &&
+      (context.env['OPENAI_API_KEY'] ?? previous?.secrets.OPENAI_API_KEY)
         ? { OPENAI_API_KEY: context.env['OPENAI_API_KEY'] ?? previous?.secrets.OPENAI_API_KEY }
         : {}),
       ...((context.env['ANTHROPIC_API_KEY'] ?? previous?.secrets.ANTHROPIC_API_KEY)
@@ -71,8 +85,28 @@ export async function resolveSetup(
     },
   });
   await readFile(draft.dockerfile);
-  validateAuthentication(draft, { GITHUB_APP_ID: draft.appId, ...draft.secrets });
+  validateAuthentication(draft, {
+    GITHUB_APP_ID: draft.appId,
+    OPENAI_AUTH: draft.openaiAuth,
+    ...draft.secrets,
+  });
   await appJwt(draft.appId, draft.secrets.GITHUB_PRIVATE_KEY);
-  await checkModels(draft, draft.secrets);
+  checkModelSelection(draft);
+  if (
+    draft.openaiAuth === 'subscription' &&
+    draft.repositories.some((r) => r.config.model.provider === 'openai')
+  ) {
+    if (!context.subscriptionPreflight)
+      throw new Error('Cloud subscription preflight is unavailable');
+    await context.subscriptionPreflight();
+  }
+  await checkModels(
+    {
+      repositories: draft.repositories.filter(
+        (r) => draft.openaiAuth !== 'subscription' || r.config.model.provider !== 'openai',
+      ),
+    },
+    draft.secrets,
+  );
   return draft;
 }

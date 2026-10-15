@@ -11,9 +11,11 @@
     "REPOSITORIES": "[]",
     "CONCURRENCY": "1",
     "GITHUB_APP_ID": "",
+    "OPENAI_AUTH": "api-key",
   },
   "durable_objects": {
     "bindings": [
+      { "name": "AUTH", "class_name": "SubscriptionAuth" },
       {
         "name": "SCHEDULER",
         "class_name": "Scheduler",
@@ -29,6 +31,7 @@
       "tag": "v1",
       "new_sqlite_classes": ["Scheduler", "IssueRun"],
     },
+    { "tag": "v2", "new_sqlite_classes": ["SubscriptionAuth"] },
   ],
   "containers": [
     {

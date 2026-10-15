@@ -1,3 +1,4 @@
+import { SubscriptionStatus, OpenAIAuth } from '../subscription-schema.js';
 import { createHmac } from 'node:crypto';
 import { z } from 'zod';
 import type { Profile } from './profile.js';
@@ -51,6 +52,7 @@ export async function statusRequest(
     .object({
       concurrency: z.number().int().min(1).max(32),
       paused: z.boolean(),
+      subscription: SubscriptionStatus.optional(),
       runs: z.array(
         z.object({
           id: z.string(),
@@ -74,12 +76,19 @@ export async function statusRequest(
 }
 export async function checkWorker(profile: Profile, fetcher: Fetch) {
   const doctor = z
-    .object({ ready: z.literal(true), repositories: z.array(z.string()), concurrency: z.number() })
+    .object({
+      ready: z.literal(true),
+      openaiAuth: OpenAIAuth.default('api-key'),
+      repositories: z.array(z.string()),
+      concurrency: z.number(),
+    })
     .parse(await workerRequest(profile, fetcher, '/doctor'));
   if (
     JSON.stringify(doctor.repositories) !== JSON.stringify(profile.repositories.map((r) => r.repo))
   )
     throw new Error('Deployed configuration differs from the local profile');
+  if (doctor.openaiAuth !== profile.openaiAuth)
+    throw new Error('Deployed OpenAI authentication mode differs from the local profile');
   const body = '{}';
   const response = await fetcher(`${profile.endpoint}/webhook`, {
     method: 'POST',

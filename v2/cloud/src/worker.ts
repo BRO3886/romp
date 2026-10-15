@@ -1,8 +1,10 @@
+import { SubscriptionImport } from './subscription-schema.js';
 import { checkModels } from './models.js';
 import { z } from 'zod';
 import { appJwt } from './github.js';
 import { preflight, runId, type Bindings } from './config.js';
 import { authenticateAdmin, authenticateWebhook, boundedBody } from './http.js';
+export { SubscriptionAuth } from './subscription.js';
 export { Scheduler } from './scheduler.js';
 export { IssueRun } from './run.js';
 const event = z.object({
@@ -71,14 +73,39 @@ export default {
     }
     if (!(await authenticateAdmin(request, env.ADMIN_TOKEN)))
       return new Response('Unauthorized', { status: 401 });
+    if (path === '/subscription') {
+      const auth = env.AUTH.getByName('openai');
+      if (request.method === 'DELETE') return Response.json(await auth.disconnect());
+      if (env.OPENAI_AUTH !== 'subscription')
+        return new Response('Subscription mode is disabled', { status: 409 });
+      if (request.method === 'GET') return Response.json(await auth.status());
+      if (request.method === 'PUT') {
+        let input: z.infer<typeof SubscriptionImport>;
+        try {
+          input = SubscriptionImport.parse(
+            JSON.parse(new TextDecoder().decode(await boundedBody(request, 131072))) as unknown,
+          );
+        } catch {
+          return new Response('Invalid subscription credentials', { status: 400 });
+        }
+        try {
+          return Response.json(await auth.importSession(input));
+        } catch {
+          return new Response('Subscription import failed. Check the cloud login profile', {
+            status: 409,
+          });
+        }
+      }
+    }
     const scheduler = env.SCHEDULER.getByName('installation');
     if (path === '/doctor' && request.method === 'GET') {
       try {
         const c = preflight(env);
         await appJwt(env.GITHUB_APP_ID, env.GITHUB_PRIVATE_KEY);
-        await checkModels(c, env);
+        await checkModels(c, env, () => env.AUTH.getByName('openai').access());
         return Response.json({
           ready: true,
+          openaiAuth: env.OPENAI_AUTH ?? 'api-key',
           repositories: c.repositories.map((r) => r.repo),
           concurrency: c.concurrency,
         });
@@ -90,7 +117,12 @@ export default {
       }
     }
     if (path === '/status' && request.method === 'GET')
-      return Response.json(await scheduler.status());
+      return Response.json({
+        ...(await scheduler.status()),
+        ...(env.OPENAI_AUTH === 'subscription'
+          ? { subscription: await env.AUTH.getByName('openai').status() }
+          : {}),
+      });
     if ((path === '/pause' || path === '/resume') && request.method === 'POST')
       return Response.json(await scheduler.pause(path === '/pause'));
     if (path === '/concurrency' && request.method === 'PUT') {

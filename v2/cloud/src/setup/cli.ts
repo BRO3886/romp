@@ -1,3 +1,11 @@
+import { authenticate } from '../../../src/adapters/node/login.js';
+import {
+  cloudLogin,
+  cloudLogout,
+  subscriptionDirectory,
+  subscriptionPreflight,
+  transferSubscription,
+} from './subscription.js';
 import { mkdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -5,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { createRequire } from 'node:module';
 import { preflight } from '../config.js';
-import { checkModels } from '../models.js';
+import { checkModels, checkModelSelection } from '../models.js';
 import { checkWorker, cloudflarePreflight, statusRequest, type Fetch } from './api.js';
 import { deploy, runWrangler, type Runner } from './deployment.js';
 import { connectWebhook, ensureLabels, githubPreflight, verifyWebhook } from './github.js';
@@ -19,15 +27,17 @@ import {
   saveProfile,
 } from './profile.js';
 
-const help = `romp-v2 cloud
+const help = `romp cloud
   setup --account ID --name WORKER --app-id ID --private-key FILE --repo OWNER/REPO
         [--config romp-v2.toml] [--dockerfile FILE] [--concurrency 1..32]
-        [--dry-run] [--replace-webhook] [--profile NAME]
+        [--openai-auth api-key|subscription] [--dry-run] [--replace-webhook] [--profile NAME]
+  login | logout [--profile NAME]
   doctor | status | pause | resume [--profile NAME]
   configure --concurrency 1..32 [--profile NAME]
 
-First setup requires an installed GitHub App and CLOUDFLARE_API_TOKEN plus your
-model API key in the environment. Reruns reuse the private local profile.
+First setup requires an installed GitHub App and CLOUDFLARE_API_TOKEN.
+Use a model API key, or run cloud login then setup --openai-auth subscription.
+Reruns reuse the private local profile.
 --dry-run validates and bundles without deploying or changing the webhook.
 Pause keeps accepting issues and drains active runs without starting queued ones.
 `;
@@ -39,6 +49,7 @@ type Dependencies = {
   fetch: Fetch;
   runner: Runner;
   output: (value: unknown) => void;
+  login: typeof authenticate;
 };
 export async function main(args: string[], dependencies: Partial<Dependencies> = {}) {
   const d: Dependencies = {
@@ -48,6 +59,7 @@ export async function main(args: string[], dependencies: Partial<Dependencies> =
     env: process.env,
     fetch,
     runner: runWrangler,
+    login: authenticate,
     output: (value) =>
       console.log(typeof value === 'string' ? value : JSON.stringify(value, null, 2)),
     ...dependencies,
@@ -66,6 +78,7 @@ export async function main(args: string[], dependencies: Partial<Dependencies> =
       config: { type: 'string' },
       dockerfile: { type: 'string' },
       concurrency: { type: 'string' },
+      'openai-auth': { type: 'string' },
       'dry-run': { type: 'boolean' },
       'replace-webhook': { type: 'boolean' },
     },
@@ -77,7 +90,9 @@ export async function main(args: string[], dependencies: Partial<Dependencies> =
   }
   if (
     extra.length ||
-    !['setup', 'doctor', 'status', 'configure', 'pause', 'resume'].includes(action)
+    !['setup', 'login', 'logout', 'doctor', 'status', 'configure', 'pause', 'resume'].includes(
+      action,
+    )
   )
     throw new Error('Unknown cloud command. Use cloud --help');
   const allowed =
@@ -90,8 +105,39 @@ export async function main(args: string[], dependencies: Partial<Dependencies> =
     throw new Error(`Unsupported option for cloud ${action}`);
   const file = profilePath(d.home, values.profile);
   const previous = await loadProfile(file);
+  const directory = subscriptionDirectory(file);
+  if (action === 'logout') {
+    await withProfileLock(
+      file,
+      async () => {
+        const result = await cloudLogout(previous, directory, d.fetch);
+        d.output(result);
+        if (!result.remoteRevocation)
+          d.output('Remote revocation was not confirmed. Disconnect the app in ChatGPT Settings.');
+      },
+      previous,
+    );
+    return;
+  }
+  if (action === 'login') {
+    await withProfileLock(
+      file,
+      async () => {
+        await cloudLogin(directory, d.login);
+        if (previous?.openaiAuth === 'subscription' && previous.endpoint) {
+          await transferSubscription(previous, directory, d.fetch);
+          d.output('Cloud subscription connected');
+        } else d.output('Cloud login saved. Run cloud setup --openai-auth subscription');
+      },
+      previous,
+    );
+    return;
+  }
   if (action === 'setup') {
-    const draft = await resolveSetup(values, previous, d);
+    const draft = await resolveSetup(values, previous, {
+      ...d,
+      subscriptionPreflight: () => subscriptionPreflight(directory, previous, d.fetch),
+    });
     draft.endpoint = await cloudflarePreflight(draft, d.env['CLOUDFLARE_API_TOKEN'] ?? '', d.fetch);
     const github = await githubPreflight(draft, d.fetch, values['replace-webhook'] ?? false);
     const profile = Profile.parse({ ...draft, repositories: github.repositories });
@@ -104,6 +150,7 @@ export async function main(args: string[], dependencies: Partial<Dependencies> =
         installationId: r.installationId,
       })),
       concurrency: profile.concurrency,
+      openaiAuth: profile.openaiAuth,
       review: false,
       replacesWebhook: github.hook.url || null,
       provisions: !values['dry-run'],
@@ -115,6 +162,8 @@ export async function main(args: string[], dependencies: Partial<Dependencies> =
       async () => {
         await saveProfile(file, profile);
         await deploy(d.root, profile, d.env, false, d.runner);
+        if (profile.openaiAuth === 'subscription')
+          await transferSubscription(profile, directory, d.fetch);
         await checkWorker(profile, d.fetch);
         await statusRequest(profile, d.fetch, '/concurrency', profile.concurrency);
         await ensureLabels(profile, d.fetch);
@@ -128,7 +177,15 @@ export async function main(args: string[], dependencies: Partial<Dependencies> =
   if (!previous) throw new Error('No cloud profile. Run cloud setup first');
   if (action === 'doctor') {
     preflight(environment(previous));
-    await checkModels(previous, previous.secrets);
+    checkModelSelection(previous);
+    await checkModels(
+      {
+        repositories: previous.repositories.filter(
+          (r) => previous.openaiAuth !== 'subscription' || r.config.model.provider !== 'openai',
+        ),
+      },
+      previous.secrets,
+    );
     const endpoint = await cloudflarePreflight(
       previous,
       d.env['CLOUDFLARE_API_TOKEN'] ?? '',

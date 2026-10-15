@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OpenAIAuth } from './subscription-schema.js';
 import { ConfigSchema, IssueSchema } from '../../src/domain/model.js';
 
 export const Repository = z
@@ -35,9 +36,11 @@ export type Secrets = {
   GITHUB_WEBHOOK_SECRET: string;
   GITHUB_PRIVATE_KEY: string;
   ADMIN_TOKEN: string;
+  SUBSCRIPTION_KEY?: string;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
 };
+export type Authentication = Secrets & { OPENAI_AUTH?: string };
 export type Bindings = {
   [K in keyof Cloudflare.Env]: Cloudflare.Env[K] extends string ? string : Cloudflare.Env[K];
 } & Secrets;
@@ -51,7 +54,7 @@ export function runId(repositoryId: number, issue: number) {
   return `r${repositoryId}-i${issue}`;
 }
 export function preflight(
-  env: Pick<Bindings, 'REPOSITORIES' | 'CONCURRENCY' | 'GITHUB_APP_ID'> & Secrets,
+  env: Pick<Bindings, 'REPOSITORIES' | 'CONCURRENCY' | 'GITHUB_APP_ID'> & Authentication,
 ) {
   const config = configuration(env);
   validateAuthentication(config, env);
@@ -59,7 +62,7 @@ export function preflight(
 }
 export function validateAuthentication(
   config: { repositories: readonly { config: { model: { provider: string } } }[] },
-  env: { GITHUB_APP_ID: string } & Secrets,
+  env: { GITHUB_APP_ID: string } & Authentication,
 ) {
   if (!/^\d+$/.test(env.GITHUB_APP_ID)) throw new Error('GITHUB_APP_ID must be a numeric app ID');
   for (const value of [env.GITHUB_WEBHOOK_SECRET, env.GITHUB_PRIVATE_KEY, env.ADMIN_TOKEN]) {
@@ -68,10 +71,14 @@ export function validateAuthentication(
   }
   if (env.ADMIN_TOKEN.length < 32 || env.GITHUB_WEBHOOK_SECRET.length < 32)
     throw new Error('Admin and webhook secrets must contain at least 32 characters');
+  const mode = OpenAIAuth.parse(env.OPENAI_AUTH ?? 'api-key');
+  if (mode === 'subscription' && !/^[a-f0-9]{64}$/.test(env.SUBSCRIPTION_KEY ?? ''))
+    throw new Error('SUBSCRIPTION_KEY must contain 32 random bytes in hexadecimal');
   for (const repository of config.repositories) {
     const model = repository.config.model;
     if (model.provider !== 'openai' && model.provider !== 'anthropic')
       throw new Error('Supported providers: openai, anthropic');
+    if (model.provider === 'openai' && mode === 'subscription') continue;
     if (!(model.provider === 'openai' ? env.OPENAI_API_KEY : env.ANTHROPIC_API_KEY))
       throw new Error(`Missing API key for ${model.provider}`);
   }

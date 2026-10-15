@@ -1,4 +1,5 @@
 import { createModels } from '@earendil-works/pi-ai/models';
+import { cloudModels } from '../src/models.js';
 import {
   fauxProvider,
   fauxAssistantMessage,
@@ -10,10 +11,15 @@ import type { Sandbox } from '../src/sandbox.js';
 import type { Submission } from '../src/config.js';
 import type { GitHub, PullRequest } from '../../src/application/ports.js';
 import type { Config, JobOutcome } from '../../src/domain/model.js';
+export { SubscriptionAuth } from '../src/subscription.js';
 export { Scheduler } from '../src/scheduler.js';
 export { default } from '../src/worker.js';
 type GitState = { creates: number; pr?: PullRequest; releases: number; comments: string[] };
 export class IssueRun extends ProductionRun {
+  private subscriptionModel = false;
+  useSubscription() {
+    this.subscriptionModel = true;
+  }
   private submission: Submission | undefined;
   private faultAfterPR = false;
   fault(value: boolean) {
@@ -62,6 +68,10 @@ export class IssueRun extends ProductionRun {
     };
   }
   protected override createModels() {
+    if (this.subscriptionModel)
+      return cloudModels({ ...this.env, OPENAI_AUTH: 'subscription' }, () =>
+        this.env.AUTH.getByName('openai').access(),
+      );
     const model = fauxProvider({
       provider: 'openai',
       models: [{ id: 'gpt-6.1-sol' }],

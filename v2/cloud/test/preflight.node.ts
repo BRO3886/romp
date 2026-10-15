@@ -28,6 +28,7 @@ await test('real Wrangler configuration resolves without provisioning and reject
     GITHUB_WEBHOOK_SECRET: 'w'.repeat(32),
     ADMIN_TOKEN: 'a'.repeat(32),
     OPENAI_API_KEY: 'test-key',
+    SUBSCRIPTION_KEY: '11'.repeat(32),
   };
   const run = () =>
     exec(process.execPath, ['--import', 'tsx', 'scripts/preflight.ts', file], { env });
@@ -50,6 +51,10 @@ await test('real Wrangler configuration resolves without provisioning and reject
     ]);
     await writeFile(file, JSON.stringify(source));
     await assert.rejects(run(), /Configured model or authentication is unavailable/);
+    source.vars['REPOSITORIES'] = JSON.stringify([config]);
+    source.vars['OPENAI_AUTH'] = 'subscription';
+    await writeFile(file, JSON.stringify(source));
+    await assert.rejects(run(), /Subscription preflight requires the cloud profile/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

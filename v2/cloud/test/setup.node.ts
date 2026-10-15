@@ -7,6 +7,10 @@ import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
+import { FileCredentials } from '../../src/adapters/node/auth.js';
+import { SubscriptionImport } from '../src/subscription-schema.js';
+import { pendingSubscription, subscriptionDirectory } from '../src/setup/subscription.js';
 import { main } from '../src/setup/cli.js';
 import { loadProfile, profilePath } from '../src/setup/profile.js';
 import { runWrangler, type Runner } from '../src/setup/deployment.js';
@@ -34,6 +38,10 @@ async function fixture() {
   let hook = { url: '', content_type: 'json', insecure_ssl: '0' };
   let width = 1;
   let paused = false;
+  let session: SubscriptionImport | undefined;
+  const imports: SubscriptionImport[] = [];
+  const revocations: string[] = [];
+  let loseImportResponse = false;
   let doctorFailure = false;
   let hookFailure = false;
   let denied = false;
@@ -70,6 +78,13 @@ async function fixture() {
     const method = init?.method ?? 'GET';
     calls.push({ path: url.pathname, method });
     const response = (body: unknown) => Response.json(body);
+    if (url.hostname === 'auth.openai.com') {
+      if (url.pathname === '/.well-known/openid-configuration')
+        return response({ revocation_endpoint: 'https://auth.openai.com/oauth/revoke' });
+      assert.equal(url.pathname, '/oauth/revoke');
+      revocations.push(new URLSearchParams(requestBody).get('token') ?? '');
+      return new Response(null, { status: 200 });
+    }
     if (url.hostname === 'api.cloudflare.com') {
       assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer cloud-token');
       return response({
@@ -139,10 +154,32 @@ async function fixture() {
       new Headers(init?.headers).get('authorization'),
       `Bearer ${last.secrets['ADMIN_TOKEN']}`,
     );
+    if (url.pathname === '/subscription') {
+      if (method === 'PUT') {
+        const value = SubscriptionImport.parse(JSON.parse(requestBody) as unknown);
+        imports.push(value);
+        if (session?.sessionId !== value.sessionId) session = value;
+        if (loseImportResponse) throw new Error('Injected lost upload response');
+      }
+      if (method === 'DELETE') {
+        session = undefined;
+        return response({ configured: false, requiresLogin: true, remoteRevocation: true });
+      }
+      return response({
+        configured: !!session,
+        requiresLogin: !session,
+        ...(session ? { sessionId: session.sessionId, hostId: session.hostId } : {}),
+      });
+    }
     if (url.pathname === '/doctor')
       return doctorFailure
         ? new Response(null, { status: 422 })
-        : response({ ready: true, repositories: ['test/repo'], concurrency: 1 });
+        : response({
+            ready: true,
+            openaiAuth: last.vars['OPENAI_AUTH'] ?? 'api-key',
+            repositories: ['test/repo'],
+            concurrency: 1,
+          });
     if (url.pathname === '/concurrency')
       width = z
         .object({ concurrency: z.number() })
@@ -164,7 +201,7 @@ async function fixture() {
     '--repo',
     'test/repo',
   ];
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     CLOUDFLARE_API_TOKEN: 'cloud-token',
     OPENAI_API_KEY: 'model-secret',
@@ -178,9 +215,38 @@ async function fixture() {
       runner: execute,
       fetch: fetcher,
       output: (v) => outputs.push(v),
+      login: async (action, provider, directory, agentName) => {
+        assert.equal(action, 'login');
+        assert.equal(provider, 'openai');
+        assert.equal(agentName, 'Romp Cloud');
+        let id: string;
+        try {
+          id = await readFile(join(directory, 'device-id'), 'utf8');
+        } catch {
+          id = randomUUID();
+          await writeFile(join(directory, 'device-id'), id, { mode: 0o600 });
+        }
+        await new FileCredentials(directory).modify('openai', () =>
+          Promise.resolve({
+            type: 'oauth',
+            access: 'cloud-access-token',
+            refresh: 'cloud-refresh-token',
+            expires: Date.now() + 3_600_000,
+            clientId: 'cloud-client',
+            scopes: ['chatgpt.tokens.use.direct', 'offline_access'],
+          }),
+        );
+      },
     });
   return {
     directory,
+    env,
+    imports,
+    revocations,
+    loseImportResponse: (v: boolean) => {
+      loseImportResponse = v;
+    },
+    remoteSession: () => session,
     args,
     run,
     outputs,
@@ -379,3 +445,125 @@ await test(
     }
   },
 );
+
+await test('subscription setup transfers once, removes the local renewable copy, and preserves cloud rotation on redeploy', async () => {
+  const f = await fixture();
+  try {
+    delete f.env['OPENAI_API_KEY'];
+    await assert.rejects(f.run([...f.args, '--openai-auth', 'subscription']), /cloud login/);
+    assert.equal(f.deployments.length, 0);
+    await f.run(['login']);
+    const directory = subscriptionDirectory(profilePath(f.directory, 'default'));
+    const pending = await pendingSubscription(directory);
+    assert.ok(pending);
+    assert.equal((await stat(join(directory, 'transfer.json'))).mode & 0o777, 0o600);
+    assert.deepEqual(await new FileCredentials(directory).list(), []);
+    await f.run(
+      [...f.args, '--openai-auth', 'subscription', '--dry-run'],
+      async (args, cwd, env) => {
+        assert.ok(args.includes('--dry-run'));
+        await f.runner(args, cwd, env);
+        await runWrangler(args, cwd, env);
+      },
+    );
+    assert.equal(await loadProfile(profilePath(f.directory, 'default')), undefined);
+    assert.equal(f.imports.length, 0);
+    assert.deepEqual(await pendingSubscription(directory), pending);
+    f.env['OPENAI_API_KEY'] = 'sk-must-not-upload';
+    await f.run([...f.args, '--openai-auth', 'subscription']);
+    assert.equal(f.imports.length, 1);
+    assert.equal(await pendingSubscription(directory), undefined);
+    const profile = await loadProfile(profilePath(f.directory, 'default'));
+    assert.equal(profile?.openaiAuth, 'subscription');
+    assert.match(profile?.secrets.SUBSCRIPTION_KEY ?? '', /^[a-f0-9]{64}$/);
+    assert.equal(profile?.secrets.OPENAI_API_KEY, undefined);
+    const session = f.remoteSession();
+    assert.ok(session);
+    session.credential.refresh = 'cloud-rotated-token';
+    await f.run(['setup']);
+    await f.run(['doctor']);
+    assert.equal(f.imports.length, 1);
+    assert.equal(f.remoteSession()?.credential.refresh, 'cloud-rotated-token');
+    for (const deployment of f.deployments) {
+      const text = JSON.stringify(deployment);
+      for (const value of ['cloud-refresh-token', 'cloud-access-token', 'sk-must-not-upload'])
+        assert.ok(!text.includes(value));
+    }
+    assert.ok(!JSON.stringify(f.outputs).includes('cloud-refresh-token'));
+    await f.run(['login']);
+    assert.equal(f.imports.length, 2);
+    assert.equal(f.remoteSession()?.hostId, pending.hostId);
+    await f.run(['logout']);
+    assert.equal(f.remoteSession(), undefined);
+    await f.run(['setup', '--openai-auth', 'api-key']);
+    assert.equal(
+      (await loadProfile(profilePath(f.directory, 'default')))?.secrets.SUBSCRIPTION_KEY,
+      profile?.secrets.SUBSCRIPTION_KEY,
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+await test('a lost subscription upload response keeps the exact pending session for safe retry before webhook activation', async () => {
+  const f = await fixture();
+  try {
+    delete f.env['OPENAI_API_KEY'];
+    await f.run(['login']);
+    const directory = subscriptionDirectory(profilePath(f.directory, 'default'));
+    const pending = await pendingSubscription(directory);
+    f.loseImportResponse(true);
+    await assert.rejects(
+      f.run([...f.args, '--openai-auth', 'subscription']),
+      /lost upload response/,
+    );
+    assert.ok(!f.calls.some((call) => call.method === 'PATCH'));
+    assert.deepEqual(await pendingSubscription(directory), pending);
+    f.loseImportResponse(false);
+    await f.run(['setup']);
+    assert.equal(f.imports.length, 2);
+    assert.equal(f.imports[0]?.sessionId, f.imports[1]?.sessionId);
+    assert.equal(await pendingSubscription(directory), undefined);
+    assert.ok(
+      f.calls.findIndex((call) => call.path === '/subscription' && call.method === 'PUT') <
+        f.calls.findIndex((call) => call.method === 'PATCH'),
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+await test('cloud logout before deployment revokes the pending session and retains only the stable host identity', async () => {
+  const f = await fixture();
+  try {
+    await f.run(['login']);
+    const directory = subscriptionDirectory(profilePath(f.directory, 'default'));
+    const hostId = await readFile(join(directory, 'device-id'), 'utf8');
+    await f.run(['logout']);
+    assert.deepEqual(f.revocations, ['cloud-refresh-token']);
+    assert.equal(await pendingSubscription(directory), undefined);
+    assert.deepEqual(await new FileCredentials(directory).list(), []);
+    assert.equal(await readFile(join(directory, 'device-id'), 'utf8'), hostId);
+    assert.equal(f.deployments.length, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+await test('profiles written before subscription support retain API-key authentication', async () => {
+  const f = await fixture();
+  try {
+    await f.run(f.args);
+    const file = profilePath(f.directory, 'default');
+    const original = z
+      .record(z.string(), z.unknown())
+      .parse(JSON.parse(await readFile(file, 'utf8')) as unknown);
+    delete original['openaiAuth'];
+    await writeFile(file, JSON.stringify(original), { mode: 0o600 });
+    assert.equal((await loadProfile(file))?.openaiAuth, 'api-key');
+    await f.run(['doctor']);
+    await f.run(['setup']);
+    assert.equal(f.imports.length, 0);
+  } finally {
+    await f.cleanup();
+  }
+});

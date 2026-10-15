@@ -37,3 +37,31 @@ The new pause endpoint test first failed with `expected 404 to be 200`. After ad
 - Live setup deployment, GitHub App hook changes, label mutations, and actual GitHub-to-Worker event delivery. App registration, webhook activation, and installation remain manual prerequisites.
 
 The local container check uses the real Wrangler/workerd container engine. The Workers test plugin does not expose `ctx.container`, so the combined Pi recovery suite uses a real Docker workspace through an injected execution port. Both checks are required; neither substitutes for a deployed failure trial.
+
+## Subscription authentication, 15 October 2026
+
+The subscription path was checked with strict source/test typechecks, type-aware lint, formatting, generated binding verification, the 25 local runtime tests, 20 Workers tests, 13 setup tests, and the lower-level preflight test. Local Wrangler also built both generated API-key and subscription configurations with private secret files and no deployment. The native container execution/snapshot check and the production deployment bundle passed. Production dependency audit reported no vulnerabilities.
+
+The six added Workers tests cover subscription configuration without an API key; encrypted credential persistence; eight concurrent model-authentication callers sharing one refresh; a second refresh using the rotated token after actor eviction; replayed upload acknowledgements; interrupted/rejected/redirected refreshes without API-key fallback; host identity and permission-scope validation; authenticated Worker doctor/import/status operations; session revocation with confirmed and unavailable responses; and rejection of old uploads after replacement or logout. The interrupted-refresh fixture restores a persisted in-flight marker after eviction. It verifies conservative recovery from that state; it does not reproduce a hosted crash during an actual OpenAI exchange.
+
+A delivery test uses Pi's real OpenAI Responses adapter, Pi Durable, Workers SQLite, Docker, Bash, and Git. HTTP fixtures supply an OAuth refresh response and two streamed Responses API turns. Assertions require the refreshed bearer token, streamed/stateless request parameters, exclusion of unsupported subscription parameters and system-role input, successful verification/publication, and absence of access/refresh tokens from the issue actor's application tables and key-value records. OpenAI HTTP fixtures are contract checks, not live service compatibility or entitlement proof. Test HTTP handlers reject unexpected external requests and allow the local Docker bridge.
+
+Setup tests exercise dedicated login-state storage and stable host identity, private pending files, no transfer during a dry run, successful handoff before webhook activation, local renewable-copy removal, unchanged cloud credentials on redeploy, recovery from a lost upload response using the same session ID, pending-session revocation before deployment, and older profiles defaulting to API-key mode. Browser interactions and account credentials are injected in setup tests; interactive sign-in was not performed.
+
+The original configuration rejected the subscription-only environment with:
+
+```text
+Error: Missing API key for openai
+```
+
+The new configuration test accepts that environment and rejects a missing encryption key. The real Workers test also exposed an invalid redirect policy before the fix:
+
+```text
+TypeError: Invalid redirect value, must be one of "follow" or "manual"
+```
+
+OAuth requests now use manual redirect handling and require the expected success status. A redirect to another origin fails authentication without forwarding the refresh token. Completed OAuth requests clear their deadline timers so actor eviction does not wait for an unused timeout.
+
+Coverage gap: live OpenAI browser sign-in and subscription inference were not runnable without the user's interactive authorization. No Cloudflare deployment, real GitHub webhook change, hosted PR mutation, or model-billing trial was performed. The published `v2.0.0-experimental.1` installer bundle does not contain this feature; the current `v2` branch does.
+
+A setup regression test also failed with `actual: undefined` when switching a subscription profile to API-key mode discarded its saved encryption key. Resolution now retains an existing key across authentication-mode changes, and the same test passes. This prevents a later deployment from silently generating a different key for the same credential owner.

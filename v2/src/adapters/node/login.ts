@@ -10,6 +10,7 @@ export async function authenticate(
   action: 'login' | 'logout',
   provider: string,
   directory: string,
+  agentName?: string,
 ) {
   const unlock = await acquireLock(directory);
   const models = providerModels(directory);
@@ -53,7 +54,7 @@ export async function authenticate(
           else process.stdout.write(`${event.message}\n`);
         },
       },
-      { getDeviceId: () => deviceId },
+      { getDeviceId: () => deviceId, ...(agentName ? { agentName } : {}) },
     );
     process.stdout.write(`Saved ${provider} login in the v2 state directory.\n`);
   } finally {

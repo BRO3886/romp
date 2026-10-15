@@ -56,6 +56,7 @@ export async function deploymentConfig(root: string, profile: Profile) {
       REPOSITORIES: environment(profile).REPOSITORIES,
       CONCURRENCY: String(profile.concurrency),
       GITHUB_APP_ID: profile.appId,
+      OPENAI_AUTH: profile.openaiAuth,
     },
     containers: template.containers.map((c) => ({
       ...c,
