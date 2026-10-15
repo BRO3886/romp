@@ -10,7 +10,7 @@ The release installer puts a `romp` launcher in `~/.local/bin` and the versioned
 
 ```sh
 romp_installer="$(mktemp)"
-curl -fsSL --retry 3 https://github.com/BRO3886/romp/releases/download/v2.0.0-experimental.1/install.sh -o "$romp_installer" &&
+curl -fsSL --retry 3 https://github.com/BRO3886/romp/releases/download/v2.0.0-experimental.2/install.sh -o "$romp_installer" &&
   sh "$romp_installer" &&
   rm "$romp_installer"
 export PATH="$HOME/.local/bin:$PATH"
@@ -105,4 +105,4 @@ The module boundaries, validated contracts, and persistence migration are docume
 
 ## Cloud host
 
-The experimental [Cloud runtime](cloud/README.md) accepts GitHub issue webhooks and runs jobs in disposable Cloudflare containers. `cloud setup --dry-run` validates account/App access and builds the deployment before provisioning. `cloud setup` deploys the Worker and connects the App webhook. `cloud doctor`, `cloud status`, `cloud configure --concurrency N`, `cloud pause`, and `cloud resume` operate the deployment using a private local profile. ChatGPT subscription support on the current `v2` branch uses `cloud login` followed by `cloud setup --openai-auth subscription`, with a dedicated encrypted cloud session and coordinated refresh. See the cloud guide for first-time credentials, commands, release availability, and recovery tests. The local daemon commands above remain available.
+The experimental [Cloud runtime](cloud/README.md) accepts GitHub issue webhooks and runs jobs in disposable Cloudflare containers. `cloud setup --dry-run` validates account/App access and builds the deployment before provisioning. `cloud setup` deploys the Worker and connects the App webhook. `cloud doctor`, `cloud status`, `cloud configure --concurrency N`, `cloud pause`, and `cloud resume` operate the deployment using a private local profile. ChatGPT subscription support in `v2.0.0-experimental.2` uses `cloud login` followed by `cloud setup --openai-auth subscription`, with a dedicated encrypted cloud session and coordinated refresh. See the cloud guide for first-time credentials, commands, release availability, and recovery tests. The local daemon commands above remain available.

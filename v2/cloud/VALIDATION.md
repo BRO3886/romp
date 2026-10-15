@@ -62,6 +62,6 @@ TypeError: Invalid redirect value, must be one of "follow" or "manual"
 
 OAuth requests now use manual redirect handling and require the expected success status. A redirect to another origin fails authentication without forwarding the refresh token. Completed OAuth requests clear their deadline timers so actor eviction does not wait for an unused timeout.
 
-Coverage gap: live OpenAI browser sign-in and subscription inference were not runnable without the user's interactive authorization. No Cloudflare deployment, real GitHub webhook change, hosted PR mutation, or model-billing trial was performed. The published `v2.0.0-experimental.1` installer bundle does not contain this feature; the current `v2` branch does.
+Coverage gap: live OpenAI browser sign-in and subscription inference were not runnable without the user's interactive authorization. No Cloudflare deployment, real GitHub webhook change, hosted PR mutation, or model-billing trial was performed. The `v2.0.0-experimental.1` installer bundle does not contain this feature. It is included in `v2.0.0-experimental.2`.
 
 A setup regression test also failed with `actual: undefined` when switching a subscription profile to API-key mode discarded its saved encryption key. Resolution now retains an existing key across authentication-mode changes, and the same test passes. This prevents a later deployment from silently generating a different key for the same credential owner.

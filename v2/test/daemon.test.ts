@@ -47,7 +47,7 @@ await test(
         const { worker, exited } = await start(i === 1);
         try {
           assert.deepEqual(await createClient(directory).ping({}), {
-            version: '2.0.0-experimental.1',
+            version: '2.0.0-experimental.2',
           });
           await assert.rejects(acquireLock(directory), /already owned/);
           assert.match(await malformedRequest(directory), /Unknown method/);

@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, writeFile, readFile, readlink, rm } from 'node:fs/promi
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 const exec = promisify(execFile);
-const version = '2.0.0-experimental.1';
+const version = '2.0.0-experimental.2';
 const tag = `v${version}`;
 const archive = `romp-v2-${version}.tar.gz`;
 async function fixture() {

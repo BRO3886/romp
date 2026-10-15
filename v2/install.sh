@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-romp_tag=v2.0.0-experimental.1
+romp_tag=v2.0.0-experimental.2
 romp_prefix="${HOME}/.local"
 romp_base=https://github.com/BRO3886/romp/releases/download
 while [ "$#" -gt 0 ]; do

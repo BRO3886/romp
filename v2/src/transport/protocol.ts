@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { JobEventSchema, JobSchema, StateSchema, nonEmptyText, recordId } from '../domain/model.js';
 
-export const VERSION = '2.0.0-experimental.1';
+export const VERSION = '2.0.0-experimental.2';
 export const FRAME_LIMIT = 8 * 1024 * 1024;
 const Empty = z.object({}).strict();
 const Root = z.object({ root: nonEmptyText }).strict();

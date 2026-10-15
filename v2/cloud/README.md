@@ -62,15 +62,15 @@ Bare `cloud setup` works after the first deployment attempt has saved its profil
 
 ## ChatGPT subscription on Cloudflare
 
-Subscription support requires a build from the current `v2` branch. The `v2.0.0-experimental.1` release bundle predates these commands. Use the absolute `ROMP_CLI` path from the source build above. Once a release includes this feature, its installed launcher runs the same commands as `romp cloud ...`.
+Subscription support is included in `v2.0.0-experimental.2`. Install or upgrade with the [release installer](../README.md#install-as-romp), then use the `romp` commands below. For a source build, replace `romp` with the absolute Node entry point shown above. The older `v2.0.0-experimental.1` bundle does not include these commands.
 
 Romp uses Pi's OpenAI sign-in flow on your computer and transfers a dedicated session to your personal Cloudflare deployment. This follows OpenAI's [self-hosted runtime guidance](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms). Select `provider="openai"` and a supported chat model in `romp-v2.toml`. Your plan must grant permission to use its tokens in this flow; account eligibility, available models, and subscription limits still apply.
 
 Sign in before first setup, using the same profile for both commands:
 
 ```sh
-node "$ROMP_CLI" cloud login --profile personal
-node "$ROMP_CLI" cloud setup --profile personal \
+romp cloud login --profile personal
+romp cloud setup --profile personal \
   --openai-auth subscription \
   --account "$CF_ACCOUNT_ID" --name romp-cloud \
   --app-id "$GH_APP_ID" --private-key "$GH_APP_PRIVATE_KEY_FILE" \
@@ -84,11 +84,11 @@ Each profile has a stable cloud host ID under `~/.romp-v2/cloud/personal.json.au
 A separate authentication Durable Object owns the cloud credential. It encrypts the credential using AES-GCM with a generated `SUBSCRIPTION_KEY` Worker secret, serializes refreshes across every issue run, and saves each rotated token before returning access. Refresh uses the issued client ID and retained scopes, as specified in OpenAI's [session documentation](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions). Only the access token reaches the model adapter. Refresh tokens never enter issue checkpoints, sandbox processes, images, Wrangler configuration, deployment secret files, or status output. Retrying a lost upload response cannot overwrite a newer rotated token. Redeployment reuses the encryption key and existing cloud session.
 
 ```sh
-node "$ROMP_CLI" cloud doctor --profile personal
-node "$ROMP_CLI" cloud status --profile personal
-node "$ROMP_CLI" cloud configure --profile personal --concurrency 3
-node "$ROMP_CLI" cloud login --profile personal
-node "$ROMP_CLI" cloud logout --profile personal
+romp cloud doctor --profile personal
+romp cloud status --profile personal
+romp cloud configure --profile personal --concurrency 3
+romp cloud login --profile personal
+romp cloud logout --profile personal
 ```
 
 `status` includes subscription configuration, expiry, and `requiresLogin`. `doctor` checks the configured model and resolves cloud authentication without an inference request. Access refreshes on demand; an idle deployment can require another login after its refresh token expires. Increasing concurrency shares the same subscription allowance. Cloudflare resource charges are separate from model authentication.
