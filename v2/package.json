@@ -21,9 +21,11 @@
     "cloud:test": "npm test --workspace @romp/cloud"
   },
   "dependencies": {
+    "@commander-js/extra-typings": "15.0.0",
     "@earendil-works/chord": "1.2.0",
     "@earendil-works/pi-ai": "1.2.0",
     "@earendil-works/pi-durable": "1.2.0",
+    "commander": "15.0.0",
     "smol-toml": "1.9.1",
     "zod": "4.6.7"
   },

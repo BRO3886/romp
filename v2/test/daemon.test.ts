@@ -53,7 +53,17 @@ await test(
           assert.match(await malformedRequest(directory), /Unknown method/);
           assert.equal((await stat(join(directory, 'romp.sock'))).mode & 0o777, 0o600);
           assert.deepEqual(await createClient(directory).state({}), { jobs: {}, repositories: {} });
-          await createClient(directory).stop({});
+          const cli = (args: string[]) =>
+            command(
+              process.execPath,
+              ['dist/cli.js', 'daemon', ...args],
+              process.cwd(),
+              undefined,
+              { env: { ...process.env, ROMP_V2_STATE: directory } },
+            );
+          const ping: unknown = JSON.parse((await cli(['status'])).stdout);
+          assert.deepEqual(ping, { version: '2.0.0-experimental.2' });
+          await cli(['stop']);
           assert.equal(await exited, 0);
         } finally {
           if (worker.exitCode === null) worker.kill('SIGKILL');

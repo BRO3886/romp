@@ -85,6 +85,14 @@ Shell commands run under a supervisor in an owned process group. The supervisor 
 
 Successful, blocked, and no-change jobs remove their worktree. Failed, red, rejected, and cancelled jobs keep it for inspection. Branches are retained. A failed terminal cleanup remains visible as a failed job; inspect its detail and GitHub claim before retrying.
 
+## Command help and local state
+
+The current `v2` branch uses Commander.js for commands, options, argument validation, and generated help. Use `romp --help`, `romp run --help`, or `romp cloud setup --help` to inspect the relevant command. These help commands do not open the durable runtime or create state.
+
+Local state defaults to `~/.local/state/romp-v2`. `XDG_STATE_HOME` changes its parent directory; `ROMP_V2_STATE` overrides the complete path. `romp login --provider openai` stores local credentials in `auth.json` inside that directory and prints its full path. Treat that file as a secret.
+
+Cloud deployment profiles and cloud login sessions use `~/.romp-v2/cloud` separately. `romp cloud login --profile personal` prepares a dedicated cloud session; it does not sign the local daemon in or create a deployed Worker. See the cloud guide for the pending credential path and deployment steps.
+
 ## Verification and limits
 
 ```sh

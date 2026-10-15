@@ -1,15 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createModels, type Models } from '@earendil-works/pi-ai/models';
-import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
-import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
+import type { Models } from '@earendil-works/pi-ai/models';
 import { defineExtension, createRegistry, Harness } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { JobService } from '../application/job-service.js';
 import { preflight as resolvePreflight } from '../application/preflight.js';
 import type { GitHub, ModelAccess } from '../application/ports.js';
-import { FileCredentials } from '../adapters/node/auth.js';
+import { providerModels } from '../adapters/node/models.js';
 import { Reviewer, executionEnvironment, supervisedBuilder } from '../adapters/node/environment.js';
 import { Git } from '../adapters/node/git.js';
 import { LocalRepositories } from '../adapters/node/repositories.js';
@@ -20,12 +18,6 @@ import { State, Role } from '../adapters/pi/documents.js';
 import { PiJobExecution } from '../adapters/pi/job-execution.js';
 import { message, requireValue } from '../shared/errors.js';
 
-export function providerModels(stateDir?: string) {
-  const models = createModels(stateDir ? { credentials: new FileCredentials(stateDir) } : {});
-  models.setProvider(openaiProvider());
-  models.setProvider(anthropicProvider());
-  return models;
-}
 function modelAccess(models: Models): ModelAccess {
   return {
     async check(config) {

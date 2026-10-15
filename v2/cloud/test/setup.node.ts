@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, createHmac } from 'node:crypto';
-import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -251,6 +251,7 @@ async function fixture() {
     run,
     outputs,
     calls,
+    fetcher,
     deployments,
     runner,
     setHook: (url: string) => {
@@ -285,6 +286,119 @@ await test('dry-run resolves installation IDs and deploy inputs without saving s
     assert.equal(await loadProfile(profilePath(f.directory, 'default')), undefined);
     assert.ok(!f.calls.some((c) => c.method === 'PATCH'));
     assert.ok(!JSON.stringify(f.outputs).includes('model-secret'));
+  } finally {
+    await f.cleanup();
+  }
+});
+await test('first setup reports all missing deployment settings without provisioning', async () => {
+  const f = await fixture();
+  try {
+    await assert.rejects(f.run(['setup', '--repo', 'test/repo']), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      for (const flag of ['--account', '--name', '--app-id', '--private-key'])
+        assert.ok(error.message.includes(flag), error.message);
+      assert.match(error.message, /cloud setup --help/);
+      assert.doesNotMatch(error.message, /invalid_type|expected.*string|"path"/i);
+      return true;
+    });
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.deployments.length, 0);
+    assert.equal(await loadProfile(profilePath(f.directory, 'default')), undefined);
+  } finally {
+    await f.cleanup();
+  }
+});
+await test('first setup discovers GitHub origin and repository-root configuration from a subdirectory', async () => {
+  for (const origin of [
+    'git@github.com:test/repo.git',
+    'https://github.com/test/repo.git',
+    'ssh://git@github.com/test/repo.git',
+  ]) {
+    const f = await fixture();
+    try {
+      await exec('git', ['init', f.directory]);
+      await exec('git', ['-C', f.directory, 'remote', 'add', 'origin', origin]);
+      const nested = join(f.directory, 'nested');
+      await mkdir(nested);
+      const args = f.args
+        .slice(0, -2)
+        .map((arg) => (arg === 'key.pem' ? join(f.directory, 'key.pem') : arg));
+      const outputs: unknown[] = [];
+      await main([...args, '--dry-run'], {
+        cwd: nested,
+        home: f.directory,
+        root,
+        env: f.env,
+        fetch: f.fetcher,
+        runner: f.runner,
+        output: (value) => outputs.push(value),
+      });
+      assert.equal(f.deployments.length, 1);
+      const repositories = z
+        .array(z.object({ repo: z.string() }))
+        .parse(JSON.parse(f.deployments[0]?.vars['REPOSITORIES'] ?? '[]') as unknown);
+      assert.deepEqual(
+        repositories.map((r) => r.repo),
+        ['test/repo'],
+      );
+      assert.equal(await loadProfile(profilePath(f.directory, 'default')), undefined);
+    } finally {
+      await f.cleanup();
+    }
+  }
+});
+await test('repository detection rejects missing or unrelated origins and explicit repos override discovery', async () => {
+  const f = await fixture();
+  try {
+    await exec('git', ['init', f.directory]);
+    const detected = [...f.args.slice(0, -2), '--dry-run'];
+    await assert.rejects(f.run(detected), /Cannot detect.*--repo OWNER\/REPO/);
+    await exec('git', [
+      '-C',
+      f.directory,
+      'remote',
+      'add',
+      'origin',
+      'git@gitlab.com:other/repo.git',
+    ]);
+    await assert.rejects(f.run(detected), /Cannot detect.*--repo OWNER\/REPO/);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.deployments.length, 0);
+    await f.run([...f.args, '--dry-run']);
+    assert.equal(f.deployments.length, 1);
+    const repositories = z
+      .array(z.object({ repo: z.string() }))
+      .parse(JSON.parse(f.deployments[0]?.vars['REPOSITORIES'] ?? '[]') as unknown);
+    assert.deepEqual(
+      repositories.map((r) => r.repo),
+      ['test/repo'],
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+await test('profile selection works before or after commands and cloud login reports its transfer path', async () => {
+  const f = await fixture();
+  try {
+    const file = profilePath(f.directory, 'personal');
+    await f.run(['--profile', 'personal', 'doctor']).then(
+      () => assert.fail('An undeployed profile must fail doctor'),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.ok(error.message.includes(file));
+        assert.match(error.message, /login alone does not create a deployment profile/);
+      },
+    );
+    await f.run(['login', '--profile', 'personal']);
+    assert.ok(
+      String(f.outputs.at(-1)).includes(join(subscriptionDirectory(file), 'transfer.json')),
+    );
+    assert.equal(await loadProfile(file), undefined);
+    await f.run(['--profile', 'personal', ...f.args, '--openai-auth', 'subscription']);
+    assert.ok(await loadProfile(file));
+    await f.run(['status', '--profile', 'personal']);
+    assert.deepEqual(f.outputs.at(-1), { concurrency: 1, paused: false, runs: [] });
+    assert.equal(await loadProfile(profilePath(f.directory, 'default')), undefined);
   } finally {
     await f.cleanup();
   }
@@ -403,7 +517,7 @@ await test('administration uses saved authentication, persists width, and reject
     await f.run(['status']);
     assert.deepEqual(f.outputs.at(-1), { concurrency: 3, paused: false, runs: [] });
     await assert.rejects(f.run(['configure', '--concurrency', '0']), /1 to 32/);
-    await assert.rejects(f.run(['pause', '--concurrency', '3']), /Unsupported option/);
+    await assert.rejects(f.run(['pause', '--concurrency', '3']), /unknown option '--concurrency'/);
     await assert.rejects(f.run(['setup', '--account', 'b'.repeat(32)]), /fixed for a profile/);
   } finally {
     await f.cleanup();
@@ -434,8 +548,17 @@ await test(
         timeout: 30_000,
         maxBuffer: 4 * 1024 * 1024,
       });
-      assert.match(result.stdout, /setup --account/);
-      await f.run([...f.args, '--dry-run'], async (args, cwd, env) => {
+      assert.match(result.stdout, /setup \[options\]/);
+      await exec('git', ['init', f.directory]);
+      await exec('git', [
+        '-C',
+        f.directory,
+        'remote',
+        'add',
+        'origin',
+        'git@github.com:test/repo.git',
+      ]);
+      await f.run([...f.args.slice(0, -2), '--dry-run'], async (args, cwd, env) => {
         assert.ok(args.includes('--dry-run'));
         await runWrangler(args, cwd, { ...process.env, ...env });
       });

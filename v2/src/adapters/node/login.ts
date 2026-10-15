@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 import { join } from 'node:path';
-import { providerModels } from '../../composition/node.js';
+import { providerModels } from './models.js';
 import { hasErrorCode } from '../../shared/errors.js';
 import { acquireLock } from './owner-lock.js';
 
@@ -56,7 +56,11 @@ export async function authenticate(
       },
       { getDeviceId: () => deviceId, ...(agentName ? { agentName } : {}) },
     );
-    process.stdout.write(`Saved ${provider} login in the v2 state directory.\n`);
+    process.stdout.write(
+      agentName
+        ? `Authenticated ${provider} for ${agentName}.\n`
+        : `Saved ${provider} login to ${join(directory, 'auth.json')}.\n`,
+    );
   } finally {
     terminal.close();
     await unlock();
